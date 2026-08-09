@@ -1,0 +1,40 @@
+{
+  "name": "mm-accessories-erp",
+  "version": "1.0.0",
+  "description": "M&M Accessories \u2014 offline-first ERP (inventory, POS, purchasing, promotions, reporting). No native dependencies.",
+  "type": "module",
+  "main": "src/server.js",
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "db:migrate": "node scripts/migrate.js",
+    "db:seed": "node scripts/seed.js",
+    "db:demo": "node scripts/seed.js --demo",
+    "db:reset": "node scripts/reset.js",
+    "setup": "node scripts/migrate.js && node scripts/seed.js --demo",
+    "backup": "node scripts/backup.js",
+    "test": "node --test tests/"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cookie-parser": "^1.4.7",
+    "express": "^4.21.2",
+    "jsonwebtoken": "^9.0.2",
+    "qrcode": "^1.5.4",
+    "zod": "^3.23.8"
+  },
+  "keywords": [
+    "erp",
+    "pos",
+    "inventory",
+    "offline-first",
+    "sqlite"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "playwright": "^1.49.0"
+  }
+}
