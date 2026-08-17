@@ -4,12 +4,11 @@
  * Serverless platforms give a function no durable disk, so the local-file
  * driver cannot be used there — Vercel says so outright. libSQL is SQLite
  * spoken over the network, which is why every statement, view and trigger in
- * `schema.sql` is reused byte-for-byte: only the transport changes.
+ * the schema is reused byte-for-byte: only the transport changes.
  *
  * The package is imported dynamically so a shop PC running on the file driver
  * never needs it installed.
  */
-import fs from 'node:fs';
 import { normaliseParams, normaliseRow } from './values.js';
 
 /** libSQL wants `{ sql, args }`; args may be positional or named. */
@@ -79,8 +78,8 @@ export async function createLibsqlDriver({ url, authToken }) {
       await client.executeMultiple(sql);
     },
 
-    async applySchema(schemaFile) {
-      await client.executeMultiple(fs.readFileSync(schemaFile, 'utf8'));
+    async applySchema(sql) {
+      await client.executeMultiple(sql);
     },
 
     /**

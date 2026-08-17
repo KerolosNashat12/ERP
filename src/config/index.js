@@ -82,7 +82,6 @@ export const config = Object.freeze({
     data: DATA_DIR,
     backups: path.join(DATA_DIR, 'backups'),
     database: process.env.MM_DB_FILE || path.join(DATA_DIR, 'mm-accessories.db'),
-    schema: path.join(ROOT_DIR, 'src', 'infrastructure', 'database', 'schema.sql'),
     public: path.join(ROOT_DIR, 'public'),
   },
   auth: {

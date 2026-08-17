@@ -8,6 +8,7 @@ import config from './config/index.js';
 import {
   initDb, applySchema, getDb, closeDb, driverName,
 } from './infrastructure/database/connection.js';
+import { seedBaseline } from './infrastructure/database/seed.js';
 import apiRouter from './api/routes/index.js';
 import { attachRequestContext, errorHandler, notFoundHandler } from './api/middleware/index.js';
 
@@ -24,12 +25,12 @@ export function createApp() {
 
   /**
    * Serverless hosts import this module and invoke it per request — there is no
-   * startup hook to open the database in. `initDb()` is idempotent and returns
-   * immediately once connected, so paying for the check on every request is
-   * cheaper than the alternative of a half-initialised process.
+   * startup hook to open the database in. This opens the connection and, on a
+   * hosted database, brings an empty one up once. Both are idempotent and
+   * resolve immediately afterwards, so the per-request cost is a settled promise.
    */
   app.use((req, _res, next) => {
-    initDb().then(() => next(), next);
+    ensureDatabaseReady().then(() => next(), next);
   });
 
   app.use(attachRequestContext);
@@ -59,21 +60,60 @@ export function createApp() {
 }
 
 /**
- * Prepare the database and warn if it has no users yet.
- *
- * On a hosted database the schema is applied by `npm run db:migrate` from a
- * machine that has the credentials, not on every cold start — a serverless
- * instance should not be running DDL while a customer is waiting at the till.
+ * How many users exist. Returns null when the table is not there yet, which is
+ * how a never-initialised database announces itself — the error text differs per
+ * driver, so the absence is inferred from the failure rather than parsed out of it.
  */
+async function countUsers() {
+  try {
+    const row = await getDb().prepare('SELECT COUNT(*) AS n FROM users').get();
+    return row ? row.n : 0;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Bring an empty hosted database up on its own.
+ *
+ * A serverless platform gives no startup hook and runs many instances, so this
+ * has to happen on a request — but only ever once. `bootstrap` caches the
+ * promise, so concurrent cold-start requests await the same work instead of
+ * racing to seed, and every later request costs one already-resolved promise.
+ *
+ * Only the baseline is seeded. A public URL must not come up populated with
+ * example products; that stays an explicit `npm run db:demo`.
+ */
+let bootstrap = null;
+
+async function bootstrapHostedDatabase() {
+  const existing = await countUsers();
+  if (existing !== null && existing > 0) return;
+
+  console.log('Hosted database is empty — applying the schema and seeding the administrator…');
+  await applySchema();
+  await seedBaseline();
+  console.log('✔ Hosted database ready. Sign in as admin / admin123 and change that password.');
+}
+
+/** Idempotent, cheap after the first call. Awaited by the request middleware. */
+export async function ensureDatabaseReady() {
+  await initDb();
+  if (!isHostedDb()) return;
+  bootstrap = bootstrap || bootstrapHostedDatabase().catch((error) => {
+    // Do not cache a failure: the next request should be able to try again.
+    bootstrap = null;
+    throw error;
+  });
+  await bootstrap;
+}
+
+/** Startup path for a local run, where a real `listen()` happens. */
 async function prepareDatabase() {
   await initDb();
 
   if (isHostedDb()) {
-    const { n } = await getDb().prepare('SELECT COUNT(*) AS n FROM users').get()
-      .catch(() => ({ n: 0 }));
-    if (n === 0) {
-      console.warn('\n⚠  Hosted database looks empty. Run `npm run setup` against it once.\n');
-    }
+    await ensureDatabaseReady();
     return;
   }
 
@@ -82,8 +122,7 @@ async function prepareDatabase() {
   }
   await applySchema();
 
-  const { n } = await getDb().prepare('SELECT COUNT(*) AS n FROM users').get();
-  if (n === 0) {
+  if ((await countUsers()) === 0) {
     console.warn('\n⚠  No users found. Run `npm run db:seed` before signing in.\n');
   }
 }

@@ -7,7 +7,6 @@
  * presented as promises so the layers above can be written once and run against
  * either driver.
  */
-import fs from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { normaliseParams, normaliseRow } from './values.js';
 
@@ -70,8 +69,8 @@ export function createSqliteDriver({ file }) {
       db.exec(sql);
     },
 
-    async applySchema(schemaFile) {
-      db.exec(fs.readFileSync(schemaFile, 'utf8'));
+    async applySchema(sql) {
+      db.exec(sql);
     },
 
     async begin() {

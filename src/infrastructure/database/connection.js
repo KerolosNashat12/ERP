@@ -8,7 +8,7 @@
  *   libsql  — SQLite spoken over the network (Turso). Required on serverless
  *             hosts, which give a function no durable disk.
  *
- * `schema.sql` is shared byte-for-byte because libSQL *is* SQLite. Only the
+ * The schema is shared byte-for-byte because libSQL *is* SQLite. Only the
  * transport differs, so nothing above this file knows which driver is live.
  *
  * Everything here is async. That is not decoration: a network database cannot
@@ -17,6 +17,7 @@
  */
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { config } from '../../config/index.js';
+import { SCHEMA_SQL } from './schema.js';
 
 let driver = null;
 let facade = null;
@@ -94,7 +95,7 @@ export function supportsFileBackup() {
 
 export async function applySchema() {
   await initDb();
-  await driver.applySchema(config.paths.schema);
+  await driver.applySchema(SCHEMA_SQL);
 }
 
 /**

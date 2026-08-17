@@ -1,3 +1,15 @@
+/**
+ * The database schema, as a JavaScript module rather than a .sql file.
+ *
+ * This is deliberate: serverless bundlers trace `import` statements, not
+ * `fs.readFileSync` calls, so a .sql file read at runtime is silently missing
+ * from the deployed bundle. Keeping the schema as a real module means it is
+ * always shipped, on every platform, with no build step and no bundler config.
+ *
+ * Everything is `IF NOT EXISTS`, so applying it repeatedly is safe.
+ */
+
+export const SCHEMA_SQL = `
 -- =============================================================================
 --  M&M Accessories ERP — Database Schema (SQLite)
 --  All monetary values are stored as REAL and rounded to 2 decimals by the
@@ -467,7 +479,7 @@ CREATE TABLE IF NOT EXISTS sale_payments (
 CREATE INDEX IF NOT EXISTS idx_payments_sale ON sale_payments(sale_id);
 
 -- Returns.
---   * `sale_id` is NULL for a no-receipt return (allowed only when the setting
+--   * 'sale_id' is NULL for a no-receipt return (allowed only when the setting
 --     permits it, and only refunded as store credit).
 --   * Each line records the CONDITION of the item coming back: a resellable item
 --     goes on the shelf, a damaged one is received and immediately written off so
@@ -619,3 +631,7 @@ FROM v_variant_details vd
 CROSS JOIN warehouses w
 LEFT JOIN stock_levels sl ON sl.variant_id = vd.variant_id AND sl.warehouse_id = w.id
 WHERE w.is_active = 1;
+
+`;
+
+export default SCHEMA_SQL;
