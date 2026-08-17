@@ -37,25 +37,43 @@ function wrap(runner) {
 /**
  * `@libsql/client/web` is the pure-JavaScript build: it speaks HTTP and loads no
  * native binary, which is what a serverless bundle wants. The full build is only
- * reached for `file:` URLs, which exist so the hosted code path can be tested
+ * needed for `file:` URLs, which exist so the hosted code path can be tested
  * locally without a Turso account.
+ *
+ * Both specifiers below are written out as literals on purpose. Serverless
+ * bundlers trace `import()` by reading the string, so `import(someVariable)`
+ * resolves at runtime to a module that was never packaged — the deploy installs
+ * the dependency, builds cleanly, and then fails on the first request. Keeping
+ * the strings literal is what makes the tracer include them.
  */
-async function loadClientFactory(url) {
-  const entryPoints = url.startsWith('file:')
-    ? ['@libsql/client', '@libsql/client/web']
-    : ['@libsql/client/web', '@libsql/client'];
+async function loadWebClient() {
+  const module = await import('@libsql/client/web');
+  return module.createClient;
+}
 
-  for (const entry of entryPoints) {
+async function loadFullClient() {
+  const module = await import('@libsql/client');
+  return module.createClient;
+}
+
+async function loadClientFactory(url) {
+  const preferFull = url.startsWith('file:');
+  const attempts = preferFull
+    ? [loadFullClient, loadWebClient]
+    : [loadWebClient, loadFullClient];
+
+  const failures = [];
+  for (const attempt of attempts) {
     try {
-      const module = await import(entry);
-      if (module.createClient) return module.createClient;
-    } catch {
-      // Try the next entry point before giving up.
+      const createClient = await attempt();
+      if (createClient) return createClient;
+    } catch (error) {
+      failures.push(error.message);
     }
   }
   throw new Error(
     'The hosted database driver needs @libsql/client. Run `npm install @libsql/client`, '
-    + 'or unset TURSO_DATABASE_URL to run on the local file instead.',
+    + `or unset TURSO_DATABASE_URL to run on the local file instead. (${failures.join(' | ')})`,
   );
 }
 

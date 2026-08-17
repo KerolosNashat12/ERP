@@ -1,4 +1,3 @@
-Push started Mon 08/17/2026 17:13:19.88
-rm 'src/infrastructure/database/schema.sql'
+Push started Mon 08/17/2026 17:21:09.99
 From https://github.com/KerolosNashat12/ERP
  * branch            main       -> FETCH_HEAD
