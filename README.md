@@ -74,7 +74,7 @@ npm start
 | `npm run dev`       | Start with auto-restart while editing code                       |
 | `npm run backup`    | Write a consistent backup to `data/backups/` (`VACUUM INTO`, safe while trading) |
 | `npm run db:demo`   | Add the demo dataset to an existing database                     |
-| `npm test`          | Run the end-to-end API test suite (server must be running)       |
+| `npm test`          | Run the end-to-end API test suite (starts the app itself)         |
 
 ### Configuration
 
@@ -88,6 +88,22 @@ MM_OPEN_BROWSER=false npm start            # don't auto-open a browser
 
 Setting `MM_HOST=0.0.0.0` lets a second till or the back-office PC use the same
 database over the local network — still with no internet involved.
+
+### Hosting it online as well
+
+The same code runs against either of two databases, chosen by environment:
+
+| Driver | What it is | Where it is used |
+|---|---|---|
+| `sqlite` (default) | a local file, `data/mm-accessories.db` | the shop counter — offline, no account |
+| `libsql` | SQLite over the network (Turso) | serverless hosts, which give a function no disk |
+
+Setting `TURSO_DATABASE_URL` is all it takes to switch. `schema.sql` is shared
+byte-for-byte, because libSQL *is* SQLite — only the transport changes.
+
+**Read `DEPLOY-VERCEL.md` before deploying.** The short version: hosting it
+online means the shop cannot sell without internet, so keep the local install as
+the fallback. The two have separate data and do not sync.
 
 ### Your scanner and printers
 
@@ -402,7 +418,7 @@ copies you choose, or deactivate it.
 
 ## 7. Testing
 
-`tests/smoke.test.js` drives the full commercial cycle against a live server:
+`tests/smoke.test.js` drives the full commercial cycle over HTTP:
 create a product with a size×colour matrix → raise a purchase order → receive it →
 sell with a promo code → look the receipt back up by scanning it → return a good
 item and a damaged one → check the fee rules → issue store credit → try a
@@ -411,9 +427,12 @@ no-receipt return as a cashier and as a manager → run a stock count → void a
 from admin screens. 27 tests, all passing on a clean install.
 
 ```bash
-npm start          # in one terminal
-npm test           # in another
+npm run setup      # a seeded database is all the suite needs
+npm test           # starts the app on a free port and drives it
 ```
+
+Set `MM_TEST_URL` to run the same suite against an instance that is already
+serving — a staging host, or a hosted database.
 
 `tests/ui-check.mjs` is a headless browser pass over every screen in both
 languages; it needs Playwright (`npm i -D playwright`) and is a development aid

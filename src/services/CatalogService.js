@@ -35,24 +35,25 @@ export class CatalogService {
     this.audit = deps.audit || auditService;
   }
 
-  list(query) {
+  async list(query) {
     return this.products.search(query || {});
   }
 
-  get(productId) {
-    const product = this.products.findAggregate(productId);
+  async get(productId) {
+    const product = await this.products.findAggregate(productId);
     if (!product) throw new NotFoundError('Product', productId);
     return product;
   }
 
   /** Cartesian product of the selected attribute values — the variant matrix. */
-  generateCombinations(attributeIds = []) {
-    const groups = attributeIds
-      .map((id) => ({
-        attribute: this.attributes.requireById(id, 'attribute'),
-        values: this.attributeValues.byAttribute(id).filter((v) => v.is_active),
-      }))
-      .filter((g) => g.values.length > 0);
+  async generateCombinations(attributeIds = []) {
+    // Built with a loop rather than map+filter: both reads per attribute await.
+    const groups = [];
+    for (const id of attributeIds) {
+      const attribute = await this.attributes.requireById(id, 'attribute');
+      const values = (await this.attributeValues.byAttribute(id)).filter((v) => v.is_active);
+      if (values.length > 0) groups.push({ attribute, values });
+    }
 
     if (!groups.length) return [];
 
@@ -91,15 +92,15 @@ export class CatalogService {
    * Create or replace a product together with its variants.
    * @param {object} payload product fields + { attribute_ids, variants }
    */
-  save(payload, context = {}, productId = null) {
-    return transaction(() => {
+  async save(payload, context = {}, productId = null) {
+    return transaction(async () => {
       const isUpdate = Boolean(productId);
-      const before = isUpdate ? this.products.findAggregate(productId) : null;
+      const before = isUpdate ? await this.products.findAggregate(productId) : null;
       if (isUpdate && !before) throw new NotFoundError('Product', productId);
 
       const skuPrefix = normalisePrefix(payload.sku_prefix);
       if (!skuPrefix) throw new ValidationError('SKU prefix is required');
-      if (this.products.exists('sku_prefix', skuPrefix, productId)) {
+      if (await this.products.exists('sku_prefix', skuPrefix, productId)) {
         throw new ConflictError(`SKU prefix "${skuPrefix}" is already used`);
       }
 
@@ -123,14 +124,14 @@ export class CatalogService {
       };
 
       const product = isUpdate
-        ? this.products.update(productId, productData)
-        : this.products.create({ ...productData, created_by: context.actor?.id || null });
+        ? await this.products.update(productId, productData)
+        : await this.products.create({ ...productData, created_by: context.actor?.id || null });
 
-      this.#syncAttributes(product.id, payload.attribute_ids || []);
-      this.#syncVariants(product, payload.variants || [], payload.attribute_ids || []);
+      await this.#syncAttributes(product.id, payload.attribute_ids || []);
+      await this.#syncVariants(product, payload.variants || [], payload.attribute_ids || []);
 
-      const after = this.products.findAggregate(product.id);
-      this.audit.recordChange(context, {
+      const after = await this.products.findAggregate(product.id);
+      await this.audit.recordChange(context, {
         action: isUpdate ? 'UPDATE' : 'CREATE',
         module: 'products',
         entityType: 'product',
@@ -143,21 +144,23 @@ export class CatalogService {
     });
   }
 
-  #syncAttributes(productId, attributeIds) {
+  async #syncAttributes(productId, attributeIds) {
     const db = this.products.db;
-    db.prepare('DELETE FROM product_attributes WHERE product_id = ?').run(productId);
+    await db.prepare('DELETE FROM product_attributes WHERE product_id = ?').run(productId);
     const insert = db.prepare(
       'INSERT INTO product_attributes (product_id, attribute_id, display_order) VALUES (?, ?, ?)',
     );
-    attributeIds.forEach((attributeId, index) => insert.run(productId, attributeId, index));
+    for (const [index, attributeId] of attributeIds.entries()) {
+      await insert.run(productId, attributeId, index);
+    }
   }
 
-  #syncVariants(product, variants, attributeIds) {
+  async #syncVariants(product, variants, attributeIds) {
     if (!variants.length) {
       throw new BusinessRuleError('A product needs at least one variant (add a default one if it has no options)');
     }
 
-    const existing = this.variants.byProduct(product.id);
+    const existing = await this.variants.byProduct(product.id);
     const keptIds = new Set();
     const seenSkus = new Set();
 
@@ -168,10 +171,11 @@ export class CatalogService {
       }));
 
       // Enrich options so SKU + label can be generated server-side.
-      const enriched = options.map((o) => {
-        const value = this.attributeValues.requireById(o.attribute_value_id, 'attribute value');
-        return { ...o, value_code: value.code, value_en: value.value_en, value_ar: value.value_ar };
-      });
+      const enriched = [];
+      for (const o of options) {
+        const value = await this.attributeValues.requireById(o.attribute_value_id, 'attribute value');
+        enriched.push({ ...o, value_code: value.code, value_en: value.value_en, value_ar: value.value_ar });
+      }
 
       if (attributeIds.length && enriched.length !== attributeIds.length) {
         throw new BusinessRuleError('Every variant must define a value for each selected attribute');
@@ -196,48 +200,57 @@ export class CatalogService {
         is_active: input.is_active === false || input.is_active === 0 ? 0 : 1,
       };
 
-      if (this.variants.exists('sku', data.sku, input.id || null)) {
+      if (await this.variants.exists('sku', data.sku, input.id || null)) {
         throw new ConflictError(`SKU "${data.sku}" is already used by another product`);
       }
-      if (data.barcode && this.variants.exists('barcode', data.barcode, input.id || null)) {
+      if (data.barcode && await this.variants.exists('barcode', data.barcode, input.id || null)) {
         throw new ConflictError(`Barcode "${data.barcode}" is already used`);
       }
 
       const saved = input.id
-        ? this.variants.update(input.id, data)
-        : this.variants.create(data);
-      this.variants.replaceOptions(saved.id, enriched);
+        ? await this.variants.update(input.id, data)
+        : await this.variants.create(data);
+      await this.variants.replaceOptions(saved.id, enriched);
       keptIds.add(saved.id);
     }
 
     for (const old of existing) {
       if (keptIds.has(old.id)) continue;
-      if (this.variants.isReferenced(old.id)) {
-        this.variants.update(old.id, { is_active: 0 });
+      if (await this.variants.isReferenced(old.id)) {
+        await this.variants.update(old.id, { is_active: 0 });
       } else {
-        this.variants.remove(old.id);
+        await this.variants.remove(old.id);
       }
     }
   }
 
-  remove(productId, context = {}) {
-    return transaction(() => {
-      const product = this.products.requireById(productId, 'product');
-      const variants = this.variants.byProduct(productId);
-      const referenced = variants.some((v) => this.variants.isReferenced(v.id));
+  async remove(productId, context = {}) {
+    return transaction(async () => {
+      const product = await this.products.requireById(productId, 'product');
+      const variants = await this.variants.byProduct(productId);
+
+      // `some()` cannot await — a promise is always truthy, which would have
+      // deactivated every product. Loop instead, stopping at the first hit.
+      let referenced = false;
+      for (const v of variants) {
+        if (await this.variants.isReferenced(v.id)) {
+          referenced = true;
+          break;
+        }
+      }
 
       if (referenced) {
-        this.products.update(productId, { is_active: 0 });
-        for (const v of variants) this.variants.update(v.id, { is_active: 0 });
-        this.audit.recordChange(context, {
+        await this.products.update(productId, { is_active: 0 });
+        for (const v of variants) await this.variants.update(v.id, { is_active: 0 });
+        await this.audit.recordChange(context, {
           action: 'DEACTIVATE', module: 'products', entityType: 'product', entityId: productId,
           entityLabel: product.name_en, before: product,
         });
         return { deleted: false, deactivated: true };
       }
 
-      this.products.remove(productId);
-      this.audit.recordChange(context, {
+      await this.products.remove(productId);
+      await this.audit.recordChange(context, {
         action: 'DELETE', module: 'products', entityType: 'product', entityId: productId,
         entityLabel: product.name_en, before: product,
       });
@@ -250,9 +263,12 @@ export class CatalogService {
    * live stock and QR payloads, how it has been trading, and where it has been.
    * Assembled here so the screen is one request rather than six.
    */
-  overview(productId, { days = 90 } = {}) {
-    const product = this.get(productId);
-    const stock = this.products.variantStock(productId);
+  async overview(productId, { days = 90 } = {}) {
+    // Nothing here writes, so the reads can overlap.
+    const [product, stock] = await Promise.all([
+      this.get(productId),
+      this.products.variantStock(productId),
+    ]);
     const stockByVariant = new Map(stock.map((row) => [row.variant_id, row]));
 
     const variants = product.variants.map((variant) => {
@@ -284,6 +300,14 @@ export class CatalogService {
     }), { quantity: 0, stockValue: 0, retailValue: 0, lowCount: 0, outCount: 0 });
 
     const prices = variants.map((v) => Number(v.selling_price || 0));
+
+    const [performance, sales, purchases, movements, returns] = await Promise.all([
+      this.products.performance(productId, days),
+      this.products.salesHistory(productId),
+      this.products.purchaseHistory(productId),
+      this.products.movementHistory(productId),
+      this.products.returnHistory(productId),
+    ]);
 
     return {
       product: {
@@ -320,30 +344,30 @@ export class CatalogService {
         maxPrice: prices.length ? Math.max(...prices) : 0,
         potentialMargin: round2(totals.retailValue - totals.stockValue),
       },
-      performance: this.products.performance(productId, days),
-      sales: this.products.salesHistory(productId),
-      purchases: this.products.purchaseHistory(productId),
-      movements: this.products.movementHistory(productId),
-      returns: this.products.returnHistory(productId),
+      performance,
+      sales,
+      purchases,
+      movements,
+      returns,
     };
   }
 
   /** Scanner + POS lookups. */
-  findByCode(code) {
-    const variant = this.variants.findByCode(String(code || '').trim());
+  async findByCode(code) {
+    const variant = await this.variants.findByCode(String(code || '').trim());
     if (!variant) throw new NotFoundError('Item with code', code);
     return variant;
   }
 
-  lookup(term, warehouseId) {
+  async lookup(term, warehouseId) {
     if (!term || String(term).length < 1) return [];
     return this.variants.lookup(String(term).trim(), 25, warehouseId || null);
   }
 
-  variantDetails(variantId) {
-    const details = this.variants.details(variantId);
+  async variantDetails(variantId) {
+    const details = await this.variants.details(variantId);
     if (!details) throw new NotFoundError('Variant', variantId);
-    const stock = this.variants.db.prepare(`
+    const stock = await this.variants.db.prepare(`
       SELECT sl.*, w.name_en AS warehouse_name_en, w.name_ar AS warehouse_name_ar
       FROM stock_levels sl JOIN warehouses w ON w.id = sl.warehouse_id
       WHERE sl.variant_id = ?
@@ -352,24 +376,24 @@ export class CatalogService {
   }
 
   /** Bulk price update — a real time-saver when a supplier raises prices. */
-  bulkUpdatePrices({ variantIds = [], mode = 'percent', field = 'selling_price', value = 0 }, context = {}) {
+  async bulkUpdatePrices({ variantIds = [], mode = 'percent', field = 'selling_price', value = 0 }, context = {}) {
     if (!variantIds.length) throw new ValidationError('Select at least one variant');
     if (!['selling_price', 'cost_price', 'wholesale_price'].includes(field)) {
       throw new ValidationError('Unsupported price field');
     }
-    return transaction(() => {
+    return transaction(async () => {
       let updated = 0;
       for (const id of variantIds) {
-        const variant = this.variants.findById(id);
+        const variant = await this.variants.findById(id);
         if (!variant) continue;
         const current = Number(variant[field] || 0);
         const next = mode === 'percent'
           ? round2(current * (1 + Number(value) / 100))
           : (mode === 'set' ? round2(Number(value)) : round2(current + Number(value)));
-        this.variants.update(id, { [field]: Math.max(next, 0) });
+        await this.variants.update(id, { [field]: Math.max(next, 0) });
         updated += 1;
       }
-      this.audit.record({
+      await this.audit.record({
         action: 'BULK_UPDATE', module: 'products', entityType: 'product_variant',
         entityLabel: `${updated} variants`, after: { mode, field, value, variantIds },
         actor: context.actor, request: context.request,

@@ -7,64 +7,80 @@ const today = () => new Date().toISOString().slice(0, 10);
 const daysAgo = (n) => new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 10);
 
 export class DashboardService {
-  overview({ warehouseId = null } = {}) {
+  async overview({ warehouseId = null } = {}) {
     const db = getDb();
     const sales = repositories.sales;
 
-    const todayTotals = sales.salesTotals({ dateFrom: today(), dateTo: today(), warehouseId });
-    const monthTotals = sales.salesTotals({ dateFrom: today().slice(0, 8) + '01', dateTo: today(), warehouseId });
-    const week = sales.salesTotals({ dateFrom: daysAgo(6), dateTo: today(), warehouseId });
-    const stock = repositories.inventory.totalStockValue(warehouseId);
+    // Nothing on this screen depends on anything else on it, so the whole home
+    // page costs one round trip instead of sixteen on a networked database.
+    const [
+      todayTotals, monthTotals, week, stock,
+      trend, topProducts, lowStock, lowStockAll, recentSales,
+      pendingPurchases, receivables,
+      productCount, variantCount, customerCount, supplierCount, activePromotionCount,
+    ] = await Promise.all([
+      sales.salesTotals({ dateFrom: today(), dateTo: today(), warehouseId }),
+      sales.salesTotals({ dateFrom: today().slice(0, 8) + '01', dateTo: today(), warehouseId }),
+      sales.salesTotals({ dateFrom: daysAgo(6), dateTo: today(), warehouseId }),
+      repositories.inventory.totalStockValue(warehouseId),
 
-    const trend = db.prepare(`
-      SELECT date(sale_date) AS day,
-             ROUND(SUM(total_amount),2) AS revenue,
-             ROUND(SUM(total_amount - total_cost),2) AS profit,
-             COUNT(*) AS invoices
-      FROM sales
-      WHERE status='completed' AND date(sale_date) >= date(?)
-      ${warehouseId ? 'AND warehouse_id = ?' : ''}
-      GROUP BY day ORDER BY day
-    `).all(...(warehouseId ? [daysAgo(29), warehouseId] : [daysAgo(29)]));
+      db.prepare(`
+        SELECT date(sale_date) AS day,
+               ROUND(SUM(total_amount),2) AS revenue,
+               ROUND(SUM(total_amount - total_cost),2) AS profit,
+               COUNT(*) AS invoices
+        FROM sales
+        WHERE status='completed' AND date(sale_date) >= date(?)
+        ${warehouseId ? 'AND warehouse_id = ?' : ''}
+        GROUP BY day ORDER BY day
+      `).all(...(warehouseId ? [daysAgo(29), warehouseId] : [daysAgo(29)])),
 
-    const topProducts = db.prepare(`
-      SELECT l.sku, l.description, ROUND(SUM(l.quantity),2) AS units,
-             ROUND(SUM(l.line_total),2) AS revenue
-      FROM sale_lines l JOIN sales s ON s.id = l.sale_id AND s.status='completed'
-      WHERE date(s.sale_date) >= date(?)
-      GROUP BY l.variant_id ORDER BY revenue DESC LIMIT 8
-    `).all(daysAgo(29));
+      db.prepare(`
+        SELECT l.sku, l.description, ROUND(SUM(l.quantity),2) AS units,
+               ROUND(SUM(l.line_total),2) AS revenue
+        FROM sale_lines l JOIN sales s ON s.id = l.sale_id AND s.status='completed'
+        WHERE date(s.sale_date) >= date(?)
+        GROUP BY l.variant_id ORDER BY revenue DESC LIMIT 8
+      `).all(daysAgo(29)),
 
-    const lowStock = repositories.inventory.lowStock(warehouseId, 10);
+      repositories.inventory.lowStock(warehouseId, 10),
+      repositories.inventory.lowStock(warehouseId, 1000),
 
-    const recentSales = db.prepare(`
-      SELECT s.id, s.invoice_no, s.sale_date, s.total_amount, s.payment_method, s.status,
-             COALESCE(c.name, 'Walk-in') AS customer_name, u.full_name AS cashier_name
-      FROM sales s
-      LEFT JOIN customers c ON c.id = s.customer_id
-      LEFT JOIN users u ON u.id = s.created_by
-      ORDER BY s.id DESC LIMIT 8
-    `).all();
+      db.prepare(`
+        SELECT s.id, s.invoice_no, s.sale_date, s.total_amount, s.payment_method, s.status,
+               COALESCE(c.name, 'Walk-in') AS customer_name, u.full_name AS cashier_name
+        FROM sales s
+        LEFT JOIN customers c ON c.id = s.customer_id
+        LEFT JOIN users u ON u.id = s.created_by
+        ORDER BY s.id DESC LIMIT 8
+      `).all(),
 
-    const pendingPurchases = db.prepare(`
-      SELECT COUNT(*) AS n, COALESCE(SUM(total_amount),0) AS value
-      FROM purchase_orders WHERE status IN ('ordered','partially_received')
-    `).get();
+      db.prepare(`
+        SELECT COUNT(*) AS n, COALESCE(SUM(total_amount),0) AS value
+        FROM purchase_orders WHERE status IN ('ordered','partially_received')
+      `).get(),
 
-    const receivables = db.prepare(`
-      SELECT COALESCE(SUM(total_amount - paid_amount),0) AS value, COUNT(*) AS n
-      FROM sales WHERE status='completed' AND total_amount - paid_amount > 0.01
-    `).get();
+      db.prepare(`
+        SELECT COALESCE(SUM(total_amount - paid_amount),0) AS value, COUNT(*) AS n
+        FROM sales WHERE status='completed' AND total_amount - paid_amount > 0.01
+      `).get(),
 
-    const counts = {
-      products: db.prepare('SELECT COUNT(*) AS n FROM products WHERE is_active = 1').get().n,
-      variants: db.prepare('SELECT COUNT(*) AS n FROM product_variants WHERE is_active = 1').get().n,
-      customers: db.prepare('SELECT COUNT(*) AS n FROM customers WHERE is_active = 1').get().n,
-      suppliers: db.prepare('SELECT COUNT(*) AS n FROM suppliers WHERE is_active = 1').get().n,
-      activePromotions: db.prepare(`
+      db.prepare('SELECT COUNT(*) AS n FROM products WHERE is_active = 1').get(),
+      db.prepare('SELECT COUNT(*) AS n FROM product_variants WHERE is_active = 1').get(),
+      db.prepare('SELECT COUNT(*) AS n FROM customers WHERE is_active = 1').get(),
+      db.prepare('SELECT COUNT(*) AS n FROM suppliers WHERE is_active = 1').get(),
+      db.prepare(`
         SELECT COUNT(*) AS n FROM promotions
         WHERE is_active = 1 AND (ends_at IS NULL OR date(ends_at) >= date('now'))
-      `).get().n,
+      `).get(),
+    ]);
+
+    const counts = {
+      products: productCount.n,
+      variants: variantCount.n,
+      customers: customerCount.n,
+      suppliers: supplierCount.n,
+      activePromotions: activePromotionCount.n,
     };
 
     return {
@@ -78,7 +94,7 @@ export class DashboardService {
         averageBasket: round2(monthTotals.average_basket),
         stockValue: round2(stock.v),
         stockUnits: round2(stock.q),
-        lowStockCount: repositories.inventory.lowStock(warehouseId, 1000).length,
+        lowStockCount: lowStockAll.length,
         openPurchaseOrders: pendingPurchases.n,
         openPurchaseValue: round2(pendingPurchases.value),
         receivables: round2(receivables.value),
@@ -93,11 +109,34 @@ export class DashboardService {
   }
 
   /** Alert feed — the things a manager should act on today. */
-  alerts({ warehouseId = null } = {}) {
+  async alerts({ warehouseId = null } = {}) {
     const db = getDb();
     const alerts = [];
 
-    const low = repositories.inventory.lowStock(warehouseId, 1000);
+    // Four independent counts, one round trip; the feed is assembled in a fixed
+    // order below so the manager always reads the same list in the same places.
+    const [low, overdue, expiring, staleDrafts] = await Promise.all([
+      repositories.inventory.lowStock(warehouseId, 1000),
+
+      db.prepare(`
+        SELECT COUNT(*) AS n, COALESCE(SUM(total_amount - paid_amount),0) AS value
+        FROM sales
+        WHERE status='completed' AND total_amount - paid_amount > 0.01
+          AND julianday('now') - julianday(sale_date) > 30
+      `).get(),
+
+      db.prepare(`
+        SELECT COUNT(*) AS n FROM promotions
+        WHERE is_active = 1 AND ends_at IS NOT NULL
+          AND date(ends_at) BETWEEN date('now') AND date('now', '+7 days')
+      `).get(),
+
+      db.prepare(`
+        SELECT COUNT(*) AS n FROM purchase_orders
+        WHERE status='ordered' AND expected_date IS NOT NULL AND date(expected_date) < date('now')
+      `).get(),
+    ]);
+
     if (low.length) {
       alerts.push({
         type: 'low_stock',
@@ -109,12 +148,6 @@ export class DashboardService {
       });
     }
 
-    const overdue = db.prepare(`
-      SELECT COUNT(*) AS n, COALESCE(SUM(total_amount - paid_amount),0) AS value
-      FROM sales
-      WHERE status='completed' AND total_amount - paid_amount > 0.01
-        AND julianday('now') - julianday(sale_date) > 30
-    `).get();
     if (overdue.n) {
       alerts.push({
         type: 'overdue_receivables',
@@ -126,11 +159,6 @@ export class DashboardService {
       });
     }
 
-    const expiring = db.prepare(`
-      SELECT COUNT(*) AS n FROM promotions
-      WHERE is_active = 1 AND ends_at IS NOT NULL
-        AND date(ends_at) BETWEEN date('now') AND date('now', '+7 days')
-    `).get();
     if (expiring.n) {
       alerts.push({
         type: 'promotions_expiring',
@@ -142,10 +170,6 @@ export class DashboardService {
       });
     }
 
-    const staleDrafts = db.prepare(`
-      SELECT COUNT(*) AS n FROM purchase_orders
-      WHERE status='ordered' AND expected_date IS NOT NULL AND date(expected_date) < date('now')
-    `).get();
     if (staleDrafts.n) {
       alerts.push({
         type: 'late_deliveries',

@@ -18,7 +18,7 @@ export class SalesRepository extends BaseRepository {
     });
   }
 
-  listDetailed({ search = '', status, customerId, userId, warehouseId, paymentStatus,
+  async listDetailed({ search = '', status, customerId, userId, warehouseId, paymentStatus,
     dateFrom, dateTo, page = 1, pageSize = 25 } = {}) {
     const where = ['1 = 1'];
     const params = [];
@@ -32,10 +32,10 @@ export class SalesRepository extends BaseRepository {
     if (dateTo) { where.push('date(s.sale_date) <= date(?)'); params.push(dateTo); }
     const whereSql = `WHERE ${where.join(' AND ')}`;
 
-    const total = this.db.prepare(`SELECT COUNT(*) AS n FROM sales s ${whereSql}`).get(...params).n;
+    const total = (await this.db.prepare(`SELECT COUNT(*) AS n FROM sales s ${whereSql}`).get(...params)).n;
     const size = Number(pageSize) || 25;
     const current = Math.max(Number(page) || 1, 1);
-    const rows = this.db.prepare(`
+    const rows = await this.db.prepare(`
       SELECT s.*, c.name AS customer_name, c.phone AS customer_phone,
              w.name_en AS warehouse_name, u.full_name AS cashier_name,
              (SELECT COUNT(*) FROM sale_lines l WHERE l.sale_id = s.id) AS line_count
@@ -47,7 +47,7 @@ export class SalesRepository extends BaseRepository {
       ORDER BY s.id DESC LIMIT ? OFFSET ?
     `).all(...params, size, (current - 1) * size);
 
-    const summary = this.db.prepare(`
+    const summary = await this.db.prepare(`
       SELECT COALESCE(SUM(CASE WHEN s.status='completed' THEN s.total_amount ELSE 0 END),0) AS total_sales,
              COALESCE(SUM(CASE WHEN s.status='completed' THEN s.total_amount - s.total_cost ELSE 0 END),0) AS gross_profit,
              COALESCE(SUM(CASE WHEN s.status='completed' THEN s.total_amount - s.paid_amount ELSE 0 END),0) AS outstanding
@@ -57,8 +57,8 @@ export class SalesRepository extends BaseRepository {
     return { rows, total, summary, page: current, pageSize: size, pages: Math.ceil(total / size) || 1 };
   }
 
-  findAggregate(id) {
-    const sale = this.db.prepare(`
+  async findAggregate(id) {
+    const sale = await this.db.prepare(`
       SELECT s.*, c.name AS customer_name, c.phone AS customer_phone, c.address AS customer_address,
              c.customer_group, w.name_en AS warehouse_name, u.full_name AS cashier_name
       FROM sales s
@@ -68,26 +68,26 @@ export class SalesRepository extends BaseRepository {
       WHERE s.id = ?
     `).get(id);
     if (!sale) return null;
-    sale.lines = this.db.prepare(`
+    sale.lines = await this.db.prepare(`
       SELECT l.*, vd.product_name_en, vd.product_name_ar, vd.variant_label, vd.barcode, vd.unit
       FROM sale_lines l
       LEFT JOIN v_variant_details vd ON vd.variant_id = l.variant_id
       WHERE l.sale_id = ? ORDER BY l.id
     `).all(id);
-    sale.payments = this.db
+    sale.payments = await this.db
       .prepare('SELECT * FROM sale_payments WHERE sale_id = ? ORDER BY id')
       .all(id);
-    sale.returns = this.db
+    sale.returns = await this.db
       .prepare('SELECT * FROM sales_returns WHERE sale_id = ? ORDER BY id')
       .all(id);
     return sale;
   }
 
-  findByInvoiceNo(invoiceNo) {
+  async findByInvoiceNo(invoiceNo) {
     return this.findBy('invoice_no', invoiceNo);
   }
 
-  insertLines(saleId, lines) {
+  async insertLines(saleId, lines) {
     const insert = this.db.prepare(`
       INSERT INTO sale_lines
         (sale_id, variant_id, sku, description, quantity, unit_price, unit_cost,
@@ -95,27 +95,29 @@ export class SalesRepository extends BaseRepository {
       VALUES (@sale_id, @variant_id, @sku, @description, @quantity, @unit_price, @unit_cost,
               @discount_percent, @discount_amount, @tax_rate, @tax_amount, @line_total)
     `);
-    for (const line of lines) insert.run({ sale_id: saleId, ...line });
+    // Sequential on purpose: line ids are assigned in insert order and the
+    // invoice is read back ordered by id.
+    for (const line of lines) await insert.run({ sale_id: saleId, ...line });
   }
 
-  lines(saleId) {
+  async lines(saleId) {
     return this.db.prepare('SELECT * FROM sale_lines WHERE sale_id = ? ORDER BY id').all(saleId);
   }
 
-  addPayment({ sale_id, amount, method, reference, created_by }) {
-    this.db.prepare(`
+  async addPayment({ sale_id, amount, method, reference, created_by }) {
+    await this.db.prepare(`
       INSERT INTO sale_payments (sale_id, amount, method, reference, created_by)
       VALUES (?, ?, ?, ?, ?)
     `).run(sale_id, amount, method, reference || null, created_by || null);
   }
 
-  incrementReturnedQty(saleLineId, quantity) {
-    this.db.prepare('UPDATE sale_lines SET returned_quantity = returned_quantity + ? WHERE id = ?')
+  async incrementReturnedQty(saleLineId, quantity) {
+    await this.db.prepare('UPDATE sale_lines SET returned_quantity = returned_quantity + ? WHERE id = ?')
       .run(quantity, saleLineId);
   }
 
   /** Dashboard/report aggregates. */
-  salesTotals({ dateFrom, dateTo, warehouseId } = {}) {
+  async salesTotals({ dateFrom, dateTo, warehouseId } = {}) {
     const where = ["s.status = 'completed'"];
     const params = [];
     if (dateFrom) { where.push('date(s.sale_date) >= date(?)'); params.push(dateFrom); }
@@ -149,7 +151,7 @@ export class SalesReturnRepository extends BaseRepository {
     });
   }
 
-  listDetailed({ search = '', reasonCode, refundMethod, returnType, dateFrom, dateTo,
+  async listDetailed({ search = '', reasonCode, refundMethod, returnType, dateFrom, dateTo,
     page = 1, pageSize = 25 } = {}) {
     const where = ['1 = 1'];
     const params = [];
@@ -165,14 +167,14 @@ export class SalesReturnRepository extends BaseRepository {
     if (dateTo) { where.push('date(r.return_date) <= date(?)'); params.push(dateTo); }
     const whereSql = `WHERE ${where.join(' AND ')}`;
 
-    const total = this.db.prepare(`
+    const total = (await this.db.prepare(`
       SELECT COUNT(*) AS n FROM sales_returns r
       LEFT JOIN customers c ON c.id = r.customer_id ${whereSql}
-    `).get(...params).n;
+    `).get(...params)).n;
     const size = Number(pageSize) || 25;
     const current = Math.max(Number(page) || 1, 1);
 
-    const rows = this.db.prepare(`
+    const rows = await this.db.prepare(`
       SELECT r.*, s.invoice_no AS sale_invoice_no, c.name AS customer_name, c.phone AS customer_phone,
              u.full_name AS created_by_name,
              (SELECT COUNT(*) FROM sales_return_lines l WHERE l.return_id = r.id) AS line_count,
@@ -184,7 +186,7 @@ export class SalesReturnRepository extends BaseRepository {
       ${whereSql} ORDER BY r.id DESC LIMIT ? OFFSET ?
     `).all(...params, size, (current - 1) * size);
 
-    const summary = this.db.prepare(`
+    const summary = await this.db.prepare(`
       SELECT COALESCE(SUM(r.total_amount),0) AS refunded,
              COALESCE(SUM(r.items_restocked),0) AS restocked,
              COALESCE(SUM(r.items_written_off),0) AS written_off
@@ -194,7 +196,7 @@ export class SalesReturnRepository extends BaseRepository {
     return { rows, total, summary, page: current, pageSize: size, pages: Math.ceil(total / size) || 1 };
   }
 
-  insertLines(returnId, lines) {
+  async insertLines(returnId, lines) {
     const insert = this.db.prepare(`
       INSERT INTO sales_return_lines
         (return_id, sale_line_id, variant_id, sku, description, quantity,
@@ -202,15 +204,17 @@ export class SalesReturnRepository extends BaseRepository {
       VALUES (@return_id, @sale_line_id, @variant_id, @sku, @description, @quantity,
               @unit_price, @unit_cost, @tax_amount, @line_total, @condition, @notes)
     `);
+    // Sequential on purpose: line ids are assigned in insert order and the
+    // return is read back ordered by id.
     for (const line of lines) {
-      insert.run({
+      await insert.run({
         return_id: returnId, sale_line_id: null, notes: null, condition: 'resellable', ...line,
       });
     }
   }
 
-  findAggregate(id) {
-    const record = this.db.prepare(`
+  async findAggregate(id) {
+    const record = await this.db.prepare(`
       SELECT r.*, s.invoice_no AS sale_invoice_no, s.sale_date,
              c.name AS customer_name, c.phone AS customer_phone,
              u.full_name AS created_by_name
@@ -221,7 +225,7 @@ export class SalesReturnRepository extends BaseRepository {
       WHERE r.id = ?
     `).get(id);
     if (!record) return null;
-    record.lines = this.db.prepare(`
+    record.lines = await this.db.prepare(`
       SELECT l.*, vd.product_name_en, vd.product_name_ar, vd.variant_label
       FROM sales_return_lines l
       LEFT JOIN v_variant_details vd ON vd.variant_id = l.variant_id
@@ -231,7 +235,7 @@ export class SalesReturnRepository extends BaseRepository {
   }
 
   /** Reason breakdown — feeds the returns report and quality conversations with suppliers. */
-  reasonBreakdown({ dateFrom, dateTo } = {}) {
+  async reasonBreakdown({ dateFrom, dateTo } = {}) {
     const where = ['1 = 1'];
     const params = [];
     if (dateFrom) { where.push('date(r.return_date) >= date(?)'); params.push(dateFrom); }

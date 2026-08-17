@@ -14,7 +14,7 @@ export class PurchaseOrderRepository extends BaseRepository {
     });
   }
 
-  listDetailed({ search = '', status, supplierId, dateFrom, dateTo, page = 1, pageSize = 25 } = {}) {
+  async listDetailed({ search = '', status, supplierId, dateFrom, dateTo, page = 1, pageSize = 25 } = {}) {
     const where = ['1 = 1'];
     const params = [];
     if (search) { where.push('po.po_number LIKE ?'); params.push(`%${search}%`); }
@@ -24,10 +24,10 @@ export class PurchaseOrderRepository extends BaseRepository {
     if (dateTo) { where.push('po.order_date <= ?'); params.push(dateTo); }
     const whereSql = `WHERE ${where.join(' AND ')}`;
 
-    const total = this.db.prepare(`SELECT COUNT(*) AS n FROM purchase_orders po ${whereSql}`).get(...params).n;
+    const total = (await this.db.prepare(`SELECT COUNT(*) AS n FROM purchase_orders po ${whereSql}`).get(...params)).n;
     const size = Number(pageSize) || 25;
     const current = Math.max(Number(page) || 1, 1);
-    const rows = this.db.prepare(`
+    const rows = await this.db.prepare(`
       SELECT po.*, s.name_en AS supplier_name, s.name_ar AS supplier_name_ar,
              w.name_en AS warehouse_name, u.full_name AS created_by_name,
              (SELECT COUNT(*) FROM purchase_order_lines l WHERE l.purchase_order_id = po.id) AS line_count
@@ -39,7 +39,7 @@ export class PurchaseOrderRepository extends BaseRepository {
       ORDER BY po.id DESC LIMIT ? OFFSET ?
     `).all(...params, size, (current - 1) * size);
 
-    const summary = this.db.prepare(`
+    const summary = await this.db.prepare(`
       SELECT COALESCE(SUM(po.total_amount),0) AS total_value,
              COALESCE(SUM(po.total_amount - po.paid_amount),0) AS outstanding
       FROM purchase_orders po ${whereSql}
@@ -48,8 +48,8 @@ export class PurchaseOrderRepository extends BaseRepository {
     return { rows, total, summary, page: current, pageSize: size, pages: Math.ceil(total / size) || 1 };
   }
 
-  findAggregate(id) {
-    const order = this.db.prepare(`
+  async findAggregate(id) {
+    const order = await this.db.prepare(`
       SELECT po.*, s.name_en AS supplier_name, s.name_ar AS supplier_name_ar,
              s.phone AS supplier_phone, s.email AS supplier_email, s.address AS supplier_address,
              w.name_en AS warehouse_name, u.full_name AS created_by_name
@@ -60,7 +60,7 @@ export class PurchaseOrderRepository extends BaseRepository {
       WHERE po.id = ?
     `).get(id);
     if (!order) return null;
-    order.lines = this.db.prepare(`
+    order.lines = await this.db.prepare(`
       SELECT l.*, vd.sku, vd.barcode, vd.product_name_en, vd.product_name_ar,
              vd.variant_label, vd.unit
       FROM purchase_order_lines l
@@ -70,8 +70,8 @@ export class PurchaseOrderRepository extends BaseRepository {
     return order;
   }
 
-  replaceLines(orderId, lines) {
-    this.db.prepare('DELETE FROM purchase_order_lines WHERE purchase_order_id = ?').run(orderId);
+  async replaceLines(orderId, lines) {
+    await this.db.prepare('DELETE FROM purchase_order_lines WHERE purchase_order_id = ?').run(orderId);
     const insert = this.db.prepare(`
       INSERT INTO purchase_order_lines
         (purchase_order_id, variant_id, quantity_ordered, quantity_received, unit_cost,
@@ -79,19 +79,19 @@ export class PurchaseOrderRepository extends BaseRepository {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     for (const l of lines) {
-      insert.run(orderId, l.variant_id, l.quantity_ordered, l.quantity_received || 0,
+      await insert.run(orderId, l.variant_id, l.quantity_ordered, l.quantity_received || 0,
         l.unit_cost, l.discount_percent || 0, l.tax_rate || 0, l.line_total, l.notes || null);
     }
   }
 
-  lines(orderId) {
+  async lines(orderId) {
     return this.db
       .prepare('SELECT * FROM purchase_order_lines WHERE purchase_order_id = ? ORDER BY id')
       .all(orderId);
   }
 
-  updateLineReceived(lineId, quantityReceived) {
-    this.db.prepare('UPDATE purchase_order_lines SET quantity_received = ? WHERE id = ?')
+  async updateLineReceived(lineId, quantityReceived) {
+    await this.db.prepare('UPDATE purchase_order_lines SET quantity_received = ? WHERE id = ?')
       .run(quantityReceived, lineId);
   }
 }

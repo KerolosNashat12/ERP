@@ -4,14 +4,39 @@
  * Exercises the full commercial cycle: catalogue -> purchase -> receive ->
  * sell (with a promotion) -> return -> report -> audit.
  */
-import test from 'node:test';
+import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
+import { createApp } from '../src/server.js';
+import { initDb, closeDb, supportsFileBackup } from '../src/infrastructure/database/connection.js';
 
-const BASE = process.env.MM_TEST_URL || 'http://127.0.0.1:4000';
+/**
+ * By default the suite starts the app itself on an ephemeral port, so
+ * `npm test` needs nothing but a seeded database. Point MM_TEST_URL at a
+ * running instance to test that one instead.
+ */
+let base = process.env.MM_TEST_URL || '';
+let server = null;
 let cookie = '';
 
+before(async () => {
+  if (base) return;
+  // The database must be open before the first request, exactly as in start().
+  await initDb();
+  const app = createApp();
+  server = await new Promise((resolve) => {
+    const listening = app.listen(0, '127.0.0.1', () => resolve(listening));
+  });
+  base = `http://127.0.0.1:${server.address().port}`;
+});
+
+after(async () => {
+  if (!server) return;
+  await new Promise((resolve) => server.close(resolve));
+  await closeDb();
+});
+
 async function api(path, { method = 'GET', body } = {}) {
-  const res = await fetch(`${BASE}${path}`, {
+  const res = await fetch(`${base}${path}`, {
     method,
     headers: { 'Content-Type': 'application/json', ...(cookie ? { cookie } : {}) },
     body: body ? JSON.stringify(body) : undefined,
@@ -543,7 +568,23 @@ test('role permissions are enforced', async () => {
   cookie = adminCookie;
 });
 
+/**
+ * Backups mean different things per driver: a local file copy on the shop PC,
+ * and the provider's own job on a hosted database. The hosted path must refuse
+ * loudly rather than hand back a file that does not exist, so both are asserted.
+ */
 test('backup can be created and listed', async () => {
+  if (!supportsFileBackup()) {
+    await assert.rejects(
+      () => api('/api/settings/backups', { method: 'POST' }),
+      (error) => /not available on this deployment/i.test(error.message),
+      'a hosted database must refuse a file backup with an explanation',
+    );
+    const list = await api('/api/settings/backups');
+    assert.deepEqual(list.rows, [], 'no local backup files exist on a hosted database');
+    return;
+  }
+
   const created = await api('/api/settings/backups', { method: 'POST' });
   assert.ok(created.file.endsWith('.db'));
   const list = await api('/api/settings/backups');

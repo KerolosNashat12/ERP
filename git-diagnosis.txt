@@ -1,0 +1,53 @@
+Diagnosis started Mon 08/17/2026 16:43:44.01
+
+--- git version ---
+git version 2.55.0.windows.3
+
+--- existing git http config ---
+
+--- windows proxy settings ---
+
+HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Internet Settings
+    ProxyEnable    REG_DWORD    0x0
+
+
+
+ERROR: The system was unable to find the specified registry key or value.
+
+
+ERROR: The system was unable to find the specified registry key or value.
+
+--- proxy environment variables ---
+http_proxy=
+https_proxy=
+
+--- can curl reach github over https? ---
+curl_status=200
+
+--- dns lookup ---
+Non-authoritative answer:
+Server:  dns.google
+Address:  8.8.8.8
+
+Name:    github.com
+Address:  140.82.121.3
+
+
+--- is tcp 443 open to github? ---
+tcp443=True
+
+--- applying fixes ---
+
+set http.sslBackend=schannel
+
+set http.version=HTTP/1.1
+
+no windows proxy configured
+
+--- retry: git ls-remote ---
+bfed97679351d7617a4cd782a81f064b7e599c81	HEAD
+
+CONNECTION OK
+From https://github.com/KerolosNashat12/ERP
+ * branch            main       -> FETCH_HEAD
+ * [new branch]      main       -> origin/main

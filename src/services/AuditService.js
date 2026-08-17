@@ -50,9 +50,9 @@ export class AuditService {
    * @param {string} p.action   CREATE | UPDATE | DELETE | LOGIN | LOGOUT | POST | VOID | ...
    * @param {string} p.module   module key from shared/permissions.js
    */
-  record({ actor, action, module, entityType, entityId, entityLabel, before, after,
+  async record({ actor, action, module, entityType, entityId, entityLabel, before, after,
     status = 'SUCCESS', message, request } = {}) {
-    this.repository.write({
+    await this.repository.write({
       user_id: actor?.id ?? null,
       username: actor?.username ?? null,
       action,
@@ -69,9 +69,9 @@ export class AuditService {
     });
   }
 
-  recordChange(context, { module, entityType, entityId, entityLabel, before, after, action }) {
+  async recordChange(context, { module, entityType, entityId, entityLabel, before, after, action }) {
     const changes = action === 'UPDATE' ? diff(before, after) : { before, after };
-    this.record({
+    await this.record({
       actor: context?.actor,
       request: context?.request,
       action,
@@ -84,15 +84,15 @@ export class AuditService {
     });
   }
 
-  list(query) {
+  async list(query) {
     return this.repository.list(query);
   }
 
-  filters() {
+  async filters() {
     return this.repository.distinctValues();
   }
 
-  activitySummary(days) {
+  async activitySummary(days) {
     return this.repository.activitySummary(days);
   }
 }

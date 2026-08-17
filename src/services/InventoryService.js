@@ -29,9 +29,9 @@ export class InventoryService {
    * Apply one stock change and write its ledger row.
    * @param {object} p
    * @param {number} p.quantity signed quantity (+ receipt, - issue)
-   * @returns {{balance:number, averageCost:number, movementId:number}}
+   * @returns {Promise<{balance:number, averageCost:number, movementId:number}>}
    */
-  postMovement({
+  async postMovement({
     variantId, warehouseId, movementType, quantity, unitCost = null,
     referenceType = null, referenceId = null, referenceNo = null, notes = null,
     actorId = null, allowNegative = null,
@@ -39,16 +39,16 @@ export class InventoryService {
     const qty = Number(quantity);
     if (!Number.isFinite(qty) || qty === 0) throw new ValidationError('Movement quantity must be non-zero');
 
-    const variant = this.variants.findById(variantId);
+    const variant = await this.variants.findById(variantId);
     if (!variant) throw new NotFoundError('Variant', variantId);
-    this.warehouses.requireById(warehouseId, 'warehouse');
+    await this.warehouses.requireById(warehouseId, 'warehouse');
 
-    const level = this.inventory.ensureLevel(variantId, warehouseId);
+    const level = await this.inventory.ensureLevel(variantId, warehouseId);
     const currentQty = Number(level.quantity || 0);
     const currentAvg = Number(level.average_cost || variant.cost_price || 0);
     const newQty = round3(currentQty + qty);
 
-    const negativeAllowed = allowNegative ?? Boolean(this.settings.get('inventory.allow_negative_stock', false));
+    const negativeAllowed = allowNegative ?? Boolean(await this.settings.get('inventory.allow_negative_stock', false));
     if (newQty < 0 && !negativeAllowed) {
       throw new BusinessRuleError(
         `Insufficient stock for ${variant.sku}: on hand ${currentQty}, requested ${Math.abs(qty)}`,
@@ -61,8 +61,8 @@ export class InventoryService {
       ? movingAverageCost(currentQty, currentAvg, qty, cost)
       : currentAvg;
 
-    this.inventory.setLevel(variantId, warehouseId, { quantity: newQty, averageCost: newAvg });
-    const movementId = this.inventory.recordMovement({
+    await this.inventory.setLevel(variantId, warehouseId, { quantity: newQty, averageCost: newAvg });
+    const movementId = await this.inventory.recordMovement({
       variant_id: variantId,
       warehouse_id: warehouseId,
       movement_type: movementType,
@@ -83,39 +83,40 @@ export class InventoryService {
    * The business trades from one location, so nothing above this layer needs to
    * know about warehouses. Everything resolves through here.
    */
-  locationId() {
-    const location = this.warehouses.getDefault();
+  async locationId() {
+    const location = await this.warehouses.getDefault();
     if (!location) throw new NotFoundError('Shop location');
     return location.id;
   }
 
-  availableQuantity(variantId, warehouseId = this.locationId()) {
-    const level = this.inventory.getLevel(variantId, warehouseId);
+  /** A default parameter cannot await, so the location is resolved in the body. */
+  async availableQuantity(variantId, warehouseId = null) {
+    const level = await this.inventory.getLevel(variantId, warehouseId || (await this.locationId()));
     if (!level) return 0;
     return round3(Number(level.quantity) - Number(level.reserved_quantity));
   }
 
-  stockOnHand(query) {
+  async stockOnHand(query) {
     return this.inventory.stockOnHand(query || {});
   }
 
-  lowStock(warehouseId) {
+  async lowStock(warehouseId) {
     return this.inventory.lowStock(warehouseId || null);
   }
 
-  movements(query) {
+  async movements(query) {
     return this.inventory.movements(query || {});
   }
 
   /** Direct single-line correction — used from the stock grid. */
-  quickAdjust({ variantId, warehouseId, newQuantity, reason = 'correction', notes }, context = {}) {
-    return transaction(() => {
-      const location = warehouseId || this.locationId();
-      const level = this.inventory.ensureLevel(variantId, location);
+  async quickAdjust({ variantId, warehouseId, newQuantity, reason = 'correction', notes }, context = {}) {
+    return transaction(async () => {
+      const location = warehouseId || (await this.locationId());
+      const level = await this.inventory.ensureLevel(variantId, location);
       const difference = round3(Number(newQuantity) - Number(level.quantity));
       if (difference === 0) return { changed: false };
-      const variant = this.variants.details(variantId);
-      const result = this.postMovement({
+      const variant = await this.variants.details(variantId);
+      const result = await this.postMovement({
         variantId,
         warehouseId: location,
         movementType: 'adjustment',
@@ -126,7 +127,7 @@ export class InventoryService {
         actorId: context.actor?.id || null,
         allowNegative: false,
       });
-      this.audit.record({
+      await this.audit.record({
         action: 'ADJUST', module: 'inventory', entityType: 'stock_level', entityId: variantId,
         entityLabel: variant?.sku,
         before: { quantity: level.quantity }, after: { quantity: result.balance, reason, notes },
@@ -138,20 +139,20 @@ export class InventoryService {
 
   // -------------------------------------------------------------- adjustments
 
-  listAdjustments(query) {
+  async listAdjustments(query) {
     return this.adjustments.listDetailed(query || {});
   }
 
-  getAdjustment(id) {
-    const adjustment = this.adjustments.findAggregate(id);
+  async getAdjustment(id) {
+    const adjustment = await this.adjustments.findAggregate(id);
     if (!adjustment) throw new NotFoundError('Adjustment', id);
     return adjustment;
   }
 
   /** Build a stock-count sheet pre-filled with system quantities. */
-  buildCountSheet({ warehouseId, brandId, categoryId, search } = {}) {
-    const { rows } = this.inventory.stockOnHand({
-      warehouseId: warehouseId || this.locationId(), brandId, categoryId, search, pageSize: 1000,
+  async buildCountSheet({ warehouseId, brandId, categoryId, search } = {}) {
+    const { rows } = await this.inventory.stockOnHand({
+      warehouseId: warehouseId || (await this.locationId()), brandId, categoryId, search, pageSize: 1000,
     });
     return rows.map((row) => ({
       variant_id: row.variant_id,
@@ -166,8 +167,8 @@ export class InventoryService {
     }));
   }
 
-  saveAdjustment(payload, context = {}, adjustmentId = null) {
-    return transaction(() => {
+  async saveAdjustment(payload, context = {}, adjustmentId = null) {
+    return transaction(async () => {
       const lines = (payload.lines || []).map((l) => ({
         variant_id: l.variant_id,
         system_qty: Number(l.system_qty || 0),
@@ -180,25 +181,25 @@ export class InventoryService {
 
       let adjustment;
       if (adjustmentId) {
-        const existing = this.adjustments.requireById(adjustmentId, 'adjustment');
+        const existing = await this.adjustments.requireById(adjustmentId, 'adjustment');
         if (existing.status !== 'draft') throw new BusinessRuleError('Only draft adjustments can be edited');
-        adjustment = this.adjustments.update(adjustmentId, {
-          warehouse_id: payload.warehouse_id || this.locationId(),
+        adjustment = await this.adjustments.update(adjustmentId, {
+          warehouse_id: payload.warehouse_id || (await this.locationId()),
           reason: payload.reason,
           notes: payload.notes || null,
         });
       } else {
-        adjustment = this.adjustments.create({
-          adjustment_no: this.sequences.next('stock_adjustment'),
-          warehouse_id: payload.warehouse_id || this.locationId(),
+        adjustment = await this.adjustments.create({
+          adjustment_no: await this.sequences.next('stock_adjustment'),
+          warehouse_id: payload.warehouse_id || (await this.locationId()),
           reason: payload.reason || 'stock_take',
           status: 'draft',
           notes: payload.notes || null,
           created_by: context.actor?.id || null,
         });
       }
-      this.adjustments.replaceLines(adjustment.id, lines);
-      this.audit.record({
+      await this.adjustments.replaceLines(adjustment.id, lines);
+      await this.audit.record({
         action: adjustmentId ? 'UPDATE' : 'CREATE', module: 'inventory',
         entityType: 'stock_adjustment', entityId: adjustment.id,
         entityLabel: adjustment.adjustment_no, after: { lines: lines.length, reason: adjustment.reason },
@@ -208,16 +209,17 @@ export class InventoryService {
     });
   }
 
-  postAdjustment(id, context = {}) {
-    return transaction(() => {
-      const adjustment = this.adjustments.findAggregate(id);
+  async postAdjustment(id, context = {}) {
+    return transaction(async () => {
+      const adjustment = await this.adjustments.findAggregate(id);
       if (!adjustment) throw new NotFoundError('Adjustment', id);
       if (adjustment.status !== 'draft') throw new BusinessRuleError('This adjustment is already posted');
 
       let valueImpact = 0;
       for (const line of adjustment.lines) {
         if (!line.difference) continue;
-        this.postMovement({
+        // Sequential: each movement's balance_after builds on the previous one.
+        await this.postMovement({
           variantId: line.variant_id,
           warehouseId: adjustment.warehouse_id,
           movementType: 'adjustment',
@@ -233,12 +235,12 @@ export class InventoryService {
         valueImpact += line.difference * Number(line.unit_cost || 0);
       }
 
-      const updated = this.adjustments.update(id, {
+      const updated = await this.adjustments.update(id, {
         status: 'posted',
         posted_by: context.actor?.id || null,
         posted_at: new Date().toISOString(),
       });
-      this.audit.record({
+      await this.audit.record({
         action: 'POST', module: 'inventory', entityType: 'stock_adjustment', entityId: id,
         entityLabel: adjustment.adjustment_no,
         after: { reason: adjustment.reason, lines: adjustment.lines.length, value_impact: round2(valueImpact) },

@@ -1,0 +1,15 @@
+# Never upload the shop's actual data to a hosting provider.
+data/
+*.db
+*.db-shm
+*.db-wal
+
+# Windows launchers are for the counter PC, not the cloud.
+*.bat
+
+# Not needed at runtime.
+tests/
+ASYNC-MIGRATION-CONTRACT.md
+node_modules/
+.env
+.env.*

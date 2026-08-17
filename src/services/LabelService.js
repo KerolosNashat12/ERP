@@ -28,7 +28,13 @@ export class LabelService {
   }
 
   async qrDataUri(payload, options = {}) {
-    return QRCode.toDataURL(String(payload), {
+    // The QR library throws a bare "No input text" on empty input, which reaches
+    // the client as a 500. An empty payload is a bad request, and saying so is
+    // the difference between a usable error at the counter and a mystery.
+    const text = String(payload ?? '').trim();
+    if (!text) throw new ValidationError('Nothing to encode — a QR code needs a payload');
+
+    return QRCode.toDataURL(text, {
       margin: options.margin ?? 1,
       width: options.size ?? 160,
       errorCorrectionLevel: 'M',
@@ -42,14 +48,14 @@ export class LabelService {
   async buildBatch(items = [], options = {}, context = {}) {
     if (!items.length) throw new ValidationError('Select at least one item to print');
     const company = {
-      name: this.settings.get('company.name', 'M&M Accessories'),
-      nameAr: this.settings.get('company.name_ar', 'إم آند إم للإكسسوارات'),
+      name: await this.settings.get('company.name', 'M&M Accessories'),
+      nameAr: await this.settings.get('company.name_ar', 'إم آند إم للإكسسوارات'),
     };
-    const currency = this.settings.get('company.currency', 'EGP');
+    const currency = await this.settings.get('company.currency', 'EGP');
     const labels = [];
 
     for (const item of items) {
-      const variant = this.variants.details(item.variant_id);
+      const variant = await this.variants.details(item.variant_id);
       if (!variant) throw new NotFoundError('Variant', item.variant_id);
       const payload = variant.barcode || variant.sku;
       const qr = await this.qrDataUri(payload, { size: options.qrSize || 180 });
@@ -70,7 +76,7 @@ export class LabelService {
       }
     }
 
-    this.audit.record({
+    await this.audit.record({
       action: 'PRINT', module: 'labels', entityType: 'label_batch',
       entityLabel: `${labels.length} labels`,
       after: { items: items.length, labels: labels.length, size: options.labelSize || '40x30' },

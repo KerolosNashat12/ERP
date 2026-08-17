@@ -23,15 +23,15 @@ export function attachRequestContext(req, _res, next) {
   next();
 }
 
-export function authenticate(req, _res, next) {
+export async function authenticate(req, _res, next) {
   try {
     const token = readToken(req);
     if (!token) throw new UnauthorizedError();
     const payload = authService.verifyToken(token);
-    const user = repositories.users.findById(payload.sub);
+    const user = await repositories.users.findById(payload.sub);
     if (!user || !user.is_active) throw new UnauthorizedError('Account is no longer active');
     req.user = user;
-    req.permissions = repositories.users.permissionsFor(user.id);
+    req.permissions = await repositories.users.permissionsFor(user.id);
     req.context.actor = {
       id: user.id,
       username: user.username,

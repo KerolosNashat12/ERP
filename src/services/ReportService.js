@@ -34,14 +34,14 @@ export const REPORTS = {
       col('stock_value', 'Stock value', 'قيمة المخزون', 'money'),
       col('retail_value', 'Retail value', 'قيمة البيع', 'money'),
     ],
-    run: (filters) => {
+    run: async (filters) => {
       const where = ['variant_active = 1'];
       const params = [];
       if (filters.warehouseId) { where.push('warehouse_id = ?'); params.push(filters.warehouseId); }
       if (filters.brandId) { where.push('brand_id = ?'); params.push(filters.brandId); }
       if (filters.categoryId) { where.push('category_id = ?'); params.push(filters.categoryId); }
       if (filters.hideZero !== 'false') where.push('quantity <> 0');
-      const rows = getDb().prepare(`
+      const rows = await getDb().prepare(`
         SELECT *, ROUND(quantity * selling_price, 2) AS retail_value
         FROM v_stock_on_hand WHERE ${where.join(' AND ')}
         ORDER BY stock_value DESC
@@ -74,11 +74,11 @@ export const REPORTS = {
       col('cost_price', 'Unit cost', 'التكلفة', 'money'),
       col('reorder_cost', 'Reorder cost', 'تكلفة التوريد', 'money'),
     ],
-    run: (filters) => {
+    run: async (filters) => {
       const where = ['variant_active = 1', 'reorder_level > 0', 'quantity <= reorder_level'];
       const params = [];
       if (filters.warehouseId) { where.push('warehouse_id = ?'); params.push(filters.warehouseId); }
-      const rows = getDb().prepare(`
+      const rows = await getDb().prepare(`
         SELECT *, ROUND(reorder_level - quantity, 2) AS shortfall,
                ROUND((reorder_level - quantity) * cost_price, 2) AS reorder_cost
         FROM v_stock_on_hand WHERE ${where.join(' AND ')}
@@ -110,13 +110,13 @@ export const REPORTS = {
       col('unit_cost', 'Unit cost', 'التكلفة', 'money'),
       col('user_name', 'User', 'المستخدم'),
     ],
-    run: (filters) => {
+    run: async (filters) => {
       const { from, to } = dateRange(filters);
       const where = ['date(m.created_at) BETWEEN date(?) AND date(?)'];
       const params = [from, to];
       if (filters.warehouseId) { where.push('m.warehouse_id = ?'); params.push(filters.warehouseId); }
       if (filters.movementType) { where.push('m.movement_type = ?'); params.push(filters.movementType); }
-      const rows = getDb().prepare(`
+      const rows = await getDb().prepare(`
         SELECT m.*, vd.sku, vd.product_name_en, vd.variant_label,
                w.name_en AS warehouse_name_en, u.full_name AS user_name
         FROM stock_movements m
@@ -150,9 +150,9 @@ export const REPORTS = {
       col('last_sold', 'Last sold', 'آخر بيع', 'date'),
       col('days_idle', 'Days idle', 'أيام الركود', 'number'),
     ],
-    run: (filters) => {
+    run: async (filters) => {
       const days = Number(filters.days || 60);
-      const rows = getDb().prepare(`
+      const rows = await getDb().prepare(`
         SELECT v.*, sub.last_sold,
                CAST(julianday('now') - julianday(COALESCE(sub.last_sold, v.created_at_fallback)) AS INTEGER) AS days_idle
         FROM (
@@ -194,13 +194,13 @@ export const REPORTS = {
       col('profit', 'Gross profit', 'الربح', 'money'),
       col('margin_percent', 'Margin %', 'نسبة الربح', 'percent'),
     ],
-    run: (filters) => {
+    run: async (filters) => {
       const { from, to } = dateRange(filters);
       const where = ["s.status = 'completed'", 'date(s.sale_date) BETWEEN date(?) AND date(?)'];
       const params = [from, to];
       if (filters.warehouseId) { where.push('s.warehouse_id = ?'); params.push(filters.warehouseId); }
       if (filters.userId) { where.push('s.created_by = ?'); params.push(filters.userId); }
-      const rows = getDb().prepare(`
+      const rows = await getDb().prepare(`
         SELECT date(s.sale_date) AS day,
                COUNT(*) AS invoices,
                (SELECT COALESCE(SUM(l.quantity),0) FROM sale_lines l WHERE l.sale_id IN
@@ -244,13 +244,13 @@ export const REPORTS = {
       col('profit', 'Profit', 'الربح', 'money'),
       col('margin_percent', 'Margin %', 'نسبة الربح', 'percent'),
     ],
-    run: (filters) => {
+    run: async (filters) => {
       const { from, to } = dateRange(filters);
       const where = ["s.status = 'completed'", 'date(s.sale_date) BETWEEN date(?) AND date(?)'];
       const params = [from, to];
       if (filters.brandId) { where.push('vd.brand_id = ?'); params.push(filters.brandId); }
       if (filters.categoryId) { where.push('vd.category_id = ?'); params.push(filters.categoryId); }
-      const rows = getDb().prepare(`
+      const rows = await getDb().prepare(`
         SELECT l.sku, l.description, vd.brand_name_en, vd.category_name_en,
                ROUND(SUM(l.quantity),2) AS units,
                ROUND(SUM(l.line_total),2) AS revenue,
@@ -289,9 +289,9 @@ export const REPORTS = {
       col('profit', 'Profit', 'الربح', 'money'),
       col('share_percent', 'Share %', 'الحصة', 'percent'),
     ],
-    run: (filters) => {
+    run: async (filters) => {
       const { from, to } = dateRange(filters);
-      const rows = getDb().prepare(`
+      const rows = await getDb().prepare(`
         SELECT COALESCE(vd.brand_name_en,'—') AS brand_name_en,
                COALESCE(vd.category_name_en,'—') AS category_name_en,
                ROUND(SUM(l.quantity),2) AS units,
@@ -322,9 +322,9 @@ export const REPORTS = {
       col('average_basket', 'Avg basket', 'متوسط الفاتورة', 'money'),
       col('voids', 'Voided', 'الملغاة', 'number'),
     ],
-    run: (filters) => {
+    run: async (filters) => {
       const { from, to } = dateRange(filters);
-      const rows = getDb().prepare(`
+      const rows = await getDb().prepare(`
         SELECT u.full_name AS user_name, r.name_en AS role_name,
                COUNT(CASE WHEN s.status='completed' THEN 1 END) AS invoices,
                ROUND(COALESCE(SUM(CASE WHEN s.status='completed' THEN s.total_amount END),0),2) AS revenue,
@@ -351,9 +351,9 @@ export const REPORTS = {
       col('amount', 'Amount', 'المبلغ', 'money'),
       col('share_percent', 'Share %', 'الحصة', 'percent'),
     ],
-    run: (filters) => {
+    run: async (filters) => {
       const { from, to } = dateRange(filters);
-      const rows = getDb().prepare(`
+      const rows = await getDb().prepare(`
         SELECT s.payment_method AS method, COUNT(*) AS invoices,
                ROUND(SUM(s.paid_amount),2) AS amount
         FROM sales s
@@ -382,9 +382,9 @@ export const REPORTS = {
       col('total_amount', 'Refunded', 'المسترد', 'money'),
       col('refund_method', 'Refund via', 'طريقة الاسترداد'),
     ],
-    run: (filters) => {
+    run: async (filters) => {
       const { from, to } = dateRange(filters);
-      const rows = getDb().prepare(`
+      const rows = await getDb().prepare(`
         SELECT r.return_no, r.return_date, COALESCE(r.invoice_no, '—') AS invoice_no,
                COALESCE(c.name, 'Walk-in') AS customer_name, r.reason_code,
                (SELECT COALESCE(SUM(l.quantity),0) FROM sales_return_lines l WHERE l.return_id = r.id) AS units,
@@ -418,8 +418,8 @@ export const REPORTS = {
       col('refunded', 'Refunded', 'المسترد', 'money'),
       col('share_percent', 'Share %', 'الحصة', 'percent'),
     ],
-    run: (filters) => {
-      const rows = repositories.salesReturns.reasonBreakdown(filters);
+    run: async (filters) => {
+      const rows = await repositories.salesReturns.reasonBreakdown(filters);
       const total = rows.reduce((s, r) => s + r.refunded, 0) || 1;
       rows.forEach((r) => { r.share_percent = round2((r.refunded * 100) / total); });
       return {
@@ -446,9 +446,9 @@ export const REPORTS = {
       col('outstanding', 'Outstanding', 'المستحق', 'money'),
       col('last_order', 'Last order', 'آخر أمر', 'date'),
     ],
-    run: (filters) => {
+    run: async (filters) => {
       const { from, to } = dateRange(filters);
-      const rows = getDb().prepare(`
+      const rows = await getDb().prepare(`
         SELECT sp.name_en AS supplier_name, COUNT(*) AS orders,
                ROUND(SUM(po.total_amount),2) AS total_amount,
                ROUND(SUM(po.paid_amount),2)  AS paid_amount,
@@ -483,12 +483,12 @@ export const REPORTS = {
       col('received_qty', 'Received', 'المستلم', 'number'),
       col('total_amount', 'Total', 'الإجمالي', 'money'),
     ],
-    run: (filters) => {
+    run: async (filters) => {
       const { from, to } = dateRange(filters);
       const where = ['date(po.order_date) BETWEEN date(?) AND date(?)'];
       const params = [from, to];
       if (filters.status) { where.push('po.status = ?'); params.push(filters.status); }
-      const rows = getDb().prepare(`
+      const rows = await getDb().prepare(`
         SELECT po.po_number, po.order_date, s.name_en AS supplier_name, po.status,
                (SELECT COUNT(*) FROM purchase_order_lines l WHERE l.purchase_order_id = po.id) AS lines,
                (SELECT COALESCE(SUM(quantity_ordered),0) FROM purchase_order_lines l WHERE l.purchase_order_id = po.id) AS ordered_qty,
@@ -521,9 +521,9 @@ export const REPORTS = {
       col('loyalty_points', 'Points', 'النقاط', 'number'),
       col('last_purchase', 'Last purchase', 'آخر شراء', 'date'),
     ],
-    run: (filters) => {
+    run: async (filters) => {
       const { from, to } = dateRange(filters);
-      const rows = getDb().prepare(`
+      const rows = await getDb().prepare(`
         SELECT c.code, c.name, c.customer_group, c.phone, c.balance, c.loyalty_points,
                COUNT(s.id) AS invoices,
                ROUND(COALESCE(SUM(s.total_amount),0),2) AS revenue,
@@ -559,8 +559,8 @@ export const REPORTS = {
       col('outstanding', 'Outstanding', 'المتبقي', 'money'),
       col('days_open', 'Days open', 'أيام', 'number'),
     ],
-    run: () => {
-      const rows = getDb().prepare(`
+    run: async () => {
+      const rows = await getDb().prepare(`
         SELECT s.invoice_no, s.sale_date, c.name AS customer_name, c.phone,
                s.total_amount, s.paid_amount,
                ROUND(s.total_amount - s.paid_amount, 2) AS outstanding,
@@ -593,8 +593,8 @@ export const REPORTS = {
       col('unique_customers', 'Customers', 'العملاء', 'number'),
       col('total_discount', 'Discount given', 'قيمة الخصم', 'money'),
     ],
-    run: (filters) => {
-      const rows = repositories.promotions.usageReport(filters);
+    run: async (filters) => {
+      const rows = await repositories.promotions.usageReport(filters);
       return {
         rows,
         summary: {
@@ -621,8 +621,8 @@ export const REPORTS = {
       col('status', 'Status', 'الحالة'),
       col('ip_address', 'IP', 'العنوان'),
     ],
-    run: (filters) => {
-      const { rows } = repositories.audit.list({ ...filters, pageSize: 500 });
+    run: async (filters) => {
+      const { rows } = await repositories.audit.list({ ...filters, pageSize: 500 });
       return { rows, summary: { events: rows.length } };
     },
   },
@@ -638,10 +638,10 @@ export class ReportService {
       }));
   }
 
-  run(key, filters = {}) {
+  async run(key, filters = {}) {
     const definition = REPORTS[key];
     if (!definition) throw new NotFoundError('Report', key);
-    const { rows, summary } = definition.run(filters);
+    const { rows, summary } = await definition.run(filters);
     return {
       key,
       titleEn: definition.titleEn,

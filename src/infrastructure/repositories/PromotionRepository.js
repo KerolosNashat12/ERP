@@ -15,63 +15,63 @@ export class PromotionRepository extends BaseRepository {
     });
   }
 
-  findByCode(code) {
-    return this.db
+  async findByCode(code) {
+    return (await this.db
       .prepare('SELECT * FROM promotions WHERE code = ? COLLATE NOCASE')
-      .get(String(code).trim()) || null;
+      .get(String(code).trim())) || null;
   }
 
-  targets(promotionId) {
+  async targets(promotionId) {
     return this.db
       .prepare('SELECT * FROM promotion_targets WHERE promotion_id = ?')
       .all(promotionId);
   }
 
-  replaceTargets(promotionId, targets = []) {
-    this.db.prepare('DELETE FROM promotion_targets WHERE promotion_id = ?').run(promotionId);
+  async replaceTargets(promotionId, targets = []) {
+    await this.db.prepare('DELETE FROM promotion_targets WHERE promotion_id = ?').run(promotionId);
     const insert = this.db.prepare(
       'INSERT INTO promotion_targets (promotion_id, target_type, target_id) VALUES (?, ?, ?)',
     );
-    for (const t of targets) insert.run(promotionId, t.target_type, t.target_id);
+    for (const t of targets) await insert.run(promotionId, t.target_type, t.target_id);
   }
 
-  countCustomerRedemptions(promotionId, customerId) {
+  async countCustomerRedemptions(promotionId, customerId) {
     if (!customerId) return 0;
-    return this.db.prepare(
+    return (await this.db.prepare(
       'SELECT COUNT(*) AS n FROM promotion_redemptions WHERE promotion_id = ? AND customer_id = ?',
-    ).get(promotionId, customerId).n;
+    ).get(promotionId, customerId)).n;
   }
 
-  recordRedemption({ promotion_id, sale_id, customer_id, discount_amount }) {
-    this.db.prepare(`
+  async recordRedemption({ promotion_id, sale_id, customer_id, discount_amount }) {
+    await this.db.prepare(`
       INSERT INTO promotion_redemptions (promotion_id, sale_id, customer_id, discount_amount)
       VALUES (?, ?, ?, ?)
     `).run(promotion_id, sale_id || null, customer_id || null, discount_amount);
-    this.db.prepare('UPDATE promotions SET usage_count = usage_count + 1 WHERE id = ?').run(promotion_id);
+    await this.db.prepare('UPDATE promotions SET usage_count = usage_count + 1 WHERE id = ?').run(promotion_id);
   }
 
-  reverseRedemption(saleId) {
-    const rows = this.db.prepare('SELECT * FROM promotion_redemptions WHERE sale_id = ?').all(saleId);
+  async reverseRedemption(saleId) {
+    const rows = await this.db.prepare('SELECT * FROM promotion_redemptions WHERE sale_id = ?').all(saleId);
     for (const row of rows) {
-      this.db.prepare('UPDATE promotions SET usage_count = MAX(usage_count - 1, 0) WHERE id = ?')
+      await this.db.prepare('UPDATE promotions SET usage_count = MAX(usage_count - 1, 0) WHERE id = ?')
         .run(row.promotion_id);
     }
-    this.db.prepare('DELETE FROM promotion_redemptions WHERE sale_id = ?').run(saleId);
+    await this.db.prepare('DELETE FROM promotion_redemptions WHERE sale_id = ?').run(saleId);
     return rows;
   }
 
-  consumeVoucherBalance(promotionId, amount) {
-    this.db.prepare(
+  async consumeVoucherBalance(promotionId, amount) {
+    await this.db.prepare(
       'UPDATE promotions SET voucher_balance = ROUND(MAX(voucher_balance - ?, 0), 2) WHERE id = ?',
     ).run(amount, promotionId);
   }
 
-  restoreVoucherBalance(promotionId, amount) {
-    this.db.prepare('UPDATE promotions SET voucher_balance = ROUND(voucher_balance + ?, 2) WHERE id = ?')
+  async restoreVoucherBalance(promotionId, amount) {
+    await this.db.prepare('UPDATE promotions SET voucher_balance = ROUND(voucher_balance + ?, 2) WHERE id = ?')
       .run(amount, promotionId);
   }
 
-  usageReport({ dateFrom, dateTo } = {}) {
+  async usageReport({ dateFrom, dateTo } = {}) {
     const where = ['1 = 1'];
     const params = [];
     if (dateFrom) { where.push('date(r.redeemed_at) >= date(?)'); params.push(dateFrom); }

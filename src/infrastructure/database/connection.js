@@ -1,94 +1,164 @@
 /**
- * Single SQLite connection for the whole process.
+ * The database boundary for the whole application.
  *
- * Uses Node's BUILT-IN `node:sqlite` module — deliberately, not an npm driver.
- * Native drivers have to be compiled for each Node version, and when no
- * prebuilt binary exists the install fails on any machine without a C++
- * toolchain. For software that gets installed on shop counter PCs by
- * non-developers, that is a real failure mode. With the built-in module the
- * project has zero dependencies that need building.
+ * Two drivers sit behind one API:
  *
- * Offline-first notes:
- *  - WAL journal mode keeps reads fast while writes happen.
- *  - `synchronous = FULL` favours durability over raw speed: a power cut at the
- *    shop must not lose a completed sale.
- *  - Foreign keys are enforced so the ledger can never orphan.
+ *   sqlite  — Node's built-in `node:sqlite` against a local file. The shop
+ *             counter runs on this: no network, no account, no compiler.
+ *   libsql  — SQLite spoken over the network (Turso). Required on serverless
+ *             hosts, which give a function no durable disk.
+ *
+ * `schema.sql` is shared byte-for-byte because libSQL *is* SQLite. Only the
+ * transport differs, so nothing above this file knows which driver is live.
+ *
+ * Everything here is async. That is not decoration: a network database cannot
+ * be synchronous, so the layers above are written once, in the shape that works
+ * for both.
  */
-import fs from 'node:fs';
-import { DatabaseSync } from 'node:sqlite';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { config } from '../../config/index.js';
 
-let db = null;
-let transactionDepth = 0;
+let driver = null;
+let facade = null;
+const txStore = new AsyncLocalStorage();
 
+/**
+ * With one shared connection, `BEGIN` cannot be issued twice. Synchronous code
+ * got that for free; async code does not, so overlapping requests are queued
+ * into a single file of writers. Networked drivers open a stream per
+ * transaction and need no such queue.
+ */
+let writeQueue = Promise.resolve();
+
+const activeExecutor = () => txStore.getStore()?.executor || driver.executor;
+
+/** Mirrors the `prepare(sql).get(...)` shape the repositories already use. */
+function buildFacade() {
+  return {
+    prepare(sql) {
+      return {
+        get: (...params) => activeExecutor().get(sql, params),
+        all: (...params) => activeExecutor().all(sql, params),
+        run: (...params) => activeExecutor().run(sql, params),
+      };
+    },
+    exec: (sql) => driver.exec(sql),
+    get driverName() {
+      return driver.name;
+    },
+    get supportsFileBackup() {
+      return driver.supportsFileBackup;
+    },
+  };
+}
+
+/**
+ * Open the database. Call once during startup, before anything touches `getDb`.
+ * Idempotent, so scripts and tests can call it freely.
+ */
+export async function initDb() {
+  if (driver) return facade;
+
+  // Each driver is loaded only if selected: a hosted deployment should never
+  // pull in `node:sqlite`, and a shop PC should never need the network client.
+  if (config.database.driver === 'libsql') {
+    const { createLibsqlDriver } = await import('./drivers/libsqlDriver.js');
+    driver = await createLibsqlDriver({
+      url: config.database.url,
+      authToken: config.database.authToken,
+    });
+  } else {
+    const { createSqliteDriver } = await import('./drivers/sqliteDriver.js');
+    driver = createSqliteDriver({ file: config.paths.database });
+  }
+
+  facade = buildFacade();
+  return facade;
+}
+
+/** Synchronous accessor — deliberately, so call sites stay `getDb().prepare(…)`. */
 export function getDb() {
-  if (db) return db;
-
-  db = new DatabaseSync(config.paths.database);
-  db.exec('PRAGMA journal_mode = WAL');
-  db.exec('PRAGMA synchronous = FULL');
-  db.exec('PRAGMA foreign_keys = ON');
-  db.exec('PRAGMA busy_timeout = 5000');
-  return db;
+  if (!facade) {
+    throw new Error('Database not initialised — call await initDb() during startup.');
+  }
+  return facade;
 }
 
-/** Apply the schema. Safe to run repeatedly (everything is IF NOT EXISTS). */
-export function applySchema() {
-  getDb().exec(fs.readFileSync(config.paths.schema, 'utf8'));
+export function driverName() {
+  return driver ? driver.name : config.database.driver;
+}
+
+export function supportsFileBackup() {
+  return driver ? driver.supportsFileBackup : config.database.driver === 'sqlite';
+}
+
+export async function applySchema() {
+  await initDb();
+  await driver.applySchema(config.paths.schema);
 }
 
 /**
- * Run `fn` inside a transaction. Nested calls join the outer transaction, which
- * lets services compose (a sale posts stock movements, redeems a promotion and
- * writes an audit row as one atomic unit). Only the outermost call commits.
+ * Run `fn` inside a transaction. Nested calls join the outer one, so services
+ * compose: a sale posts stock movements, redeems a promotion and writes an
+ * audit row as a single atomic unit, and only the outermost call commits.
  */
-export function transaction(fn) {
-  const database = getDb();
-
-  if (transactionDepth > 0) {
-    transactionDepth += 1;
+export async function transaction(fn) {
+  const outer = txStore.getStore();
+  if (outer) {
+    outer.depth += 1;
     try {
-      return fn(database);
+      return await fn(getDb());
     } finally {
-      transactionDepth -= 1;
+      outer.depth -= 1;
     }
   }
 
-  database.exec('BEGIN');
-  transactionDepth = 1;
-  try {
-    const result = fn(database);
-    database.exec('COMMIT');
-    return result;
-  } catch (error) {
-    try {
-      database.exec('ROLLBACK');
-    } catch {
-      // A rollback failure must not mask the original error.
-    }
-    throw error;
-  } finally {
-    transactionDepth = 0;
-  }
+  const run = async () => {
+    const executor = await driver.begin();
+    const state = { executor, depth: 1 };
+    return txStore.run(state, async () => {
+      try {
+        const result = await fn(getDb());
+        await driver.commit(executor);
+        return result;
+      } catch (error) {
+        try {
+          await driver.rollback(executor);
+        } catch {
+          // A failed rollback must never mask the error that caused it.
+        }
+        throw error;
+      }
+    });
+  };
+
+  if (!driver.serialisesTransactions) return run();
+
+  // Queue, but never let one caller's failure break the chain for the next.
+  const queued = writeQueue.then(run, run);
+  writeQueue = queued.catch(() => {});
+  return queued;
 }
 
-export const inTransaction = () => transactionDepth > 0;
+export const inTransaction = () => Boolean(txStore.getStore());
 
 /**
- * Consistent copy of the database, safe to take while the shop is trading.
- * `VACUUM INTO` is plain SQL and needs no driver-specific backup API.
+ * Consistent copy of the database. Only meaningful for the file driver; hosted
+ * databases are backed up by the provider, and the caller is expected to check
+ * `supportsFileBackup()` first rather than catch an error.
  */
-export function backupTo(targetPath) {
-  getDb().exec(`VACUUM INTO '${String(targetPath).replace(/'/g, "''")}'`);
-  return targetPath;
+export async function backupTo(targetPath) {
+  return driver.backupTo(targetPath);
 }
 
-export function closeDb() {
-  if (db) {
-    db.close();
-    db = null;
-    transactionDepth = 0;
-  }
+export async function closeDb() {
+  if (!driver) return;
+  await driver.close();
+  driver = null;
+  facade = null;
 }
 
-export default { getDb, applySchema, transaction, inTransaction, backupTo, closeDb };
+export default {
+  initDb, getDb, driverName, supportsFileBackup, applySchema,
+  transaction, inTransaction, backupTo, closeDb,
+};

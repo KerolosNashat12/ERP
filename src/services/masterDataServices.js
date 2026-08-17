@@ -23,14 +23,15 @@ export class SupplierService extends CrudService {
     });
   }
 
-  get(id) {
-    const supplier = super.get(id);
+  async get(id) {
+    const supplier = await super.get(id);
     return {
       ...supplier,
-      statistics: this.repository.statistics(id),
-      recentOrders: repositories.purchaseOrders.listDetailed({ supplierId: id, pageSize: 10 }).rows,
-      productCount: this.repository.db
-        .prepare('SELECT COUNT(*) AS n FROM products WHERE supplier_id = ?').get(id).n,
+      statistics: await this.repository.statistics(id),
+      recentOrders: (await repositories.purchaseOrders
+        .listDetailed({ supplierId: id, pageSize: 10 })).rows,
+      productCount: (await this.repository.db
+        .prepare('SELECT COUNT(*) AS n FROM products WHERE supplier_id = ?').get(id)).n,
     };
   }
 }
@@ -46,8 +47,8 @@ export class BrandService extends CrudService {
     });
   }
 
-  list(query) {
-    if (query?.all) return { rows: this.repository.listWithCounts(), total: undefined };
+  async list(query) {
+    if (query?.all) return { rows: await this.repository.listWithCounts(), total: undefined };
     return super.list(query);
   }
 }
@@ -66,14 +67,14 @@ export class CategoryService extends CrudService {
     });
   }
 
-  beforeSave(data, before) {
+  async beforeSave(data, before) {
     if (before && Number(data.parent_id) === Number(before.id)) {
       throw new ValidationError('A category cannot be its own parent');
     }
     return data;
   }
 
-  tree() {
+  async tree() {
     return this.repository.tree();
   }
 }
@@ -93,11 +94,11 @@ export class WarehouseService extends CrudService {
     });
   }
 
-  makeDefault(id, context) {
-    return transaction(() => {
-      const before = this.repository.requireById(id, 'warehouse');
-      const after = this.repository.makeDefault(id);
-      auditService.recordChange(context, {
+  async makeDefault(id, context) {
+    return transaction(async () => {
+      const before = await this.repository.requireById(id, 'warehouse');
+      const after = await this.repository.makeDefault(id);
+      await auditService.recordChange(context, {
         action: 'UPDATE', module: 'settings', entityType: 'warehouse', entityId: id,
         entityLabel: after.name_en, before, after,
       });
@@ -121,13 +122,13 @@ export class CustomerService extends CrudService {
     });
   }
 
-  get(id) {
-    const customer = super.get(id);
+  async get(id) {
+    const customer = await super.get(id);
     return {
       ...customer,
-      statistics: this.repository.statistics(id),
-      recentSales: repositories.sales.listDetailed({ customerId: id, pageSize: 10 }).rows,
-      topProducts: this.repository.db.prepare(`
+      statistics: await this.repository.statistics(id),
+      recentSales: (await repositories.sales.listDetailed({ customerId: id, pageSize: 10 })).rows,
+      topProducts: await this.repository.db.prepare(`
         SELECT l.sku, l.description, SUM(l.quantity) AS qty, SUM(l.line_total) AS value
         FROM sale_lines l JOIN sales s ON s.id = l.sale_id
         WHERE s.customer_id = ? AND s.status = 'completed'
@@ -136,7 +137,7 @@ export class CustomerService extends CrudService {
     };
   }
 
-  search(term, limit = 15) {
+  async search(term, limit = 15) {
     const like = `%${term}%`;
     return this.repository.db.prepare(`
       SELECT id, code, name, phone, customer_group, balance, loyalty_points, credit_limit
@@ -147,14 +148,14 @@ export class CustomerService extends CrudService {
   }
 
   /** Manual receipt against an outstanding balance (credit customers). */
-  settleBalance(id, { amount, method = 'cash', reference }, context = {}) {
-    return transaction(() => {
-      const customer = this.repository.requireById(id, 'customer');
+  async settleBalance(id, { amount, method = 'cash', reference }, context = {}) {
+    return transaction(async () => {
+      const customer = await this.repository.requireById(id, 'customer');
       const value = Number(amount);
       if (!(value > 0)) throw new ValidationError('Amount must be greater than zero');
-      this.repository.adjustBalance(id, -value);
-      const after = this.repository.findById(id);
-      auditService.record({
+      await this.repository.adjustBalance(id, -value);
+      const after = await this.repository.findById(id);
+      await auditService.record({
         action: 'PAYMENT', module: 'customers', entityType: 'customer', entityId: id,
         entityLabel: customer.name,
         before: { balance: customer.balance }, after: { balance: after.balance, method, reference },
@@ -180,20 +181,20 @@ export class AttributeService extends CrudService {
     this.values = repositories.attributeValues;
   }
 
-  withValues() {
+  async withValues() {
     return this.repository.withValues();
   }
 
-  addValue(attributeId, data, context = {}) {
-    return transaction(() => {
-      const attribute = this.repository.requireById(attributeId, 'attribute');
-      if (this.values.db
+  async addValue(attributeId, data, context = {}) {
+    return transaction(async () => {
+      const attribute = await this.repository.requireById(attributeId, 'attribute');
+      if (await this.values.db
         .prepare('SELECT 1 FROM attribute_values WHERE attribute_id = ? AND code = ?')
         .get(attributeId, data.code)) {
         throw new BusinessRuleError(`Value code "${data.code}" already exists for this attribute`);
       }
-      const created = this.values.create({ ...data, attribute_id: attributeId });
-      auditService.recordChange(context, {
+      const created = await this.values.create({ ...data, attribute_id: attributeId });
+      await auditService.recordChange(context, {
         action: 'CREATE', module: 'attributes', entityType: 'attribute_value',
         entityId: created.id, entityLabel: `${attribute.name_en} / ${created.value_en}`,
         after: created,
@@ -202,11 +203,11 @@ export class AttributeService extends CrudService {
     });
   }
 
-  updateValue(valueId, data, context = {}) {
-    return transaction(() => {
-      const before = this.values.requireById(valueId, 'attribute value');
-      const after = this.values.update(valueId, data);
-      auditService.recordChange(context, {
+  async updateValue(valueId, data, context = {}) {
+    return transaction(async () => {
+      const before = await this.values.requireById(valueId, 'attribute value');
+      const after = await this.values.update(valueId, data);
+      await auditService.recordChange(context, {
         action: 'UPDATE', module: 'attributes', entityType: 'attribute_value',
         entityId: valueId, entityLabel: after.value_en, before, after,
       });
@@ -214,14 +215,14 @@ export class AttributeService extends CrudService {
     });
   }
 
-  removeValue(valueId, context = {}) {
-    return transaction(() => {
-      const before = this.values.requireById(valueId, 'attribute value');
-      if (this.values.isUsedByVariant(valueId)) {
+  async removeValue(valueId, context = {}) {
+    return transaction(async () => {
+      const before = await this.values.requireById(valueId, 'attribute value');
+      if (await this.values.isUsedByVariant(valueId)) {
         throw new BusinessRuleError('This value is used by existing product variants');
       }
-      this.values.remove(valueId);
-      auditService.recordChange(context, {
+      await this.values.remove(valueId);
+      await auditService.recordChange(context, {
         action: 'DELETE', module: 'attributes', entityType: 'attribute_value',
         entityId: valueId, entityLabel: before.value_en, before,
       });

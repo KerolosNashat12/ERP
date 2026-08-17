@@ -15,13 +15,13 @@ export class UserRepository extends BaseRepository {
     });
   }
 
-  findByUsername(username) {
-    return this.db
+  async findByUsername(username) {
+    return (await this.db
       .prepare('SELECT * FROM users WHERE username = ? COLLATE NOCASE')
-      .get(String(username || '').trim()) || null;
+      .get(String(username || '').trim())) || null;
   }
 
-  listDetailed({ search = '', roleId, isActive } = {}) {
+  async listDetailed({ search = '', roleId, isActive } = {}) {
     const where = ['1 = 1'];
     const params = [];
     if (search) {
@@ -45,28 +45,28 @@ export class UserRepository extends BaseRepository {
     `).all(...params);
   }
 
-  permissionsFor(userId) {
-    return this.db.prepare(`
+  async permissionsFor(userId) {
+    return (await this.db.prepare(`
       SELECT p.code FROM users u
       JOIN role_permissions rp ON rp.role_id = u.role_id
       JOIN permissions p ON p.id = rp.permission_id
       WHERE u.id = ?
-    `).all(userId).map((r) => r.code);
+    `).all(userId)).map((r) => r.code);
   }
 
-  registerLoginSuccess(userId) {
-    this.db.prepare(
+  async registerLoginSuccess(userId) {
+    await this.db.prepare(
       'UPDATE users SET last_login_at = ?, failed_attempts = 0, locked_until = NULL WHERE id = ?',
     ).run(new Date().toISOString(), userId);
   }
 
-  registerLoginFailure(userId, maxAttempts, lockMinutes) {
-    const user = this.findById(userId);
+  async registerLoginFailure(userId, maxAttempts, lockMinutes) {
+    const user = await this.findById(userId);
     const attempts = (user?.failed_attempts || 0) + 1;
     const lockedUntil = attempts >= maxAttempts
       ? new Date(Date.now() + lockMinutes * 60_000).toISOString()
       : null;
-    this.db.prepare('UPDATE users SET failed_attempts = ?, locked_until = ? WHERE id = ?')
+    await this.db.prepare('UPDATE users SET failed_attempts = ?, locked_until = ? WHERE id = ?')
       .run(attempts, lockedUntil, userId);
     return { attempts, lockedUntil };
   }
@@ -83,27 +83,33 @@ export class RoleRepository extends BaseRepository {
     });
   }
 
-  withPermissions() {
-    const roles = this.all('id ASC');
-    const map = this.db.prepare(`
+  async withPermissions() {
+    const roles = await this.all('id ASC');
+    const map = await this.db.prepare(`
       SELECT rp.role_id, p.code FROM role_permissions rp
       JOIN permissions p ON p.id = rp.permission_id
     `).all();
-    return roles.map((role) => ({
-      ...role,
-      permissions: map.filter((m) => m.role_id === role.id).map((m) => m.code),
-      user_count: this.db.prepare('SELECT COUNT(*) AS n FROM users WHERE role_id = ?').get(role.id).n,
-    }));
+    // The per-role user count is a query, so this cannot stay a `map()` callback.
+    const withCounts = [];
+    for (const role of roles) {
+      withCounts.push({
+        ...role,
+        permissions: map.filter((m) => m.role_id === role.id).map((m) => m.code),
+        user_count: (await this.db
+          .prepare('SELECT COUNT(*) AS n FROM users WHERE role_id = ?').get(role.id)).n,
+      });
+    }
+    return withCounts;
   }
 
-  setPermissions(roleId, permissionCodes) {
+  async setPermissions(roleId, permissionCodes) {
     const db = getDb();
-    db.prepare('DELETE FROM role_permissions WHERE role_id = ?').run(roleId);
+    await db.prepare('DELETE FROM role_permissions WHERE role_id = ?').run(roleId);
     const link = db.prepare(`
       INSERT OR IGNORE INTO role_permissions (role_id, permission_id)
       SELECT ?, id FROM permissions WHERE code = ?
     `);
-    for (const code of permissionCodes) link.run(roleId, code);
+    for (const code of permissionCodes) await link.run(roleId, code);
   }
 }
 
@@ -112,8 +118,8 @@ export class AuditRepository {
     return getDb();
   }
 
-  write(entry) {
-    this.db.prepare(`
+  async write(entry) {
+    await this.db.prepare(`
       INSERT INTO audit_logs
         (user_id, username, action, module, entity_type, entity_id, entity_label,
          before_data, after_data, status, message, ip_address, user_agent)
@@ -126,7 +132,7 @@ export class AuditRepository {
     });
   }
 
-  list({ search = '', userId, module, action, entityType, dateFrom, dateTo, status,
+  async list({ search = '', userId, module, action, entityType, dateFrom, dateTo, status,
     page = 1, pageSize = 50 } = {}) {
     const where = ['1 = 1'];
     const params = [];
@@ -144,10 +150,10 @@ export class AuditRepository {
     if (dateTo) { where.push('date(a.created_at) <= date(?)'); params.push(dateTo); }
     const whereSql = `WHERE ${where.join(' AND ')}`;
 
-    const total = this.db.prepare(`SELECT COUNT(*) AS n FROM audit_logs a ${whereSql}`).get(...params).n;
+    const total = (await this.db.prepare(`SELECT COUNT(*) AS n FROM audit_logs a ${whereSql}`).get(...params)).n;
     const size = Math.min(Number(pageSize) || 50, 500);
     const current = Math.max(Number(page) || 1, 1);
-    const rows = this.db.prepare(`
+    const rows = await this.db.prepare(`
       SELECT a.*, u.full_name AS user_full_name
       FROM audit_logs a LEFT JOIN users u ON u.id = a.user_id
       ${whereSql} ORDER BY a.id DESC LIMIT ? OFFSET ?
@@ -155,14 +161,14 @@ export class AuditRepository {
     return { rows, total, page: current, pageSize: size, pages: Math.ceil(total / size) || 1 };
   }
 
-  distinctValues() {
+  async distinctValues() {
     return {
-      modules: this.db.prepare('SELECT DISTINCT module FROM audit_logs ORDER BY module').all().map((r) => r.module),
-      actions: this.db.prepare('SELECT DISTINCT action FROM audit_logs ORDER BY action').all().map((r) => r.action),
+      modules: (await this.db.prepare('SELECT DISTINCT module FROM audit_logs ORDER BY module').all()).map((r) => r.module),
+      actions: (await this.db.prepare('SELECT DISTINCT action FROM audit_logs ORDER BY action').all()).map((r) => r.action),
     };
   }
 
-  activitySummary(days = 7) {
+  async activitySummary(days = 7) {
     return this.db.prepare(`
       SELECT date(created_at) AS day, module, COUNT(*) AS events
       FROM audit_logs
@@ -177,23 +183,23 @@ export class SettingsRepository {
     return getDb();
   }
 
-  all() {
-    const rows = this.db.prepare('SELECT * FROM settings ORDER BY group_name, key').all();
+  async all() {
+    const rows = await this.db.prepare('SELECT * FROM settings ORDER BY group_name, key').all();
     return rows.map((r) => ({ ...r, value: decode(r.value, r.value_type) }));
   }
 
-  asObject() {
-    return Object.fromEntries(this.all().map((r) => [r.key, r.value]));
+  async asObject() {
+    return Object.fromEntries((await this.all()).map((r) => [r.key, r.value]));
   }
 
-  get(key, fallback = null) {
-    const row = this.db.prepare('SELECT * FROM settings WHERE key = ?').get(key);
+  async get(key, fallback = null) {
+    const row = await this.db.prepare('SELECT * FROM settings WHERE key = ?').get(key);
     return row ? decode(row.value, row.value_type) : fallback;
   }
 
-  set(key, value, { valueType, group } = {}) {
+  async set(key, value, { valueType, group } = {}) {
     const type = valueType || inferType(value);
-    this.db.prepare(`
+    await this.db.prepare(`
       INSERT INTO settings (key, value, value_type, group_name, updated_at)
       VALUES (?, ?, ?, COALESCE(?, 'general'), ?)
       ON CONFLICT(key) DO UPDATE SET value = excluded.value, value_type = excluded.value_type,
@@ -230,16 +236,16 @@ export class SequenceRepository {
     return getDb();
   }
 
-  next(name) {
-    const row = this.db.prepare('SELECT * FROM sequences WHERE name = ?').get(name);
+  async next(name) {
+    const row = await this.db.prepare('SELECT * FROM sequences WHERE name = ?').get(name);
     if (!row) throw new Error(`Unknown sequence: ${name}`);
     const year = new Date().getFullYear();
     let value = row.next_value;
     if (row.reset_yearly && row.year !== year) {
       value = 1;
-      this.db.prepare('UPDATE sequences SET year = ? WHERE name = ?').run(year, name);
+      await this.db.prepare('UPDATE sequences SET year = ? WHERE name = ?').run(year, name);
     }
-    this.db.prepare('UPDATE sequences SET next_value = ? WHERE name = ?').run(value + 1, name);
+    await this.db.prepare('UPDATE sequences SET next_value = ? WHERE name = ?').run(value + 1, name);
     const padded = String(value).padStart(row.padding, '0');
     return row.reset_yearly ? `${row.prefix}-${year}-${padded}` : `${row.prefix}-${padded}`;
   }

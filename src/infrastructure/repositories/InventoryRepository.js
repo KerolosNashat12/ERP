@@ -10,32 +10,32 @@ export class InventoryRepository {
     return getDb();
   }
 
-  getLevel(variantId, warehouseId) {
-    return this.db
+  async getLevel(variantId, warehouseId) {
+    return (await this.db
       .prepare('SELECT * FROM stock_levels WHERE variant_id = ? AND warehouse_id = ?')
-      .get(variantId, warehouseId) || null;
+      .get(variantId, warehouseId)) || null;
   }
 
-  ensureLevel(variantId, warehouseId) {
-    const existing = this.getLevel(variantId, warehouseId);
+  async ensureLevel(variantId, warehouseId) {
+    const existing = await this.getLevel(variantId, warehouseId);
     if (existing) return existing;
-    this.db.prepare(`
+    await this.db.prepare(`
       INSERT INTO stock_levels (variant_id, warehouse_id, quantity, reserved_quantity, average_cost)
       VALUES (?, ?, 0, 0, (SELECT cost_price FROM product_variants WHERE id = ?))
     `).run(variantId, warehouseId, variantId);
     return this.getLevel(variantId, warehouseId);
   }
 
-  setLevel(variantId, warehouseId, { quantity, averageCost }) {
-    this.db.prepare(`
+  async setLevel(variantId, warehouseId, { quantity, averageCost }) {
+    await this.db.prepare(`
       UPDATE stock_levels
          SET quantity = ?, average_cost = ?, updated_at = ?
        WHERE variant_id = ? AND warehouse_id = ?
     `).run(quantity, averageCost, new Date().toISOString(), variantId, warehouseId);
   }
 
-  recordMovement(movement) {
-    const info = this.db.prepare(`
+  async recordMovement(movement) {
+    const info = await this.db.prepare(`
       INSERT INTO stock_movements
         (variant_id, warehouse_id, movement_type, quantity, unit_cost, balance_after,
          reference_type, reference_id, reference_no, notes, created_by)
@@ -49,7 +49,7 @@ export class InventoryRepository {
   }
 
   /** Stock-on-hand grid with filters. Backed by the v_stock_on_hand view. */
-  stockOnHand({ search = '', warehouseId, brandId, categoryId, lowStockOnly = false,
+  async stockOnHand({ search = '', warehouseId, brandId, categoryId, lowStockOnly = false,
     zeroStock = 'all', page = 1, pageSize = 50 }) {
     const where = ['1 = 1'];
     const params = [];
@@ -67,15 +67,15 @@ export class InventoryRepository {
     where.push('variant_active = 1');
 
     const whereSql = `WHERE ${where.join(' AND ')}`;
-    const total = this.db.prepare(`SELECT COUNT(*) AS n FROM v_stock_on_hand ${whereSql}`).get(...params).n;
+    const total = (await this.db.prepare(`SELECT COUNT(*) AS n FROM v_stock_on_hand ${whereSql}`).get(...params)).n;
     const size = Math.min(Math.max(Number(pageSize) || 50, 1), 1000);
     const current = Math.max(Number(page) || 1, 1);
-    const rows = this.db.prepare(`
+    const rows = await this.db.prepare(`
       SELECT * FROM v_stock_on_hand ${whereSql}
       ORDER BY product_name_en, variant_label LIMIT ? OFFSET ?
     `).all(...params, size, (current - 1) * size);
 
-    const totals = this.db.prepare(`
+    const totals = await this.db.prepare(`
       SELECT COALESCE(SUM(quantity),0) AS total_qty, COALESCE(SUM(stock_value),0) AS total_value
       FROM v_stock_on_hand ${whereSql}
     `).get(...params);
@@ -83,7 +83,7 @@ export class InventoryRepository {
     return { rows, total, totals, page: current, pageSize: size, pages: Math.ceil(total / size) || 1 };
   }
 
-  lowStock(warehouseId = null, limit = 100) {
+  async lowStock(warehouseId = null, limit = 100) {
     const params = [];
     let sql = `
       SELECT * FROM v_stock_on_hand
@@ -95,7 +95,7 @@ export class InventoryRepository {
     return this.db.prepare(sql).all(...params);
   }
 
-  movements({ variantId, warehouseId, movementType, dateFrom, dateTo, page = 1, pageSize = 50 }) {
+  async movements({ variantId, warehouseId, movementType, dateFrom, dateTo, page = 1, pageSize = 50 }) {
     const where = ['1 = 1'];
     const params = [];
     if (variantId) { where.push('m.variant_id = ?'); params.push(variantId); }
@@ -105,10 +105,10 @@ export class InventoryRepository {
     if (dateTo) { where.push('m.created_at <= ?'); params.push(`${dateTo}T23:59:59Z`); }
 
     const whereSql = `WHERE ${where.join(' AND ')}`;
-    const total = this.db.prepare(`SELECT COUNT(*) AS n FROM stock_movements m ${whereSql}`).get(...params).n;
+    const total = (await this.db.prepare(`SELECT COUNT(*) AS n FROM stock_movements m ${whereSql}`).get(...params)).n;
     const size = Math.min(Math.max(Number(pageSize) || 50, 1), 500);
     const current = Math.max(Number(page) || 1, 1);
-    const rows = this.db.prepare(`
+    const rows = await this.db.prepare(`
       SELECT m.*, vd.sku, vd.product_name_en, vd.product_name_ar, vd.variant_label,
              w.name_en AS warehouse_name_en, u.full_name AS user_name
       FROM stock_movements m
@@ -122,7 +122,7 @@ export class InventoryRepository {
     return { rows, total, page: current, pageSize: size, pages: Math.ceil(total / size) || 1 };
   }
 
-  totalStockValue(warehouseId = null) {
+  async totalStockValue(warehouseId = null) {
     const sql = warehouseId
       ? 'SELECT COALESCE(SUM(stock_value),0) AS v, COALESCE(SUM(quantity),0) AS q FROM v_stock_on_hand WHERE warehouse_id = ?'
       : 'SELECT COALESCE(SUM(stock_value),0) AS v, COALESCE(SUM(quantity),0) AS q FROM v_stock_on_hand';
@@ -141,15 +141,15 @@ export class StockAdjustmentRepository extends BaseRepository {
     });
   }
 
-  listDetailed({ status, page = 1, pageSize = 25 } = {}) {
+  async listDetailed({ status, page = 1, pageSize = 25 } = {}) {
     const where = ['1 = 1'];
     const params = [];
     if (status) { where.push('a.status = ?'); params.push(status); }
     const whereSql = `WHERE ${where.join(' AND ')}`;
-    const total = this.db.prepare(`SELECT COUNT(*) AS n FROM stock_adjustments a ${whereSql}`).get(...params).n;
+    const total = (await this.db.prepare(`SELECT COUNT(*) AS n FROM stock_adjustments a ${whereSql}`).get(...params)).n;
     const size = Number(pageSize) || 25;
     const current = Math.max(Number(page) || 1, 1);
-    const rows = this.db.prepare(`
+    const rows = await this.db.prepare(`
       SELECT a.*, w.name_en AS warehouse_name, u.full_name AS created_by_name,
              (SELECT COUNT(*) FROM stock_adjustment_lines l WHERE l.adjustment_id = a.id) AS line_count,
              (SELECT COALESCE(SUM(difference * unit_cost),0) FROM stock_adjustment_lines l WHERE l.adjustment_id = a.id) AS value_impact
@@ -162,13 +162,13 @@ export class StockAdjustmentRepository extends BaseRepository {
     return { rows, total, page: current, pageSize: size, pages: Math.ceil(total / size) || 1 };
   }
 
-  findAggregate(id) {
-    const adjustment = this.db.prepare(`
+  async findAggregate(id) {
+    const adjustment = await this.db.prepare(`
       SELECT a.*, w.name_en AS warehouse_name FROM stock_adjustments a
       JOIN warehouses w ON w.id = a.warehouse_id WHERE a.id = ?
     `).get(id);
     if (!adjustment) return null;
-    adjustment.lines = this.db.prepare(`
+    adjustment.lines = await this.db.prepare(`
       SELECT l.*, vd.sku, vd.product_name_en, vd.product_name_ar, vd.variant_label
       FROM stock_adjustment_lines l
       JOIN v_variant_details vd ON vd.variant_id = l.variant_id
@@ -177,15 +177,15 @@ export class StockAdjustmentRepository extends BaseRepository {
     return adjustment;
   }
 
-  replaceLines(adjustmentId, lines) {
-    this.db.prepare('DELETE FROM stock_adjustment_lines WHERE adjustment_id = ?').run(adjustmentId);
+  async replaceLines(adjustmentId, lines) {
+    await this.db.prepare('DELETE FROM stock_adjustment_lines WHERE adjustment_id = ?').run(adjustmentId);
     const insert = this.db.prepare(`
       INSERT INTO stock_adjustment_lines
         (adjustment_id, variant_id, system_qty, counted_qty, difference, unit_cost, notes)
       VALUES (?, ?, ?, ?, ?, ?, ?)
     `);
     for (const l of lines) {
-      insert.run(adjustmentId, l.variant_id, l.system_qty, l.counted_qty,
+      await insert.run(adjustmentId, l.variant_id, l.system_qty, l.counted_qty,
         l.difference, l.unit_cost || 0, l.notes || null);
     }
   }

@@ -1,14 +1,18 @@
-/** Creates or upgrades the local database file. Safe to run repeatedly. */
-import { applySchema, getDb, closeDb } from '../src/infrastructure/database/connection.js';
+/** Creates or upgrades the database. Safe to run repeatedly. */
+import {
+  initDb, applySchema, getDb, closeDb, supportsFileBackup, driverName,
+} from '../src/infrastructure/database/connection.js';
 import config from '../src/config/index.js';
 
-applySchema();
+await initDb();
+await applySchema();
 
-const tables = getDb()
+const tables = (await getDb()
   .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")
-  .all()
+  .all())
   .map((r) => r.name);
 
-console.log(`Database ready at ${config.paths.database}`);
+// A hosted database has no local file to name — say where it actually lives.
+console.log(`Database ready at ${supportsFileBackup() ? config.paths.database : `hosted (${driverName()})`}`);
 console.log(`${tables.length} tables: ${tables.join(', ')}`);
-closeDb();
+await closeDb();

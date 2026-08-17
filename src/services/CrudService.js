@@ -18,7 +18,7 @@ export class CrudService {
    * @param {string} [options.labelField]    field used as the human label in the audit log
    * @param {string[]} [options.uniqueFields]
    * @param {string} [options.codePrefix]    enables automatic code generation
-   * @param {(id:number)=>boolean} [options.isReferenced] guard for hard deletes
+   * @param {(id:number)=>Promise<boolean>} [options.isReferenced] guard for hard deletes
    */
   constructor(options) {
     this.repository = options.repository;
@@ -27,19 +27,19 @@ export class CrudService {
     this.labelField = options.labelField || 'name_en';
     this.uniqueFields = options.uniqueFields || ['code'];
     this.codePrefix = options.codePrefix || null;
-    this.isReferenced = options.isReferenced || (() => false);
+    this.isReferenced = options.isReferenced || (async () => false);
     this.audit = options.audit || auditService;
   }
 
-  list(query) {
+  async list(query) {
     return this.repository.list(query);
   }
 
-  options() {
+  async options() {
     return this.repository.activeOnly();
   }
 
-  get(id) {
+  async get(id) {
     return this.repository.requireById(id, this.entityType);
   }
 
@@ -47,42 +47,45 @@ export class CrudService {
     return row?.[this.labelField] || row?.name || row?.code || String(row?.id ?? '');
   }
 
-  generateCode() {
-    const existing = this.repository.count();
+  async generateCode() {
+    const existing = await this.repository.count();
     let attempt = existing + 1;
     let code = `${this.codePrefix}-${String(attempt).padStart(4, '0')}`;
-    while (this.repository.exists('code', code)) {
+    while (await this.repository.exists('code', code)) {
       attempt += 1;
       code = `${this.codePrefix}-${String(attempt).padStart(4, '0')}`;
     }
     return code;
   }
 
-  assertUnique(data, excludeId = null) {
+  async assertUnique(data, excludeId = null) {
     for (const field of this.uniqueFields) {
       const value = data[field];
       if (value === undefined || value === null || value === '') continue;
-      if (this.repository.exists(field, value, excludeId)) {
+      if (await this.repository.exists(field, value, excludeId)) {
         throw new ConflictError(`${field.replace('_', ' ')} "${value}" is already used`);
       }
     }
   }
 
-  /** Hook for subclasses — runs before insert/update inside the transaction. */
-  beforeSave(data) {
+  /**
+   * Hook for subclasses — runs before insert/update inside the transaction.
+   * Awaited by the callers, so an override may query the database.
+   */
+  async beforeSave(data) {
     return data;
   }
 
-  create(data, context = {}) {
-    return transaction(() => {
-      const payload = this.beforeSave({ ...data });
-      if (this.codePrefix && !payload.code) payload.code = this.generateCode();
-      this.assertUnique(payload);
+  async create(data, context = {}) {
+    return transaction(async () => {
+      const payload = await this.beforeSave({ ...data });
+      if (this.codePrefix && !payload.code) payload.code = await this.generateCode();
+      await this.assertUnique(payload);
       if (context.actor?.id && this.repository.columns.includes('created_by')) {
         payload.created_by = context.actor.id;
       }
-      const created = this.repository.create(payload);
-      this.audit.recordChange(context, {
+      const created = await this.repository.create(payload);
+      await this.audit.recordChange(context, {
         action: 'CREATE',
         module: this.module,
         entityType: this.entityType,
@@ -94,13 +97,13 @@ export class CrudService {
     });
   }
 
-  update(id, data, context = {}) {
-    return transaction(() => {
-      const before = this.repository.requireById(id, this.entityType);
-      const payload = this.beforeSave({ ...data }, before);
-      this.assertUnique(payload, id);
-      const after = this.repository.update(id, payload);
-      this.audit.recordChange(context, {
+  async update(id, data, context = {}) {
+    return transaction(async () => {
+      const before = await this.repository.requireById(id, this.entityType);
+      const payload = await this.beforeSave({ ...data }, before);
+      await this.assertUnique(payload, id);
+      const after = await this.repository.update(id, payload);
+      await this.audit.recordChange(context, {
         action: 'UPDATE',
         module: this.module,
         entityType: this.entityType,
@@ -117,16 +120,16 @@ export class CrudService {
    * Deleting master data that historic documents point at would corrupt the
    * ledger, so referenced records are deactivated instead of removed.
    */
-  remove(id, context = {}) {
-    return transaction(() => {
-      const before = this.repository.requireById(id, this.entityType);
-      const referenced = this.isReferenced(id);
+  async remove(id, context = {}) {
+    return transaction(async () => {
+      const before = await this.repository.requireById(id, this.entityType);
+      const referenced = await this.isReferenced(id);
       if (referenced && !this.repository.columns.includes('is_active')) {
         throw new BusinessRuleError('This record is used by existing documents and cannot be deleted');
       }
       if (referenced) {
-        const after = this.repository.deactivate(id);
-        this.audit.recordChange(context, {
+        const after = await this.repository.deactivate(id);
+        await this.audit.recordChange(context, {
           action: 'DEACTIVATE',
           module: this.module,
           entityType: this.entityType,
@@ -137,8 +140,8 @@ export class CrudService {
         });
         return { deleted: false, deactivated: true, record: after };
       }
-      this.repository.remove(id);
-      this.audit.recordChange(context, {
+      await this.repository.remove(id);
+      await this.audit.recordChange(context, {
         action: 'DELETE',
         module: this.module,
         entityType: this.entityType,
@@ -152,11 +155,17 @@ export class CrudService {
 }
 
 /** Small helper used by the factories below to test references cheaply. */
-export const referencedBy = (table, column) => (id) => {
+export const referencedBy = (table, column) => async (id) => {
   const db = repositories.suppliers.db;
-  return Boolean(db.prepare(`SELECT 1 FROM ${table} WHERE ${column} = ? LIMIT 1`).get(id));
+  return Boolean(await db.prepare(`SELECT 1 FROM ${table} WHERE ${column} = ? LIMIT 1`).get(id));
 };
 
-export const referencedByAny = (checks) => (id) => checks.some((check) => check(id));
+// `some()` cannot await, and short-circuiting is the point: stop at the first hit.
+export const referencedByAny = (checks) => async (id) => {
+  for (const check of checks) {
+    if (await check(id)) return true;
+  }
+  return false;
+};
 
 export default CrudService;

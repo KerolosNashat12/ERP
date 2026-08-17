@@ -19,15 +19,15 @@ export class PromotionService extends CrudService {
       module: 'promotions',
       entityType: 'promotion',
       uniqueFields: ['code'],
-      isReferenced: (id) => Boolean(
-        repositories.promotions.db
+      isReferenced: async (id) => Boolean(
+        await repositories.promotions.db
           .prepare('SELECT 1 FROM promotion_redemptions WHERE promotion_id = ? LIMIT 1').get(id),
       ),
     });
     this.variants = deps.variants || repositories.variants;
   }
 
-  beforeSave(data) {
+  async beforeSave(data) {
     const payload = { ...data };
     if (payload.code) payload.code = String(payload.code).trim().toUpperCase();
     if (payload.discount_type === 'percentage' && Number(payload.value) > 100) {
@@ -43,24 +43,24 @@ export class PromotionService extends CrudService {
     return payload;
   }
 
-  create(data, context) {
-    const promotion = super.create(data, context);
-    if (data.targets?.length) this.repository.replaceTargets(promotion.id, data.targets);
+  async create(data, context) {
+    const promotion = await super.create(data, context);
+    if (data.targets?.length) await this.repository.replaceTargets(promotion.id, data.targets);
     return this.get(promotion.id);
   }
 
-  update(id, data, context) {
-    const promotion = super.update(id, data, context);
-    if (data.targets) this.repository.replaceTargets(id, data.targets);
+  async update(id, data, context) {
+    const promotion = await super.update(id, data, context);
+    if (data.targets) await this.repository.replaceTargets(id, data.targets);
     return this.get(promotion.id);
   }
 
-  get(id) {
-    const promotion = this.repository.requireById(id, 'promotion');
+  async get(id) {
+    const promotion = await this.repository.requireById(id, 'promotion');
     return {
       ...promotion,
-      targets: this.repository.targets(id),
-      redemptions: this.repository.db.prepare(`
+      targets: await this.repository.targets(id),
+      redemptions: await this.repository.db.prepare(`
         SELECT r.*, s.invoice_no, c.name AS customer_name
         FROM promotion_redemptions r
         LEFT JOIN sales s ON s.id = r.sale_id
@@ -71,7 +71,7 @@ export class PromotionService extends CrudService {
   }
 
   /** Business rules that don't depend on the basket. */
-  #assertUsable(promotion, { customer } = {}) {
+  async #assertUsable(promotion, { customer } = {}) {
     if (!promotion.is_active) throw new BusinessRuleError('This code is not active');
     const now = new Date().toISOString();
     if (promotion.starts_at && now < promotion.starts_at) {
@@ -88,7 +88,7 @@ export class PromotionService extends CrudService {
     }
     if (promotion.per_customer_limit > 0) {
       if (!customer) throw new BusinessRuleError('Select a customer to use this code');
-      const used = this.repository.countCustomerRedemptions(promotion.id, customer.id);
+      const used = await this.repository.countCustomerRedemptions(promotion.id, customer.id);
       if (used >= promotion.per_customer_limit) {
         throw new BusinessRuleError('This customer has already used this code the maximum number of times');
       }
@@ -99,11 +99,11 @@ export class PromotionService extends CrudService {
   }
 
   /** Which cart lines the promotion applies to, given its scope. */
-  #eligibleAmount(promotion, lines) {
+  async #eligibleAmount(promotion, lines) {
     if (promotion.scope === 'order') {
       return { amount: round2(lines.reduce((s, l) => s + l.netAmount, 0)), lineIds: lines.map((l) => l.key) };
     }
-    const targets = this.repository.targets(promotion.id);
+    const targets = await this.repository.targets(promotion.id);
     const ids = new Set(targets.filter((t) => t.target_type === promotion.scope).map((t) => Number(t.target_id)));
     const variantIds = new Set(targets.filter((t) => t.target_type === 'variant').map((t) => Number(t.target_id)));
     const field = { product: 'product_id', category: 'category_id', brand: 'brand_id' }[promotion.scope];
@@ -120,10 +120,10 @@ export class PromotionService extends CrudService {
    * @param {Array} p.lines  [{ key, variant_id, product_id, category_id, brand_id, netAmount }]
    * @returns {{promotion, discount, eligibleAmount, appliesToLines}}
    */
-  evaluate({ code, lines = [], customer = null }) {
-    const promotion = this.repository.findByCode(code);
+  async evaluate({ code, lines = [], customer = null }) {
+    const promotion = await this.repository.findByCode(code);
     if (!promotion) throw new NotFoundError('Promotion code', code);
-    this.#assertUsable(promotion, { customer });
+    await this.#assertUsable(promotion, { customer });
 
     const orderNet = round2(lines.reduce((s, l) => s + Number(l.netAmount || 0), 0));
     if (promotion.min_order_amount > 0 && orderNet < promotion.min_order_amount) {
@@ -133,7 +133,7 @@ export class PromotionService extends CrudService {
       );
     }
 
-    const { amount: eligibleAmount, lineIds } = this.#eligibleAmount(promotion, lines);
+    const { amount: eligibleAmount, lineIds } = await this.#eligibleAmount(promotion, lines);
     if (eligibleAmount <= 0) {
       throw new BusinessRuleError('No items in this sale qualify for the selected code');
     }
@@ -169,46 +169,46 @@ export class PromotionService extends CrudService {
   }
 
   /** Called by SalesService once a sale is committed. */
-  commitRedemption({ promotionId, saleId, customerId, discountAmount }) {
-    const promotion = this.repository.findById(promotionId);
+  async commitRedemption({ promotionId, saleId, customerId, discountAmount }) {
+    const promotion = await this.repository.findById(promotionId);
     if (!promotion) return;
-    this.repository.recordRedemption({
+    await this.repository.recordRedemption({
       promotion_id: promotionId,
       sale_id: saleId,
       customer_id: customerId || null,
       discount_amount: discountAmount,
     });
     if (promotion.kind === 'voucher') {
-      this.repository.consumeVoucherBalance(promotionId, discountAmount);
+      await this.repository.consumeVoucherBalance(promotionId, discountAmount);
     }
   }
 
   /** Called when a sale is voided so codes and voucher balances are returned. */
-  reverseRedemption(saleId) {
-    const rows = this.repository.db
+  async reverseRedemption(saleId) {
+    const rows = await this.repository.db
       .prepare('SELECT * FROM promotion_redemptions WHERE sale_id = ?').all(saleId);
     for (const row of rows) {
-      const promotion = this.repository.findById(row.promotion_id);
+      const promotion = await this.repository.findById(row.promotion_id);
       if (promotion?.kind === 'voucher') {
-        this.repository.restoreVoucherBalance(row.promotion_id, row.discount_amount);
+        await this.repository.restoreVoucherBalance(row.promotion_id, row.discount_amount);
       }
     }
     return this.repository.reverseRedemption(saleId);
   }
 
-  usageReport(query) {
+  async usageReport(query) {
     return this.repository.usageReport(query || {});
   }
 
   /** Quick "is this code good?" check from the promotions screen. */
-  validateCode(code, context = {}) {
-    const promotion = this.repository.findByCode(code);
+  async validateCode(code, context = {}) {
+    const promotion = await this.repository.findByCode(code);
     if (!promotion) throw new NotFoundError('Promotion code', code);
     try {
-      this.#assertUsable(promotion, {});
+      await this.#assertUsable(promotion, {});
       return { valid: true, promotion };
     } catch (error) {
-      auditService.record({
+      await auditService.record({
         action: 'VALIDATE', module: 'promotions', entityType: 'promotion', entityId: promotion.id,
         entityLabel: promotion.code, status: 'FAILED', message: error.message,
         actor: context.actor, request: context.request,
@@ -218,17 +218,17 @@ export class PromotionService extends CrudService {
   }
 
   /** Generate a batch of unique single-use voucher codes (gift cards, campaigns). */
-  generateVouchers({ prefix = 'MMV', count = 10, value, expiresAt, namePrefix = 'Gift voucher' }, context = {}) {
+  async generateVouchers({ prefix = 'MMV', count = 10, value, expiresAt, namePrefix = 'Gift voucher' }, context = {}) {
     if (!(Number(value) > 0)) throw new ValidationError('Voucher value must be greater than zero');
     const quantity = Math.min(Math.max(Number(count) || 1, 1), 500);
-    return transaction(() => {
+    return transaction(async () => {
       const created = [];
       for (let i = 0; i < quantity; i += 1) {
         let code;
         do {
           code = `${prefix}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
-        } while (this.repository.findByCode(code));
-        created.push(this.repository.create({
+        } while (await this.repository.findByCode(code));
+        created.push(await this.repository.create({
           code,
           name_en: `${namePrefix} ${value}`,
           name_ar: `قسيمة ${value}`,
@@ -243,7 +243,7 @@ export class PromotionService extends CrudService {
           created_by: context.actor?.id || null,
         }));
       }
-      auditService.record({
+      await auditService.record({
         action: 'GENERATE', module: 'promotions', entityType: 'voucher_batch',
         entityLabel: `${created.length} vouchers @ ${value}`,
         after: { codes: created.map((c) => c.code) },

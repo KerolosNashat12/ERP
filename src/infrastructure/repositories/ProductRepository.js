@@ -21,7 +21,7 @@ export class ProductRepository extends BaseRepository {
   }
 
   /** Rich list used by the catalogue grid: brand/category names + variant rollups. */
-  search({ search = '', brandId, categoryId, supplierId, isActive, page = 1, pageSize = 25 }) {
+  async search({ search = '', brandId, categoryId, supplierId, isActive, page = 1, pageSize = 25 }) {
     const where = [];
     const params = [];
     if (search) {
@@ -38,11 +38,11 @@ export class ProductRepository extends BaseRepository {
 
     const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
     const db = getDb();
-    const total = db.prepare(`SELECT COUNT(*) AS n FROM products p ${whereSql}`).get(...params).n;
+    const total = (await db.prepare(`SELECT COUNT(*) AS n FROM products p ${whereSql}`).get(...params)).n;
     const size = Math.min(Math.max(Number(pageSize) || 25, 1), 500);
     const current = Math.max(Number(page) || 1, 1);
 
-    const rows = db.prepare(`
+    const rows = await db.prepare(`
       SELECT p.*,
              b.name_en AS brand_name_en, b.name_ar AS brand_name_ar,
              c.name_en AS category_name_en, c.name_ar AS category_name_ar,
@@ -70,10 +70,10 @@ export class ProductRepository extends BaseRepository {
    * Trading history for one product — what the details page needs to answer
    * "is this line working?" without the user opening three reports.
    */
-  performance(productId, days = 90) {
+  async performance(productId, days = 90) {
     const db = getDb();
     const since = `-${Number(days) || 90} days`;
-    const totals = db.prepare(`
+    const totals = await db.prepare(`
       SELECT COALESCE(SUM(l.quantity), 0)                              AS units,
              COALESCE(SUM(l.line_total), 0)                            AS revenue,
              COALESCE(SUM(l.quantity * l.unit_cost), 0)                AS cost,
@@ -85,7 +85,7 @@ export class ProductRepository extends BaseRepository {
       WHERE v.product_id = ? AND s.sale_date >= datetime('now', ?)
     `).get(productId, since);
 
-    const lifetime = db.prepare(`
+    const lifetime = await db.prepare(`
       SELECT COALESCE(SUM(l.quantity), 0) AS units,
              MAX(s.sale_date)             AS last_sold,
              MIN(s.sale_date)             AS first_sold,
@@ -110,14 +110,14 @@ export class ProductRepository extends BaseRepository {
   }
 
   /** Per-variant stock and valuation for the details page. */
-  variantStock(productId) {
+  async variantStock(productId) {
     return getDb().prepare(`
       SELECT variant_id, quantity, available_quantity, average_cost, stock_value
       FROM v_stock_on_hand WHERE product_id = ?
     `).all(productId);
   }
 
-  salesHistory(productId, limit = 15) {
+  async salesHistory(productId, limit = 15) {
     return getDb().prepare(`
       SELECT s.id AS sale_id, s.invoice_no, s.sale_date, s.status,
              COALESCE(c.name, 'Walk-in') AS customer_name,
@@ -131,7 +131,7 @@ export class ProductRepository extends BaseRepository {
     `).all(productId, limit);
   }
 
-  purchaseHistory(productId, limit = 15) {
+  async purchaseHistory(productId, limit = 15) {
     return getDb().prepare(`
       SELECT po.id AS purchase_order_id, po.po_number, po.order_date, po.status,
              sup.name_en AS supplier_name,
@@ -146,7 +146,7 @@ export class ProductRepository extends BaseRepository {
     `).all(productId, limit);
   }
 
-  movementHistory(productId, limit = 25) {
+  async movementHistory(productId, limit = 25) {
     return getDb().prepare(`
       SELECT m.*, v.sku, v.variant_label, u.full_name AS user_name
       FROM stock_movements m
@@ -157,7 +157,7 @@ export class ProductRepository extends BaseRepository {
     `).all(productId, limit);
   }
 
-  returnHistory(productId, limit = 15) {
+  async returnHistory(productId, limit = 15) {
     return getDb().prepare(`
       SELECT r.id AS return_id, r.return_no, r.return_date, r.reason_code,
              rl.sku, rl.quantity, rl.condition, rl.line_total
@@ -170,9 +170,9 @@ export class ProductRepository extends BaseRepository {
   }
 
   /** Full aggregate: product + declared attributes + variants + their option values. */
-  findAggregate(productId) {
+  async findAggregate(productId) {
     const db = getDb();
-    const product = db.prepare(`
+    const product = await db.prepare(`
       SELECT p.*, b.name_en AS brand_name_en, c.name_en AS category_name_en,
              s.name_en AS supplier_name_en
       FROM products p
@@ -183,7 +183,7 @@ export class ProductRepository extends BaseRepository {
     `).get(productId);
     if (!product) return null;
 
-    product.attributes = db.prepare(`
+    product.attributes = await db.prepare(`
       SELECT a.*, pa.display_order AS product_display_order
       FROM product_attributes pa
       JOIN attributes a ON a.id = pa.attribute_id
@@ -191,13 +191,13 @@ export class ProductRepository extends BaseRepository {
       ORDER BY pa.display_order, a.display_order
     `).all(productId);
 
-    const variants = db.prepare(`
+    const variants = await db.prepare(`
       SELECT v.*,
              (SELECT COALESCE(SUM(quantity), 0) FROM stock_levels sl WHERE sl.variant_id = v.id) AS total_stock
       FROM product_variants v WHERE v.product_id = ? ORDER BY v.id
     `).all(productId);
 
-    const optionRows = db.prepare(`
+    const optionRows = await db.prepare(`
       SELECT vav.variant_id, vav.attribute_id, vav.attribute_value_id,
              a.code AS attribute_code, a.name_en AS attribute_name_en, a.name_ar AS attribute_name_ar,
              av.value_en, av.value_ar, av.color_hex
@@ -228,27 +228,27 @@ export class VariantRepository extends BaseRepository {
     });
   }
 
-  byProduct(productId) {
+  async byProduct(productId) {
     return this.db
       .prepare('SELECT * FROM product_variants WHERE product_id = ? ORDER BY id')
       .all(productId);
   }
 
-  details(variantId) {
-    return getDb().prepare('SELECT * FROM v_variant_details WHERE variant_id = ?').get(variantId) || null;
+  async details(variantId) {
+    return (await getDb().prepare('SELECT * FROM v_variant_details WHERE variant_id = ?').get(variantId)) || null;
   }
 
   /** Barcode/QR lookup for the scanner. Falls back to SKU so typed codes work too. */
-  findByCode(code) {
-    return getDb().prepare(`
+  async findByCode(code) {
+    return (await getDb().prepare(`
       SELECT * FROM v_variant_details
       WHERE barcode = ? OR sku = ? COLLATE NOCASE
       LIMIT 1
-    `).get(code, code) || null;
+    `).get(code, code)) || null;
   }
 
   /** Type-ahead used by POS, purchase orders, transfers and label printing. */
-  lookup(term, limit = 20, warehouseId = null) {
+  async lookup(term, limit = 20, warehouseId = null) {
     const like = `%${term}%`;
     if (warehouseId) {
       return getDb().prepare(`
@@ -271,25 +271,30 @@ export class VariantRepository extends BaseRepository {
     `).all(like, like, like, like, like, limit);
   }
 
-  replaceOptions(variantId, options) {
+  async replaceOptions(variantId, options) {
     const db = getDb();
-    db.prepare('DELETE FROM variant_attribute_values WHERE variant_id = ?').run(variantId);
+    await db.prepare('DELETE FROM variant_attribute_values WHERE variant_id = ?').run(variantId);
     const insert = db.prepare(`
       INSERT INTO variant_attribute_values (variant_id, attribute_id, attribute_value_id)
       VALUES (?, ?, ?)
     `);
     for (const option of options) {
-      insert.run(variantId, option.attribute_id, option.attribute_value_id);
+      await insert.run(variantId, option.attribute_id, option.attribute_value_id);
     }
   }
 
-  isReferenced(variantId) {
+  async isReferenced(variantId) {
     const db = getDb();
     const queries = [
       'SELECT 1 FROM sale_lines WHERE variant_id = ? LIMIT 1',
       'SELECT 1 FROM purchase_order_lines WHERE variant_id = ? LIMIT 1',
       'SELECT 1 FROM stock_movements WHERE variant_id = ? LIMIT 1',
     ];
-    return queries.some((sql) => Boolean(db.prepare(sql).get(variantId)));
+    // `some()` cannot await, and the loop keeps the original short-circuit:
+    // the first hit answers the question without running the rest.
+    for (const sql of queries) {
+      if (await db.prepare(sql).get(variantId)) return true;
+    }
+    return false;
   }
 }

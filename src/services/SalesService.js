@@ -31,21 +31,21 @@ export class SalesService {
     this.audit = deps.audit || auditService;
   }
 
-  list(query) {
+  async list(query) {
     return this.sales.listDetailed(query || {});
   }
 
-  get(id) {
-    const sale = this.sales.findAggregate(id);
+  async get(id) {
+    const sale = await this.sales.findAggregate(id);
     if (!sale) throw new NotFoundError('Sale', id);
     return sale;
   }
 
   /** Price a basket without committing anything — powers the live POS totals. */
-  quote({ lines = [], customer_id = null, promotion_code = null, manual_discount = 0,
+  async quote({ lines = [], customer_id = null, promotion_code = null, manual_discount = 0,
     loyalty_redeem_points = 0 }) {
-    const customer = customer_id ? this.customers.findById(customer_id) : null;
-    const priced = this.#priceLines(lines, customer);
+    const customer = customer_id ? await this.customers.findById(customer_id) : null;
+    const priced = await this.#priceLines(lines, customer);
     if (!priced.length) {
       return {
         lines: [], subtotal: 0, lineDiscount: 0, promotionDiscount: 0, manualDiscount: 0,
@@ -58,61 +58,63 @@ export class SalesService {
     });
   }
 
-  #priceLines(lines, customer) {
+  async #priceLines(lines, customer) {
     const useWholesale = customer?.customer_group === 'wholesale';
-    return lines
-      .filter((l) => Number(l.quantity) > 0)
-      .map((line, index) => {
-        const details = this.variants.details(line.variant_id);
-        if (!details) throw new NotFoundError('Variant', line.variant_id);
-        const defaultPrice = useWholesale && details.wholesale_price > 0
-          ? details.wholesale_price
-          : details.selling_price;
-        const unitPrice = line.unit_price !== undefined && line.unit_price !== null && line.unit_price !== ''
-          ? round2(line.unit_price)
-          : round2(defaultPrice);
-        const computed = calculateLine({
-          quantity: line.quantity,
-          unitPrice,
-          discountPercent: line.discount_percent || 0,
-          discountAmount: line.discount_amount || 0,
-          taxRate: 0, // tax is computed after order-level discount allocation
-        });
-        return {
-          key: line.key ?? index,
-          variant_id: details.variant_id,
-          product_id: details.product_id,
-          category_id: details.category_id,
-          brand_id: details.brand_id,
-          sku: details.sku,
-          description: [details.product_name_en, details.variant_label].filter(Boolean).join(' — '),
-          product_name_en: details.product_name_en,
-          product_name_ar: details.product_name_ar,
-          variant_label: details.variant_label,
-          quantity: round3(line.quantity),
-          unit_price: unitPrice,
-          unit_cost: Number(details.cost_price || 0),
-          discount_percent: Number(line.discount_percent || 0),
-          discount_amount: computed.discountAmount,
-          tax_rate: Number(details.tax_rate || 0),
-          grossAmount: computed.gross,
-          netAmount: computed.netAmount,
-        };
+    const priced = [];
+    // The line key falls back to the position *after* filtering, so the loop
+    // enumerates the filtered list rather than the original one.
+    for (const [index, line] of lines.filter((l) => Number(l.quantity) > 0).entries()) {
+      const details = await this.variants.details(line.variant_id);
+      if (!details) throw new NotFoundError('Variant', line.variant_id);
+      const defaultPrice = useWholesale && details.wholesale_price > 0
+        ? details.wholesale_price
+        : details.selling_price;
+      const unitPrice = line.unit_price !== undefined && line.unit_price !== null && line.unit_price !== ''
+        ? round2(line.unit_price)
+        : round2(defaultPrice);
+      const computed = calculateLine({
+        quantity: line.quantity,
+        unitPrice,
+        discountPercent: line.discount_percent || 0,
+        discountAmount: line.discount_amount || 0,
+        taxRate: 0, // tax is computed after order-level discount allocation
       });
+      priced.push({
+        key: line.key ?? index,
+        variant_id: details.variant_id,
+        product_id: details.product_id,
+        category_id: details.category_id,
+        brand_id: details.brand_id,
+        sku: details.sku,
+        description: [details.product_name_en, details.variant_label].filter(Boolean).join(' — '),
+        product_name_en: details.product_name_en,
+        product_name_ar: details.product_name_ar,
+        variant_label: details.variant_label,
+        quantity: round3(line.quantity),
+        unit_price: unitPrice,
+        unit_cost: Number(details.cost_price || 0),
+        discount_percent: Number(line.discount_percent || 0),
+        discount_amount: computed.discountAmount,
+        tax_rate: Number(details.tax_rate || 0),
+        grossAmount: computed.gross,
+        netAmount: computed.netAmount,
+      });
+    }
+    return priced;
   }
 
-  #buildTotals({ priced, customer, promotionCode, manualDiscount = 0, loyaltyPoints = 0 }) {
+  async #buildTotals({ priced, customer, promotionCode, manualDiscount = 0, loyaltyPoints = 0 }) {
     const subtotal = round2(priced.reduce((s, l) => s + l.grossAmount, 0));
     const lineDiscount = round2(priced.reduce((s, l) => s + l.discount_amount, 0));
     const netBeforeOrderDiscount = round2(priced.reduce((s, l) => s + l.netAmount, 0));
 
     let promotionResult = null;
     if (promotionCode) {
-      promotionResult = this.promotions.evaluate({ code: promotionCode, lines: priced, customer });
+      promotionResult = await this.promotions.evaluate({ code: promotionCode, lines: priced, customer });
     }
     const promotionDiscount = promotionResult ? promotionResult.discount : 0;
 
-    const redeemValue = Number(this.settings.get('loyalty.redeem_value', 0.1));
+    const redeemValue = Number(await this.settings.get('loyalty.redeem_value', 0.1));
     const requestedPoints = Math.max(Number(loyaltyPoints || 0), 0);
     if (requestedPoints > 0 && !customer) throw new BusinessRuleError('Select a customer to redeem loyalty points');
     if (requestedPoints > Number(customer?.loyalty_points || 0)) {
@@ -161,7 +163,7 @@ export class SalesService {
     const totalDiscount = round2(lineDiscount + orderDiscount);
     const totalAmount = round2(finalLines.reduce((s, l) => s + l.line_total, 0));
 
-    const earnRate = Number(this.settings.get('loyalty.earn_rate', 0));
+    const earnRate = Number(await this.settings.get('loyalty.earn_rate', 0));
     const loyaltyEarned = customer && earnRate > 0 ? Math.floor(totalAmount * earnRate) : 0;
 
     return {
@@ -182,16 +184,18 @@ export class SalesService {
   }
 
   /** Commit a sale. */
-  checkout(payload, context = {}) {
-    return transaction(() => {
-      const warehouseId = this.inventory.locationId();
+  async checkout(payload, context = {}) {
+    return transaction(async () => {
+      const warehouseId = await this.inventory.locationId();
 
       const rawLines = (payload.lines || []).filter((l) => Number(l.quantity) > 0);
       if (!rawLines.length) throw new ValidationError('The sale has no items');
 
-      const customer = payload.customer_id ? this.customers.requireById(payload.customer_id, 'customer') : null;
-      const priced = this.#priceLines(rawLines, customer);
-      const totals = this.#buildTotals({
+      const customer = payload.customer_id
+        ? await this.customers.requireById(payload.customer_id, 'customer')
+        : null;
+      const priced = await this.#priceLines(rawLines, customer);
+      const totals = await this.#buildTotals({
         priced,
         customer,
         promotionCode: payload.promotion_code || null,
@@ -230,8 +234,8 @@ export class SalesService {
         ? 'paid'
         : (settled > 0 ? 'partial' : 'unpaid');
 
-      const sale = this.sales.create({
-        invoice_no: this.sequences.next('sale'),
+      const sale = await this.sales.create({
+        invoice_no: await this.sequences.next('sale'),
         customer_id: customer?.id || null,
         warehouse_id: warehouseId,
         status: 'completed',
@@ -256,7 +260,7 @@ export class SalesService {
         created_by: context.actor?.id || null,
       });
 
-      this.sales.insertLines(sale.id, totals.lines.map((l) => ({
+      await this.sales.insertLines(sale.id, totals.lines.map((l) => ({
         variant_id: l.variant_id,
         sku: l.sku,
         description: l.description,
@@ -273,9 +277,10 @@ export class SalesService {
       // Issue stock and snapshot the true COGS from the moving-average cost.
       let actualCost = 0;
       for (const line of totals.lines) {
-        const level = repositories.inventory.ensureLevel(line.variant_id, warehouseId);
+        const level = await repositories.inventory.ensureLevel(line.variant_id, warehouseId);
         const unitCost = Number(level.average_cost || line.unit_cost || 0);
-        this.inventory.postMovement({
+        // Sequential: each movement's balance_after builds on the previous one.
+        await this.inventory.postMovement({
           variantId: line.variant_id,
           warehouseId,
           movementType: 'sale',
@@ -288,10 +293,10 @@ export class SalesService {
         });
         actualCost = round2(actualCost + line.quantity * unitCost);
       }
-      this.sales.update(sale.id, { total_cost: actualCost });
+      await this.sales.update(sale.id, { total_cost: actualCost });
 
       for (const payment of payments) {
-        this.sales.addPayment({
+        await this.sales.addPayment({
           sale_id: sale.id,
           amount: round2(Math.min(Number(payment.amount), totals.totalAmount)),
           method: payment.method || 'cash',
@@ -301,7 +306,7 @@ export class SalesService {
       }
 
       if (totals.promotion) {
-        this.promotions.commitRedemption({
+        await this.promotions.commitRedemption({
           promotionId: totals.promotion.id,
           saleId: sale.id,
           customerId: customer?.id || null,
@@ -311,13 +316,13 @@ export class SalesService {
 
       if (customer) {
         if (settled < totals.totalAmount) {
-          this.customers.adjustBalance(customer.id, round2(totals.totalAmount - settled));
+          await this.customers.adjustBalance(customer.id, round2(totals.totalAmount - settled));
         }
         const pointsDelta = round2(totals.loyaltyEarned - totals.loyaltyPointsRedeemed);
-        if (pointsDelta !== 0) this.customers.adjustLoyalty(customer.id, pointsDelta);
+        if (pointsDelta !== 0) await this.customers.adjustLoyalty(customer.id, pointsDelta);
       }
 
-      this.audit.record({
+      await this.audit.record({
         action: 'CREATE', module: 'sales', entityType: 'sale', entityId: sale.id,
         entityLabel: sale.invoice_no,
         after: {
@@ -333,9 +338,9 @@ export class SalesService {
   }
 
   /** Full reversal: returns stock, releases the promo code, unwinds balances. */
-  void(id, reason, context = {}) {
-    return transaction(() => {
-      const sale = this.sales.findAggregate(id);
+  async void(id, reason, context = {}) {
+    return transaction(async () => {
+      const sale = await this.sales.findAggregate(id);
       if (!sale) throw new NotFoundError('Sale', id);
       if (sale.status === 'void') throw new BusinessRuleError('This invoice is already void');
       if (sale.returns?.length) {
@@ -343,7 +348,8 @@ export class SalesService {
       }
 
       for (const line of sale.lines) {
-        this.inventory.postMovement({
+        // Sequential: each movement's balance_after builds on the previous one.
+        await this.inventory.postMovement({
           variantId: line.variant_id,
           warehouseId: sale.warehouse_id,
           movementType: 'sale_return',
@@ -357,23 +363,23 @@ export class SalesService {
         });
       }
 
-      if (sale.promotion_id) this.promotions.reverseRedemption(sale.id);
+      if (sale.promotion_id) await this.promotions.reverseRedemption(sale.id);
 
       if (sale.customer_id) {
         const outstanding = round2(sale.total_amount - sale.paid_amount);
-        if (outstanding > 0) this.customers.adjustBalance(sale.customer_id, -outstanding);
+        if (outstanding > 0) await this.customers.adjustBalance(sale.customer_id, -outstanding);
         const pointsDelta = round2(sale.loyalty_earned - sale.loyalty_redeemed);
-        if (pointsDelta !== 0) this.customers.adjustLoyalty(sale.customer_id, -pointsDelta);
+        if (pointsDelta !== 0) await this.customers.adjustLoyalty(sale.customer_id, -pointsDelta);
       }
 
-      const updated = this.sales.update(id, {
+      const updated = await this.sales.update(id, {
         status: 'void',
         voided_by: context.actor?.id || null,
         voided_at: new Date().toISOString(),
         void_reason: reason || null,
       });
 
-      this.audit.record({
+      await this.audit.record({
         action: 'VOID', module: 'sales', entityType: 'sale', entityId: id,
         entityLabel: sale.invoice_no,
         before: { status: sale.status, total: sale.total_amount },
@@ -384,9 +390,9 @@ export class SalesService {
     });
   }
 
-  registerPayment(id, { amount, method = 'cash', reference }, context = {}) {
-    return transaction(() => {
-      const sale = this.sales.requireById(id, 'sale');
+  async registerPayment(id, { amount, method = 'cash', reference }, context = {}) {
+    return transaction(async () => {
+      const sale = await this.sales.requireById(id, 'sale');
       if (sale.status === 'void') throw new BusinessRuleError('Cannot collect against a void invoice');
       const value = round2(Number(amount));
       if (!(value > 0)) throw new ValidationError('Payment amount must be greater than zero');
@@ -394,14 +400,14 @@ export class SalesService {
       if (value > outstanding + 0.01) throw new BusinessRuleError(`Only ${outstanding} is outstanding`);
 
       const paid = round2(sale.paid_amount + value);
-      this.sales.addPayment({ sale_id: id, amount: value, method, reference, created_by: context.actor?.id });
-      const updated = this.sales.update(id, {
+      await this.sales.addPayment({ sale_id: id, amount: value, method, reference, created_by: context.actor?.id });
+      const updated = await this.sales.update(id, {
         paid_amount: paid,
         payment_status: paid >= sale.total_amount - 0.009 ? 'paid' : 'partial',
       });
-      if (sale.customer_id) this.customers.adjustBalance(sale.customer_id, -value);
+      if (sale.customer_id) await this.customers.adjustBalance(sale.customer_id, -value);
 
-      this.audit.record({
+      await this.audit.record({
         action: 'PAYMENT', module: 'sales', entityType: 'sale', entityId: id,
         entityLabel: sale.invoice_no,
         before: { paid_amount: sale.paid_amount },
@@ -413,7 +419,7 @@ export class SalesService {
   }
 
   /** Cashier shift summary — what should be in the drawer. */
-  shiftSummary({ userId, dateFrom, dateTo }) {
+  async shiftSummary({ userId, dateFrom, dateTo }) {
     const db = this.sales.db;
     const params = [];
     const where = ["s.status = 'completed'"];
@@ -422,13 +428,13 @@ export class SalesService {
     if (dateTo) { where.push('date(s.sale_date) <= date(?)'); params.push(dateTo); }
     const whereSql = `WHERE ${where.join(' AND ')}`;
     return {
-      totals: db.prepare(`
+      totals: await db.prepare(`
         SELECT COUNT(*) AS invoices, COALESCE(SUM(s.total_amount),0) AS revenue,
                COALESCE(SUM(s.discount_amount),0) AS discounts,
                COALESCE(SUM(s.paid_amount),0) AS collected
         FROM sales s ${whereSql}
       `).get(...params),
-      byMethod: db.prepare(`
+      byMethod: await db.prepare(`
         SELECT s.payment_method AS method, COUNT(*) AS invoices,
                COALESCE(SUM(s.paid_amount),0) AS amount
         FROM sales s ${whereSql} GROUP BY s.payment_method

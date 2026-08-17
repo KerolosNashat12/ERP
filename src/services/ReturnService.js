@@ -51,23 +51,23 @@ export class ReturnService {
   }
 
   /** Policy the UI needs before it can render the form sensibly. */
-  policy() {
+  async policy() {
     return {
       reasons: RETURN_REASONS,
-      windowDays: Number(this.settings.get('returns.window_days', 14)),
-      allowWithoutReceipt: Boolean(this.settings.get('returns.allow_without_receipt', true)),
-      restockingFeePercent: Number(this.settings.get('returns.restocking_fee_percent', 0)),
-      requireReason: Boolean(this.settings.get('returns.require_reason', true)),
-      storeCreditValidityDays: Number(this.settings.get('returns.store_credit_days', 90)),
+      windowDays: Number(await this.settings.get('returns.window_days', 14)),
+      allowWithoutReceipt: Boolean(await this.settings.get('returns.allow_without_receipt', true)),
+      restockingFeePercent: Number(await this.settings.get('returns.restocking_fee_percent', 0)),
+      requireReason: Boolean(await this.settings.get('returns.require_reason', true)),
+      storeCreditValidityDays: Number(await this.settings.get('returns.store_credit_days', 90)),
     };
   }
 
-  list(query) {
+  async list(query) {
     return this.returns.listDetailed(query || {});
   }
 
-  get(id) {
-    const record = this.returns.findAggregate(id);
+  async get(id) {
+    const record = await this.returns.findAggregate(id);
     if (!record) throw new NotFoundError('Return', id);
     return record;
   }
@@ -77,18 +77,18 @@ export class ReturnService {
    * Accepts an invoice number, or the `INV:number` payload printed as a QR on
    * the receipt — so the cashier can just scan the receipt.
    */
-  lookupInvoice(reference) {
+  async lookupInvoice(reference) {
     const raw = String(reference || '').trim();
     if (!raw) throw new ValidationError('Enter or scan an invoice number');
     const invoiceNo = raw.toUpperCase().startsWith('INV:') ? raw.slice(4).trim() : raw;
 
-    const header = this.sales.findByInvoiceNo(invoiceNo);
+    const header = await this.sales.findByInvoiceNo(invoiceNo);
     if (!header) throw new NotFoundError('Invoice', invoiceNo);
-    const sale = this.sales.findAggregate(header.id);
+    const sale = await this.sales.findAggregate(header.id);
 
     if (sale.status === 'void') throw new BusinessRuleError('This invoice was voided — there is nothing to return');
 
-    const { windowDays } = this.policy();
+    const { windowDays } = await this.policy();
     const ageDays = Math.floor((Date.now() - new Date(sale.sale_date).getTime()) / 86_400_000);
     const outsideWindow = windowDays > 0 && ageDays > windowDays;
 
@@ -141,8 +141,8 @@ export class ReturnService {
   }
 
   /** Look an item up for a no-receipt return. */
-  lookupItem(code) {
-    const variant = this.variants.findByCode(String(code || '').trim());
+  async lookupItem(code) {
+    const variant = await this.variants.findByCode(String(code || '').trim());
     if (!variant) throw new NotFoundError('Item with code', code);
     return {
       variant_id: variant.variant_id,
@@ -163,10 +163,10 @@ export class ReturnService {
    * @param {'with_receipt'|'no_receipt'} payload.return_type
    * @param {Array} payload.lines [{ sale_line_id?, variant_id?, quantity, condition }]
    */
-  create(payload, context = {}) {
-    return transaction(() => {
+  async create(payload, context = {}) {
+    return transaction(async () => {
       const type = payload.return_type === 'no_receipt' ? 'no_receipt' : 'with_receipt';
-      const policy = this.policy();
+      const policy = await this.policy();
 
       if (type === 'no_receipt') {
         if (!policy.allowWithoutReceipt) {
@@ -183,8 +183,8 @@ export class ReturnService {
       }
 
       const prepared = type === 'with_receipt'
-        ? this.#prepareAgainstInvoice(payload, policy, context)
-        : this.#prepareWithoutReceipt(payload);
+        ? await this.#prepareAgainstInvoice(payload, policy, context)
+        : await this.#prepareWithoutReceipt(payload);
 
       const { sale, lines } = prepared;
       if (!lines.length) throw new ValidationError('Select at least one item to return');
@@ -205,12 +205,12 @@ export class ReturnService {
         throw new BusinessRuleError('Crediting the account needs a registered customer');
       }
 
-      const record = this.returns.create({
-        return_no: this.sequences.next('sales_return'),
+      const record = await this.returns.create({
+        return_no: await this.sequences.next('sales_return'),
         sale_id: sale?.id || null,
         invoice_no: sale?.invoice_no || null,
         customer_id: sale?.customer_id || payload.customer_id || null,
-        warehouse_id: this.inventory.locationId(),
+        warehouse_id: await this.inventory.locationId(),
         return_type: type,
         return_date: new Date().toISOString(),
         reason_code: reasonCode,
@@ -226,15 +226,16 @@ export class ReturnService {
         created_by: context.actor?.id || null,
       });
 
-      this.returns.insertLines(record.id, lines);
+      await this.returns.insertLines(record.id, lines);
 
       // --- stock
       let restocked = 0;
       let writtenOff = 0;
       for (const line of lines) {
         // The goods physically come back either way — always receive them first,
-        // so the ledger tells the true story.
-        this.inventory.postMovement({
+        // so the ledger tells the true story. Sequential: the write-off below
+        // needs the balance this movement leaves behind.
+        await this.inventory.postMovement({
           variantId: line.variant_id,
           warehouseId: record.warehouse_id,
           movementType: 'sale_return',
@@ -249,7 +250,7 @@ export class ReturnService {
 
         if (line.condition === 'damaged') {
           // ...then immediately scrap it, which is what makes the loss visible.
-          this.inventory.postMovement({
+          await this.inventory.postMovement({
             variantId: line.variant_id,
             warehouseId: record.warehouse_id,
             movementType: 'write_off',
@@ -267,35 +268,35 @@ export class ReturnService {
           restocked = round3(restocked + line.quantity);
         }
 
-        if (line.sale_line_id) this.sales.incrementReturnedQty(line.sale_line_id, line.quantity);
+        if (line.sale_line_id) await this.sales.incrementReturnedQty(line.sale_line_id, line.quantity);
       }
 
       // --- loyalty: take back the points earned on what was returned
       let loyaltyReversed = 0;
       if (sale?.customer_id && sale.loyalty_earned > 0 && sale.total_amount > 0) {
         loyaltyReversed = round2(sale.loyalty_earned * (grossRefund / sale.total_amount));
-        const customer = this.customers.findById(sale.customer_id);
+        const customer = await this.customers.findById(sale.customer_id);
         loyaltyReversed = Math.min(loyaltyReversed, Number(customer?.loyalty_points || 0));
-        if (loyaltyReversed > 0) this.customers.adjustLoyalty(sale.customer_id, -loyaltyReversed);
+        if (loyaltyReversed > 0) await this.customers.adjustLoyalty(sale.customer_id, -loyaltyReversed);
       }
 
       // --- money back
       let storeCreditCode = null;
       if (refundMethod === 'store_credit') {
-        storeCreditCode = this.#issueStoreCredit(refundTotal, record.return_no, policy, context);
+        storeCreditCode = await this.#issueStoreCredit(refundTotal, record.return_no, policy, context);
       } else if (refundMethod === 'account') {
         // Reduce what the customer owes us rather than handing cash over.
-        this.customers.adjustBalance(sale.customer_id, -refundTotal);
+        await this.customers.adjustBalance(sale.customer_id, -refundTotal);
       }
 
-      const finalRecord = this.returns.update(record.id, {
+      const finalRecord = await this.returns.update(record.id, {
         loyalty_reversed: loyaltyReversed,
         items_restocked: restocked,
         items_written_off: writtenOff,
         store_credit_code: storeCreditCode,
       });
 
-      this.audit.record({
+      await this.audit.record({
         action: 'RETURN',
         module: 'sales',
         entityType: 'sales_return',
@@ -323,13 +324,13 @@ export class ReturnService {
     });
   }
 
-  #prepareAgainstInvoice(payload, policy, context) {
+  async #prepareAgainstInvoice(payload, policy, context) {
     const header = payload.sale_id
-      ? this.sales.findById(payload.sale_id)
-      : this.sales.findByInvoiceNo(payload.invoice_no);
+      ? await this.sales.findById(payload.sale_id)
+      : await this.sales.findByInvoiceNo(payload.invoice_no);
     if (!header) throw new NotFoundError('Invoice', payload.invoice_no || payload.sale_id);
 
-    const sale = this.sales.findAggregate(header.id);
+    const sale = await this.sales.findAggregate(header.id);
     if (sale.status === 'void') throw new BusinessRuleError('Cannot return against a voided invoice');
 
     const ageDays = Math.floor((Date.now() - new Date(sale.sale_date).getTime()) / 86_400_000);
@@ -376,13 +377,13 @@ export class ReturnService {
     return { sale, lines };
   }
 
-  #prepareWithoutReceipt(payload) {
+  async #prepareWithoutReceipt(payload) {
     const lines = [];
     for (const item of payload.lines || []) {
       const quantity = round3(Number(item.quantity));
       if (!(quantity > 0)) continue;
 
-      const variant = this.variants.details(item.variant_id);
+      const variant = await this.variants.details(item.variant_id);
       if (!variant) throw new NotFoundError('Variant', item.variant_id);
 
       const net = round2(variant.selling_price * quantity);
@@ -405,7 +406,7 @@ export class ReturnService {
   }
 
   /** Store credit is a single-use voucher the customer spends at the till. */
-  #issueStoreCredit(amount, returnNo, policy, context) {
+  async #issueStoreCredit(amount, returnNo, policy, context) {
     if (!(amount > 0)) return null;
     const expiry = policy.storeCreditValidityDays > 0
       ? new Date(Date.now() + policy.storeCreditValidityDays * 86_400_000).toISOString().slice(0, 10)
@@ -413,9 +414,9 @@ export class ReturnService {
     let code;
     do {
       code = `CR-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
-    } while (repositories.promotions.findByCode(code));
+    } while (await repositories.promotions.findByCode(code));
 
-    repositories.promotions.create({
+    await repositories.promotions.create({
       code,
       name_en: `Store credit — ${returnNo}`,
       name_ar: `رصيد متجر — ${returnNo}`,
@@ -433,7 +434,7 @@ export class ReturnService {
   }
 
   /** Reason breakdown for the returns report. */
-  reasonBreakdown(query) {
+  async reasonBreakdown(query) {
     return this.returns.reasonBreakdown(query || {});
   }
 }

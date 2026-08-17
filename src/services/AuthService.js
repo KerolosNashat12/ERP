@@ -40,10 +40,10 @@ export class AuthService {
     }
   }
 
-  login({ username, password }, request = {}) {
-    const user = this.users.findByUsername(username);
+  async login({ username, password }, request = {}) {
+    const user = await this.users.findByUsername(username);
     if (!user) {
-      this.audit.record({
+      await this.audit.record({
         action: 'LOGIN', module: 'users', status: 'FAILED',
         message: `Unknown username "${username}"`, request,
         actor: { id: null, username },
@@ -52,7 +52,7 @@ export class AuthService {
     }
 
     if (user.locked_until && new Date(user.locked_until) > new Date()) {
-      this.audit.record({
+      await this.audit.record({
         action: 'LOGIN', module: 'users', status: 'BLOCKED',
         message: 'Attempt on a locked account', request,
         actor: { id: user.id, username: user.username },
@@ -61,7 +61,7 @@ export class AuthService {
     }
 
     if (!user.is_active) {
-      this.audit.record({
+      await this.audit.record({
         action: 'LOGIN', module: 'users', status: 'BLOCKED',
         message: 'Attempt on a deactivated account', request,
         actor: { id: user.id, username: user.username },
@@ -70,10 +70,10 @@ export class AuthService {
     }
 
     if (!bcrypt.compareSync(String(password || ''), user.password_hash)) {
-      const { attempts, lockedUntil } = this.users.registerLoginFailure(
+      const { attempts, lockedUntil } = await this.users.registerLoginFailure(
         user.id, config.auth.maxFailedAttempts, config.auth.lockMinutes,
       );
-      this.audit.record({
+      await this.audit.record({
         action: 'LOGIN', module: 'users', status: 'FAILED',
         message: `Wrong password (attempt ${attempts}${lockedUntil ? ', account locked' : ''})`,
         request, actor: { id: user.id, username: user.username },
@@ -81,27 +81,27 @@ export class AuthService {
       throw new UnauthorizedError('Invalid username or password');
     }
 
-    this.users.registerLoginSuccess(user.id);
-    const profile = this.profile(user.id);
-    this.audit.record({
+    await this.users.registerLoginSuccess(user.id);
+    const profile = await this.profile(user.id);
+    await this.audit.record({
       action: 'LOGIN', module: 'users', entityType: 'user', entityId: user.id,
       entityLabel: user.username, request, actor: { id: user.id, username: user.username },
     });
     return { token: this.issueToken({ ...user, role_code: profile.role.code }), user: profile };
   }
 
-  logout(actor, request) {
-    this.audit.record({
+  async logout(actor, request) {
+    await this.audit.record({
       action: 'LOGOUT', module: 'users', entityType: 'user', entityId: actor?.id,
       entityLabel: actor?.username, actor, request,
     });
   }
 
   /** Full session profile: identity, role, permission codes, default warehouse. */
-  profile(userId) {
-    const user = this.users.findById(userId);
+  async profile(userId) {
+    const user = await this.users.findById(userId);
     if (!user) throw new UnauthorizedError('Account no longer exists');
-    const role = this.roles.findById(user.role_id);
+    const role = await this.roles.findById(user.role_id);
     return {
       id: user.id,
       username: user.username,
@@ -116,31 +116,31 @@ export class AuthService {
       role: role
         ? { id: role.id, code: role.code, nameEn: role.name_en, nameAr: role.name_ar }
         : null,
-      permissions: this.users.permissionsFor(user.id),
+      permissions: await this.users.permissionsFor(user.id),
     };
   }
 
-  changePassword(userId, { currentPassword, newPassword }, context = {}) {
-    const user = this.users.findById(userId);
+  async changePassword(userId, { currentPassword, newPassword }, context = {}) {
+    const user = await this.users.findById(userId);
     if (!user) throw new UnauthorizedError();
     if (!bcrypt.compareSync(String(currentPassword || ''), user.password_hash)) {
       throw new ValidationError('Current password is incorrect');
     }
-    this.users.update(userId, {
+    await this.users.update(userId, {
       password_hash: this.hashPassword(newPassword),
       must_change_password: 0,
     });
-    this.audit.record({
+    await this.audit.record({
       action: 'PASSWORD_CHANGE', module: 'users', entityType: 'user', entityId: userId,
       entityLabel: user.username, actor: context.actor, request: context.request,
     });
     return { changed: true };
   }
 
-  updatePreferences(userId, { language }, context = {}) {
+  async updatePreferences(userId, { language }, context = {}) {
     if (language && !['en', 'ar'].includes(language)) throw new ValidationError('Unsupported language');
-    this.users.update(userId, { language });
-    this.audit.record({
+    await this.users.update(userId, { language });
+    await this.audit.record({
       action: 'UPDATE', module: 'users', entityType: 'user_preferences', entityId: userId,
       entityLabel: context.actor?.username, after: { language },
       actor: context.actor, request: context.request,
