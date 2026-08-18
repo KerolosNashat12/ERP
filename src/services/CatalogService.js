@@ -11,6 +11,8 @@ import { BusinessRuleError, ConflictError, NotFoundError, ValidationError } from
 import { round2, round3 } from '../shared/money.js';
 import auditService from './AuditService.js';
 
+const nowIso = () => new Date().toISOString();
+
 /** Option codes become SKU segments: "Rose Gold" -> "ROSEGO". */
 const slug = (value) => String(value || '')
   .toUpperCase()
@@ -107,6 +109,9 @@ export class CatalogService {
         throw new ConflictError(`SKU prefix "${skuPrefix}" is already used`);
       }
 
+      const published = payload.is_published === true || payload.is_published === 1;
+      const existingProduct = isUpdate ? await this.products.findById(productId) : null;
+
       const productData = {
         sku_prefix: skuPrefix,
         name_en: payload.name_en,
@@ -124,6 +129,13 @@ export class CatalogService {
         image_url: payload.image_url || null,
         tags: payload.tags || null,
         is_active: payload.is_active === false || payload.is_active === 0 ? 0 : 1,
+        is_published: published ? 1 : 0,
+        // Stamped the first time it goes live and never cleared, so the
+        // storefront can order by "newest on the website" rather than by
+        // when the product was first typed into the back office.
+        published_at: published ? (existingProduct?.published_at || nowIso()) : (existingProduct?.published_at || null),
+        web_description_en: payload.web_description_en || null,
+        web_description_ar: payload.web_description_ar || null,
       };
 
       const product = isUpdate

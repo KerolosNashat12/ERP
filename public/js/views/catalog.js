@@ -51,6 +51,11 @@ export async function productsView(root, route) {
         },
         { key: 'variant_count', label: t('variants'), type: 'number', render: (r) => tag(`${r.variant_count}`, 'info') },
         {
+          key: 'is_published',
+          label: t('website'),
+          render: (r) => (r.is_published ? tag(t('published'), 'ok') : tag(t('notPublished'))),
+        },
+        {
           key: 'price',
           label: t('price'),
           type: 'money',
@@ -169,6 +174,12 @@ async function productFormView(root, route) {
     { name: 'description_en', label: t('description'), type: 'textarea', span: 2 },
     { name: 'is_active', label: t('active'), type: 'checkbox', value: 1 },
     { name: 'track_inventory', label: t('trackInventory'), type: 'checkbox', value: 1 },
+    // Hidden until somebody deliberately publishes. Placed with the web copy so
+    // it reads as one decision: "this is what the shop shows, and here is what
+    // it says".
+    { name: 'is_published', label: t('showOnWebsite'), type: 'checkbox', hint: t('showOnWebsiteHint') },
+    { name: 'web_description_en', label: t('webDescriptionEn'), type: 'textarea', span: 2, hint: t('webDescriptionHint') },
+    { name: 'web_description_ar', label: t('webDescriptionAr'), type: 'textarea', span: 2 },
   ], existing || {
     is_active: 1, track_inventory: 1, unit: 'piece', tax_rate: 14, base_cost: 0, base_price: 0,
   }, { columns: 3 });

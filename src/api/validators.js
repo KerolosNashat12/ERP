@@ -110,6 +110,12 @@ export const productSchema = z.object({
   track_inventory: z.coerce.boolean().default(true),
   tags: optionalString,
   is_active: z.coerce.boolean().default(true),
+  // Website visibility, and the customer-facing copy that goes with it.
+  // Kept separate from the internal description so staff can write for
+  // shoppers without disturbing their own notes.
+  is_published: z.coerce.boolean().default(false),
+  web_description_en: optionalString,
+  web_description_ar: optionalString,
   attribute_ids: z.array(id).default([]),
   // May be empty: a product with no attributes gets one default variant made
   // for it, because stock, sales and labels are always keyed to a variant.

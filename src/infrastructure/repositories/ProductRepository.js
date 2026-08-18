@@ -15,6 +15,11 @@ export class ProductRepository extends BaseRepository {
         'sku_prefix', 'name_en', 'name_ar', 'description_en', 'description_ar',
         'brand_id', 'category_id', 'supplier_id', 'unit', 'tax_rate', 'base_cost',
         'base_price', 'track_inventory', 'image_url', 'tags', 'is_active', 'created_by',
+        // Website: anything missing from this list is silently dropped by
+        // BaseRepository.pick(), so a new column has to be added here as well
+        // as to the schema — the save simply ignores it otherwise.
+        'is_published', 'published_at', 'web_description_en', 'web_description_ar',
+        'primary_image_id',
       ],
       searchable: ['sku_prefix', 'name_en', 'name_ar', 'tags'],
     });
