@@ -19,6 +19,17 @@
  * without it. The comparison against the threshold happens inside SQL, so the
  * raw quantity is never even loaded into JavaScript where a later `res.json(row)`
  * could leak it.
+ *
+ * ONE EXCEPTION, added deliberately and at the owner's explicit request: the
+ * product DETAIL endpoint also returns `available`, the exact number of units
+ * of a variant. It is there so the quantity stepper can stop at what the shop
+ * actually has, instead of the customer finding out after typing their name,
+ * phone and address into checkout. The cost — a competitor can read one
+ * product's stock, one product at a time — was weighed and accepted.
+ *
+ * It stops there. `products()` and `home()` still carry the word only, and
+ * `#variants()` only selects the number when it is asked to, so a listing
+ * cannot start leaking counts because somebody widened a shared query.
  */
 import { getDb } from '../infrastructure/database/connection.js';
 import { NotFoundError } from '../shared/errors.js';
@@ -36,7 +47,48 @@ const CONFIG_KEYS = [
   'company.currency',
   'company.currency_symbol_en',
   'company.currency_symbol_ar',
+
+  // --- website: banner
+  'web.banner_heading_en', 'web.banner_heading_ar',
+  'web.banner_text_en', 'web.banner_text_ar',
+  'web.banner_cta_label_en', 'web.banner_cta_label_ar', 'web.banner_cta_link',
+  'web.banner_overlay',
+
+  // --- website: social links + their visibility toggles
+  'web.social_facebook', 'web.social_facebook_enabled',
+  'web.social_instagram', 'web.social_instagram_enabled',
+  'web.social_tiktok', 'web.social_tiktok_enabled',
+  'web.social_youtube', 'web.social_youtube_enabled',
+  'web.social_whatsapp', 'web.social_whatsapp_enabled',
+  'web.social_x', 'web.social_x_enabled',
+
+  // --- website: contact
+  'web.contact_email', 'web.contact_phone',
+  'web.contact_address_en', 'web.contact_address_ar',
+  'web.contact_hours_en', 'web.contact_hours_ar',
+  'web.contact_map_url',
 ];
+
+/** `network` key -> the `web.social_*` setting name it reads, in display order. */
+const SOCIAL_NETWORKS = ['facebook', 'instagram', 'tiktok', 'youtube', 'whatsapp', 'x'];
+
+/**
+ * A shop owner types a phone number, not a URL — `01001234567`,
+ * `+20 100 123 4567`, spaces and all. Click-to-chat needs a `wa.me` link, so it
+ * is built here rather than asked of the owner: strip everything but digits,
+ * and a local leading `0` becomes the country code `20` (this shop is Egypt
+ * only). A value that is already a URL (an owner who pasted a wa.me link
+ * directly) is passed through untouched rather than mangled by digit-stripping.
+ */
+function whatsappUrl(raw) {
+  const value = String(raw || '').trim();
+  if (!value) return null;
+  if (/^https?:\/\//i.test(value)) return value;
+  const digits = value.replace(/\D/g, '');
+  if (!digits) return null;
+  const withCountryCode = digits.startsWith('0') ? `20${digits.slice(1)}` : digits;
+  return `https://wa.me/${withCountryCode}`;
+}
 
 /** Units at or below this count as 'low'. Overridable from settings. */
 const DEFAULT_LOW_STOCK_THRESHOLD = 3;
@@ -150,19 +202,37 @@ export class StorefrontService {
    */
   async config() {
     const placeholders = CONFIG_KEYS.map(() => '?').join(', ');
-    const rows = await this.db.prepare(`
-      SELECT key, value, value_type
-      FROM settings
-      WHERE key IN (${placeholders})
-    `).all(...CONFIG_KEYS);
+    const [rows, bannerImage] = await Promise.all([
+      this.db.prepare(`
+        SELECT key, value, value_type
+        FROM settings
+        WHERE key IN (${placeholders})
+      `).all(...CONFIG_KEYS),
+      // Existence only — never the bytes, and never a second table read of
+      // anything the /banner route itself will stream.
+      this.db.prepare("SELECT 1 FROM web_assets WHERE slot = 'banner'").get(),
+    ]);
 
     const s = new Map(rows.map((r) => [r.key, decodeSetting(r.value, r.value_type)]));
     const num = (key, fallback = 0) => {
       const value = Number(s.get(key));
       return Number.isFinite(value) ? value : fallback;
     };
+    const str = (key) => s.get(key) || null;
 
     const freeOver = num('shop.free_delivery_over', 0);
+
+    const ctaLabelEn = str('web.banner_cta_label_en');
+    const ctaLabelAr = str('web.banner_cta_label_ar');
+    const ctaLink = str('web.banner_cta_link');
+
+    const social = SOCIAL_NETWORKS
+      .filter((network) => Boolean(s.get(`web.social_${network}_enabled`)) && str(`web.social_${network}`))
+      .map((network) => {
+        const raw = s.get(`web.social_${network}`);
+        return { network, url: network === 'whatsapp' ? whatsappUrl(raw) : raw };
+      })
+      .filter((entry) => Boolean(entry.url));
 
     return {
       // Missing row means nobody has ever configured the shop; the migration
@@ -187,6 +257,32 @@ export class StorefrontService {
       announcement: {
         en: s.get('shop.announcement_en') || null,
         ar: s.get('shop.announcement_ar') || null,
+      },
+
+      banner: {
+        image: bannerImage ? '/api/shop/banner' : null,
+        heading: { en: str('web.banner_heading_en'), ar: str('web.banner_heading_ar') },
+        text: { en: str('web.banner_text_en'), ar: str('web.banner_text_ar') },
+        // null only when BOTH the label and the link are empty — a shop that
+        // filled in one but not the other still gets a button, just a plainer one.
+        cta: (ctaLabelEn || ctaLabelAr || ctaLink)
+          ? { label: { en: ctaLabelEn, ar: ctaLabelAr }, link: ctaLink }
+          : null,
+        overlay: num('web.banner_overlay', 35),
+      },
+
+      social,
+
+      contact: {
+        email: str('web.contact_email'),
+        phone: str('web.contact_phone'),
+        // Not `web.social_whatsapp_enabled`-gated: that toggle controls the
+        // small icon row, but a shop that gave a WhatsApp number expects it on
+        // its own contact page regardless of whether the icon is shown too.
+        whatsapp: whatsappUrl(s.get('web.social_whatsapp')),
+        address: { en: str('web.contact_address_en'), ar: str('web.contact_address_ar') },
+        hours: { en: str('web.contact_hours_en'), ar: str('web.contact_hours_ar') },
+        mapUrl: str('web.contact_map_url'),
       },
     };
   }
@@ -366,7 +462,7 @@ export class StorefrontService {
 
     // Independent reads: the photos do not depend on the variants.
     const [variants, images] = await Promise.all([
-      this.#variants([productId]),
+      this.#variants([productId], { includeAvailable: true }),
       this.db.prepare(`
         SELECT i.id     AS id,
                i.alt_en AS alt_en,
@@ -400,6 +496,25 @@ export class StorefrontService {
         price: money(v.price),
         availability: v.availability,
         image_id: v.image_id,
+        /**
+         * The exact number of units left — quantity minus what is already
+         * reserved, floored at 0; null when the product is not stock-tracked,
+         * meaning unlimited.
+         *
+         * DELIBERATE, AND DELIBERATELY ONLY HERE. The shop owner asked for it
+         * so the quantity stepper can refuse to go past what exists rather than
+         * letting the customer discover it at the end of checkout. Every other
+         * method in this file returns the WORD ('in_stock' | 'low' | 'out') and
+         * must keep doing so: a number on a listing publishes the shop's whole
+         * position in one request. Do not "tidy" this field up into
+         * `#withAvailability()`, `products()` or `home()`.
+         *
+         * This is UX. The real guard is `WebOrderService.place()`, which
+         * re-checks every line inside the ordering transaction.
+         */
+        available: v.available === null || v.available === undefined
+          ? null
+          : Number(v.available),
       })),
     };
   }
@@ -463,8 +578,12 @@ export class StorefrontService {
    *
    * A product with `track_inventory = 0` is always sellable — services and
    * made-to-order lines have no shelf to run empty.
+   *
+   * `includeAvailable` is the one way the raw count can be selected at all, and
+   * exactly one caller passes it: `product()`. Everything else gets the word
+   * and no number, so the default is still the safe one.
    */
-  async #variants(productIds) {
+  async #variants(productIds, { includeAvailable = false } = {}) {
     if (!productIds.length) return [];
     const threshold = await this.#lowStockThreshold();
     const placeholders = productIds.map(() => '?').join(', ');
@@ -472,13 +591,20 @@ export class StorefrontService {
       COALESCE((SELECT SUM(sl.quantity - sl.reserved_quantity)
                   FROM stock_levels sl WHERE sl.variant_id = v.id), 0)`;
 
+    // Whole units only, never negative — a reservation that has overrun the
+    // shelf is 0 left to sell, not a negative cap the stepper would misread.
+    // NULL for an untracked product: unlimited, not zero.
+    const availableColumn = includeAvailable ? `
+             CASE WHEN p.track_inventory = 0 THEN NULL
+                  ELSE MAX(CAST(${available} AS INTEGER), 0) END AS available,` : '';
+
     return this.db.prepare(`
       SELECT v.id            AS id,
              v.product_id    AS product_id,
              v.variant_label AS label,
              v.selling_price AS price,
              (SELECT iv.id FROM product_images iv
-               WHERE iv.variant_id = v.id ORDER BY iv.display_order, iv.id LIMIT 1) AS image_id,
+               WHERE iv.variant_id = v.id ORDER BY iv.display_order, iv.id LIMIT 1) AS image_id,${availableColumn}
              CASE
                WHEN p.track_inventory = 0 THEN 'in_stock'
                WHEN ${available} <= 0 THEN 'out'

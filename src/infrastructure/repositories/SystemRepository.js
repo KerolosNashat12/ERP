@@ -1,6 +1,8 @@
 /** Users, roles/permissions, audit trail, settings and document sequences. */
 import { BaseRepository } from './BaseRepository.js';
 import { getDb } from '../database/connection.js';
+import { ALL_PERMISSIONS } from '../../shared/permissions.js';
+import { ValidationError } from '../../shared/errors.js';
 
 export class UserRepository extends BaseRepository {
   constructor() {
@@ -102,14 +104,58 @@ export class RoleRepository extends BaseRepository {
     return withCounts;
   }
 
+  /**
+   * Replace a role's permissions.
+   *
+   * This used to be one `INSERT … SELECT id FROM permissions WHERE code = ?`,
+   * which is silent by construction: a code with no row in `permissions`
+   * matches nothing, inserts nothing, and reports success. That is exactly what
+   * happened when a release added the `weborders.*` codes — the save came back
+   * green and the checkboxes came back empty.
+   *
+   * So each code is now resolved explicitly. A code the application knows about
+   * but the database has not registered yet is registered here rather than
+   * dropped, and a code nobody recognises is an error the caller sees.
+   */
   async setPermissions(roleId, permissionCodes) {
     const db = getDb();
+    const known = new Map(ALL_PERMISSIONS.map((p) => [p.code, p]));
+    const unknown = [];
+    const ids = [];
+
+    for (const code of permissionCodes) {
+      let row = await db.prepare('SELECT id FROM permissions WHERE code = ?').get(code);
+      if (!row && known.has(code)) {
+        const p = known.get(code);
+        await db.prepare(`
+          INSERT INTO permissions (code, module, action, description) VALUES (?, ?, ?, ?)
+          ON CONFLICT(code) DO UPDATE SET module = excluded.module, action = excluded.action
+        `).run(p.code, p.module, p.action, `${p.action} in ${p.module}`);
+        row = await db.prepare('SELECT id FROM permissions WHERE code = ?').get(code);
+      }
+      if (!row) unknown.push(code);
+      else ids.push(row.id);
+    }
+
+    if (unknown.length) {
+      throw new ValidationError(`Unknown permission code(s): ${unknown.join(', ')}`);
+    }
+
     await db.prepare('DELETE FROM role_permissions WHERE role_id = ?').run(roleId);
-    const link = db.prepare(`
-      INSERT OR IGNORE INTO role_permissions (role_id, permission_id)
-      SELECT ?, id FROM permissions WHERE code = ?
-    `);
-    for (const code of permissionCodes) await link.run(roleId, code);
+    const link = db.prepare(
+      'INSERT OR IGNORE INTO role_permissions (role_id, permission_id) VALUES (?, ?)',
+    );
+    for (const id of ids) await link.run(roleId, id);
+
+    // Prove it landed. A save that reports success having written nothing is the
+    // bug this method exists to make impossible.
+    const stored = (await db
+      .prepare('SELECT COUNT(*) AS n FROM role_permissions WHERE role_id = ?').get(roleId)).n;
+    if (Number(stored) !== ids.length) {
+      throw new Error(
+        `Permission save did not persist: expected ${ids.length} row(s), found ${stored}.`,
+      );
+    }
   }
 }
 

@@ -22,6 +22,7 @@ import cartView from './views/cart.js';
 import checkoutView from './views/checkout.js';
 import successView from './views/success.js';
 import trackView from './views/track.js';
+import contactView from './views/contact.js';
 
 const headerSlot = el('div');
 const main = el('main#main.site-main', { tabindex: '-1' });
@@ -94,6 +95,8 @@ async function boot() {
     checkout: guard(checkoutView),
     'order/:orderNo': guard(successView),
     track: guard(trackView),
+    // Not `guard()`-wrapped: a closed shop still needs a way to be reached.
+    contact: contactView,
   }, {
     notFound: guard(notFoundRoute),
     onRendered: () => {

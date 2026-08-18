@@ -485,6 +485,28 @@ html[dir="rtl"] .kpi .label { letter-spacing: 0; }
 .qr-label .info .s { font-family: ui-monospace, monospace; white-space: nowrap; }
 .qr-label .info .shop { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
+/* ------------------------------------------------------- website settings */
+/* 16:5 matches the storefront hero exactly, so what the owner sees here is
+   what a shopper sees, not an approximation. */
+.banner-preview-frame {
+  position: relative; width: 100%; aspect-ratio: 16 / 5; overflow: hidden;
+  border-radius: var(--radius-sm); background: var(--line-2) center / cover no-repeat;
+  display: grid; place-items: center;
+}
+.banner-preview-overlay { position: absolute; inset: 0; }
+.banner-preview-empty { position: relative; color: var(--ink-3); font-size: 13px; }
+.banner-preview-content {
+  position: relative; z-index: 1; display: grid; gap: 6px; justify-items: center;
+  text-align: center; color: #fff; padding: 12px; max-width: 82%;
+}
+.banner-preview-content h3 { margin: 0; font-size: 21px; line-height: 1.25; }
+.banner-preview-content p { margin: 0; font-size: 13px; opacity: .92; }
+.banner-preview-cta {
+  margin-top: 4px; padding: 6px 18px; border-radius: 20px; background: #fff;
+  color: #111; font-size: 12.5px; font-weight: 600;
+}
+.social-row-hint, .contact-note { color: var(--ink-3); font-size: 12.5px; margin: 0 0 12px; }
+
 /* --------------------------------------------------------------- receipt */
 .receipt { font-family: ui-monospace, "Courier New", monospace; color: #000; }
 .receipt h3 { text-align: center; font-size: 15px; margin-bottom: 2px; }

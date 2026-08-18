@@ -14,28 +14,44 @@
  * Everything here is async. That is not decoration: a network database cannot
  * be synchronous, so the layers above are written once, in the shape that works
  * for both.
+ *
+ * ── Multi-tenancy ────────────────────────────────────────────────────────────
+ * A connection is an object, not a set of module globals, because a platform
+ * serves many shops from one process and each shop has its own database. The
+ * active one lives in AsyncLocalStorage for the life of a request, so the ~210
+ * places that call `getDb()` never had to learn about tenants.
+ *
+ * With no tenant context — the shop PC, the scripts, the tests — `getDb()`
+ * returns the process default and behaves exactly as it always has.
  */
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { config } from '../../config/index.js';
 import { SCHEMA_SQL } from './schema.js';
+import { tenantStore } from './connections.js';
 
-let driver = null;
-let facade = null;
-const txStore = new AsyncLocalStorage();
+/** The process-wide database: single-tenant installs and every CLI script. */
+let defaultConnection = null;
 
 /**
- * With one shared connection, `BEGIN` cannot be issued twice. Synchronous code
- * got that for free; async code does not, so overlapping requests are queued
- * into a single file of writers. Networked drivers open a stream per
- * transaction and need no such queue.
+ * Build a connection: a driver, its facade, its own transaction store and its
+ * own write queue. Everything a database needs to be used independently of any
+ * other database open in the same process.
  */
-let writeQueue = Promise.resolve();
+function createConnection(driver) {
+  const txStore = new AsyncLocalStorage();
 
-const activeExecutor = () => txStore.getStore()?.executor || driver.executor;
+  /**
+   * With one shared connection, `BEGIN` cannot be issued twice. Synchronous code
+   * got that for free; async code does not, so overlapping requests are queued
+   * into a single file of writers. Networked drivers open a stream per
+   * transaction and need no such queue.
+   */
+  let writeQueue = Promise.resolve();
 
-/** Mirrors the `prepare(sql).get(...)` shape the repositories already use. */
-function buildFacade() {
-  return {
+  const activeExecutor = () => txStore.getStore()?.executor || driver.executor;
+
+  const facade = {
+    /** Mirrors the `prepare(sql).get(...)` shape the repositories already use. */
     prepare(sql) {
       return {
         get: (...params) => activeExecutor().get(sql, params),
@@ -66,115 +82,158 @@ function buildFacade() {
       return driver.supportsFileBackup;
     },
   };
+
+  async function transaction(fn) {
+    const outer = txStore.getStore();
+    if (outer) {
+      outer.depth += 1;
+      try {
+        return await fn(facade);
+      } finally {
+        outer.depth -= 1;
+      }
+    }
+
+    const run = async () => {
+      const executor = await driver.begin();
+      const state = { executor, depth: 1 };
+      return txStore.run(state, async () => {
+        try {
+          const result = await fn(facade);
+          await driver.commit(executor);
+          return result;
+        } catch (error) {
+          try {
+            await driver.rollback(executor);
+          } catch {
+            // A failed rollback must never mask the error that caused it.
+          }
+          throw error;
+        }
+      });
+    };
+
+    if (!driver.serialisesTransactions) return run();
+
+    // Queue, but never let one caller's failure break the chain for the next.
+    const queued = writeQueue.then(run, run);
+    writeQueue = queued.catch(() => {});
+    return queued;
+  }
+
+  return {
+    driver,
+    facade,
+    transaction,
+    inTransaction: () => Boolean(txStore.getStore()),
+    applySchema: () => driver.applySchema(SCHEMA_SQL),
+    backupTo: (target) => driver.backupTo(target),
+    close: () => driver.close(),
+  };
 }
 
 /**
- * Open the database. Call once during startup, before anything touches `getDb`.
- * Idempotent, so scripts and tests can call it freely.
+ * Open a driver for an arbitrary database. Used for tenants and for the control
+ * plane; `initDb()` below is the single-tenant special case of it.
  */
-export async function initDb() {
-  if (driver) return facade;
-
+export async function openDriver({ driver: kind, url, authToken, file }) {
   // Each driver is loaded only if selected: a hosted deployment should never
   // pull in `node:sqlite`, and a shop PC should never need the network client.
-  if (config.database.driver === 'libsql') {
+  if (kind === 'libsql') {
     const { createLibsqlDriver } = await import('./drivers/libsqlDriver.js');
-    driver = await createLibsqlDriver({
-      url: config.database.url,
-      authToken: config.database.authToken,
-    });
-  } else {
-    const { createSqliteDriver } = await import('./drivers/sqliteDriver.js');
-    driver = createSqliteDriver({ file: config.paths.database });
+    return createLibsqlDriver({ url, authToken });
   }
-
-  facade = buildFacade();
-  return facade;
+  const { createSqliteDriver } = await import('./drivers/sqliteDriver.js');
+  return createSqliteDriver({ file });
 }
+
+/** A connection for one tenant, ready to be cached and reused. */
+export async function openConnection(descriptor) {
+  return createConnection(await openDriver(descriptor));
+}
+
+/**
+ * Open the process default. Call once during startup, before anything touches
+ * `getDb`. Idempotent, so scripts and tests can call it freely.
+ */
+export async function initDb() {
+  if (defaultConnection) return defaultConnection.facade;
+  defaultConnection = await openConnection({
+    driver: config.database.driver,
+    url: config.database.url,
+    authToken: config.database.authToken,
+    file: config.paths.database,
+  });
+  return defaultConnection.facade;
+}
+
+/** The connection this request belongs to: its tenant's, or the process default. */
+function current() {
+  const scoped = tenantStore.getStore()?.connection;
+  if (scoped) return scoped;
+  if (!defaultConnection) {
+    throw new Error('Database not initialised — call await initDb() during startup.');
+  }
+  return defaultConnection;
+}
+
+/** Run `fn` with `tenant`'s database as the one `getDb()` returns. */
+export function runWithTenant(tenant, connection, fn) {
+  return tenantStore.run({ tenant, connection }, fn);
+}
+
+/** The tenant serving this request, or null in single-tenant mode. */
+export const currentTenant = () => tenantStore.getStore()?.tenant || null;
 
 /** Synchronous accessor — deliberately, so call sites stay `getDb().prepare(…)`. */
 export function getDb() {
-  if (!facade) {
-    throw new Error('Database not initialised — call await initDb() during startup.');
-  }
-  return facade;
+  return current().facade;
 }
 
 export function driverName() {
-  return driver ? driver.name : config.database.driver;
+  const scoped = tenantStore.getStore()?.connection;
+  if (scoped) return scoped.driver.name;
+  return defaultConnection ? defaultConnection.driver.name : config.database.driver;
 }
 
 export function supportsFileBackup() {
-  return driver ? driver.supportsFileBackup : config.database.driver === 'sqlite';
+  const scoped = tenantStore.getStore()?.connection;
+  if (scoped) return scoped.driver.supportsFileBackup;
+  return defaultConnection
+    ? defaultConnection.driver.supportsFileBackup
+    : config.database.driver === 'sqlite';
 }
 
 export async function applySchema() {
   await initDb();
-  await driver.applySchema(SCHEMA_SQL);
+  return current().applySchema();
 }
 
 /**
- * Run `fn` inside a transaction. Nested calls join the outer one, so services
- * compose: a sale posts stock movements, redeems a promotion and writes an
- * audit row as a single atomic unit, and only the outermost call commits.
+ * Run `fn` inside a transaction on the current database. Nested calls join the
+ * outer one, so services compose: a sale posts stock movements, redeems a
+ * promotion and writes an audit row as a single atomic unit, and only the
+ * outermost call commits.
  */
-export async function transaction(fn) {
-  const outer = txStore.getStore();
-  if (outer) {
-    outer.depth += 1;
-    try {
-      return await fn(getDb());
-    } finally {
-      outer.depth -= 1;
-    }
-  }
+export const transaction = (fn) => current().transaction(fn);
 
-  const run = async () => {
-    const executor = await driver.begin();
-    const state = { executor, depth: 1 };
-    return txStore.run(state, async () => {
-      try {
-        const result = await fn(getDb());
-        await driver.commit(executor);
-        return result;
-      } catch (error) {
-        try {
-          await driver.rollback(executor);
-        } catch {
-          // A failed rollback must never mask the error that caused it.
-        }
-        throw error;
-      }
-    });
-  };
-
-  if (!driver.serialisesTransactions) return run();
-
-  // Queue, but never let one caller's failure break the chain for the next.
-  const queued = writeQueue.then(run, run);
-  writeQueue = queued.catch(() => {});
-  return queued;
-}
-
-export const inTransaction = () => Boolean(txStore.getStore());
+export const inTransaction = () => current().inTransaction();
 
 /**
  * Consistent copy of the database. Only meaningful for the file driver; hosted
  * databases are backed up by the provider, and the caller is expected to check
  * `supportsFileBackup()` first rather than catch an error.
  */
-export async function backupTo(targetPath) {
-  return driver.backupTo(targetPath);
-}
+export const backupTo = (targetPath) => current().backupTo(targetPath);
 
 export async function closeDb() {
-  if (!driver) return;
-  await driver.close();
-  driver = null;
-  facade = null;
+  if (!defaultConnection) return;
+  await defaultConnection.close();
+  defaultConnection = null;
 }
 
 export default {
   initDb, getDb, driverName, supportsFileBackup, applySchema,
   transaction, inTransaction, backupTo, closeDb,
+  openConnection, runWithTenant, currentTenant,
 };

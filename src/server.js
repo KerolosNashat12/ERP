@@ -8,7 +8,7 @@ import config from './config/index.js';
 import {
   initDb, applySchema, getDb, closeDb, driverName,
 } from './infrastructure/database/connection.js';
-import { seedBaseline, hardenDefaultCredentials } from './infrastructure/database/seed.js';
+import { seedBaseline, hardenDefaultCredentials, syncPermissionCatalogue } from './infrastructure/database/seed.js';
 import { runMigrations } from './infrastructure/database/migrations/index.js';
 import apiRouter from './api/routes/index.js';
 import shopRouter from './api/routes/shop.js';
@@ -135,6 +135,15 @@ async function applyMigrations() {
  * Runs on every start, not just the first: a database seeded before this check
  * existed can still be sitting on a published default password.
  */
+async function syncPermissions() {
+  try {
+    const added = await syncPermissionCatalogue();
+    if (added.length) console.log(`✔ New permissions registered: ${added.join(', ')}`);
+  } catch (error) {
+    console.warn(`Could not sync the permission catalogue: ${error.message}`);
+  }
+}
+
 async function hardenCredentials() {
   try {
     const flagged = await hardenDefaultCredentials();
@@ -151,7 +160,7 @@ async function hardenCredentials() {
 export async function ensureDatabaseReady() {
   await initDb();
   if (!isHostedDb()) return;
-  bootstrap = bootstrap || bootstrapHostedDatabase().then(hardenCredentials).catch((error) => {
+  bootstrap = bootstrap || bootstrapHostedDatabase().then(syncPermissions).then(hardenCredentials).catch((error) => {
     // Do not cache a failure: the next request should be able to try again.
     bootstrap = null;
     throw error;
@@ -178,6 +187,7 @@ async function prepareDatabase() {
     console.warn('\n⚠  No users found. Run `npm run db:seed` before signing in.\n');
     return;
   }
+  await syncPermissions();
   await hardenCredentials();
 }
 

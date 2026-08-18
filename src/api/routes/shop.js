@@ -11,6 +11,7 @@ import { Router } from 'express';
 import { asyncHandler, sendImage } from '../middleware/index.js';
 import storefront from '../../services/StorefrontService.js';
 import images from '../../services/ImageService.js';
+import webAssets from '../../services/WebAssetService.js';
 import { NotFoundError } from '../../shared/errors.js';
 
 const router = Router();
@@ -65,6 +66,21 @@ router.get('/images/:id', asyncHandler(async (req, res) => {
   const image = await images.publishedBytes(req.params.id);
   if (!image) throw new NotFoundError('Image', req.params.id);
   sendImage(req, res, image);
+}));
+
+/**
+ * The hero banner. Short cache — 5 minutes, not the year that product photos
+ * get — because unlike a product photo this is one image an owner may swap on
+ * a whim, and there is no new id to bust a long-lived cache with.
+ *
+ * WebAssetService is the same kind of narrow exception as ImageService above:
+ * one column list, no publish gate to forget because there is nothing to gate
+ * — a website asset has no draft state, it is either set or it is not.
+ */
+router.get('/banner', asyncHandler(async (req, res) => {
+  const image = await webAssets.bytes('banner');
+  if (!image) throw new NotFoundError('Banner image', 'banner');
+  sendImage(req, res, { ...image, created_at: image.updated_at }, { cacheControl: 'public, max-age=300' });
 }));
 
 export default router;

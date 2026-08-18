@@ -17,13 +17,12 @@
  * thumbnails.
  */
 import { getDb, transaction } from '../infrastructure/database/connection.js';
-import { NotFoundError, ValidationError } from '../shared/errors.js';
+import { NotFoundError } from '../shared/errors.js';
+import { decodeImageDataUrl } from '../shared/imageCodec.js';
 import auditService from './AuditService.js';
 
 /** Decoded, not encoded: the base64 in transit is about a third larger. */
 const MAX_BYTES = 400 * 1024;
-
-const ALLOWED_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
 
 /** Everything except `data`. Callers that want the bytes ask for them. */
 const META_FIELDS = [
@@ -33,110 +32,9 @@ const META_FIELDS = [
 const META_COLUMNS = META_FIELDS.join(', ');
 const metaColumns = (alias) => META_FIELDS.map((column) => `${alias}.${column}`).join(', ');
 
-const DATA_URL = /^data:([a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+)?;base64,([a-z0-9+/=\s]+)$/i;
-
-const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
-
-/**
- * What the bytes actually are, regardless of what the data URL claimed.
- * A declared content type is a request, not a fact, and it ends up in a
- * `Content-Type` header served to the public — so it is taken from the file.
- */
-function sniffType(bytes) {
-  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
-    return 'image/jpeg';
-  }
-  if (bytes.length >= 8 && bytes.subarray(0, 8).equals(PNG_MAGIC)) return 'image/png';
-  if (bytes.length >= 12
-    && bytes.toString('latin1', 0, 4) === 'RIFF'
-    && bytes.toString('latin1', 8, 12) === 'WEBP') {
-    return 'image/webp';
-  }
-  return null;
-}
-
-/**
- * Pixel size straight out of the file header — no image library, which is a
- * hard rule here (a native dependency would break the "copy the folder onto a
- * shop PC" install). Unknown dimensions are not an error: they are metadata the
- * storefront uses to reserve space, so a header this cannot parse stores null.
- */
-function readDimensions(bytes, type) {
-  try {
-    if (type === 'image/png') {
-      // IHDR is always the first chunk: 8 magic + 4 length + 4 type.
-      if (bytes.toString('latin1', 12, 16) !== 'IHDR') return {};
-      return { width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) };
-    }
-
-    if (type === 'image/jpeg') {
-      // Walk the segment chain to the frame header; everything before it is
-      // metadata of some length that has to be skipped rather than searched.
-      let offset = 2;
-      while (offset + 9 < bytes.length) {
-        if (bytes[offset] !== 0xff) return {};
-        const marker = bytes[offset + 1];
-        // Start-of-frame, any coding: baseline, progressive, arithmetic.
-        if (marker >= 0xc0 && marker <= 0xcf
-          && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc) {
-          return { height: bytes.readUInt16BE(offset + 5), width: bytes.readUInt16BE(offset + 7) };
-        }
-        if (marker === 0xd8 || (marker >= 0xd0 && marker <= 0xd9)) offset += 2;
-        else offset += 2 + bytes.readUInt16BE(offset + 2);
-      }
-      return {};
-    }
-
-    if (type === 'image/webp') {
-      const chunk = bytes.toString('latin1', 12, 16);
-      if (chunk === 'VP8 ' && bytes.length >= 30) {
-        return {
-          width: bytes.readUInt16LE(26) & 0x3fff,
-          height: bytes.readUInt16LE(28) & 0x3fff,
-        };
-      }
-      if (chunk === 'VP8L' && bytes.length >= 25) {
-        // 14 bits of width-1 then 14 bits of height-1, little-endian bitstream.
-        const bits = bytes.readUInt32LE(21);
-        return { width: (bits & 0x3fff) + 1, height: ((bits >> 14) & 0x3fff) + 1 };
-      }
-      if (chunk === 'VP8X' && bytes.length >= 30) {
-        return {
-          width: bytes.readUIntLE(24, 3) + 1,
-          height: bytes.readUIntLE(27, 3) + 1,
-        };
-      }
-    }
-  } catch {
-    // A truncated header is the client's problem, not a reason to refuse the
-    // upload: the bytes are still a valid picture as far as the browser knows.
-  }
-  return {};
-}
-
 /** `data:image/jpeg;base64,…` -> Buffer, or an error a shop user can act on. */
 export function decodeDataUrl(dataUrl) {
-  const match = DATA_URL.exec(String(dataUrl || '').trim());
-  if (!match) throw new ValidationError('A photo must be sent as a base64 data URL');
-
-  const declared = (match[1] || '').toLowerCase();
-  if (declared && !ALLOWED_TYPES.has(declared)) {
-    throw new ValidationError('Only JPEG, PNG and WebP photos can be uploaded');
-  }
-
-  const data = Buffer.from(match[2].replace(/\s+/g, ''), 'base64');
-  if (!data.length) throw new ValidationError('The photo is empty');
-
-  const contentType = sniffType(data);
-  if (!contentType) throw new ValidationError('Only JPEG, PNG and WebP photos can be uploaded');
-
-  if (data.length > MAX_BYTES) {
-    throw new ValidationError(
-      `The photo is ${Math.round(data.length / 1024)} KB — the limit is ${MAX_BYTES / 1024} KB`,
-    );
-  }
-
-  return { data, contentType, ...readDimensions(data, contentType) };
+  return decodeImageDataUrl(dataUrl, { maxBytes: MAX_BYTES, label: 'photo' });
 }
 
 export class ImageService {

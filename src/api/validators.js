@@ -325,6 +325,11 @@ export const imageOrderSchema = z.object({
   ids: z.array(id).default([]),
 });
 
+/** The website banner image — same shape as a product photo, its own endpoint. */
+export const websiteBannerSchema = z.object({
+  dataUrl: z.string().min(1, 'A photo is required'),
+});
+
 /**
  * A basket from the public internet.
  *

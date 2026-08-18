@@ -620,6 +620,21 @@ CREATE TABLE IF NOT EXISTS product_images (
 CREATE INDEX IF NOT EXISTS idx_images_product ON product_images(product_id, display_order);
 CREATE INDEX IF NOT EXISTS idx_images_variant ON product_images(variant_id);
 
+-- ---------------------------------------------------------------- website assets
+-- One row per named image slot ('banner' today), so a second slot later is a
+-- new row rather than a new table. Same reasoning as product_images: the bytes
+-- live in the database, not on a disk that may not exist or may not survive.
+CREATE TABLE IF NOT EXISTS web_assets (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  slot TEXT NOT NULL UNIQUE,          -- 'banner' today
+  data BLOB NOT NULL,
+  content_type TEXT NOT NULL,
+  byte_size INTEGER NOT NULL,
+  width INTEGER, height INTEGER,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_by INTEGER REFERENCES users(id) ON DELETE SET NULL
+);
+
 -- ---------------------------------------------------------------- access recovery
 -- There is no mail server here on purpose: the system has to work with the
 -- internet down. So a locked-out user raises a request and an administrator

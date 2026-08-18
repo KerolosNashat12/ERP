@@ -22,6 +22,33 @@ const whatsappHref = () => {
   return digits ? `https://wa.me/${digits}` : null;
 };
 
+// One glyph per network the ERP can switch on. `config.social` already comes
+// pre-filtered to enabled + non-empty rows, so anything unrecognised here is
+// simply skipped rather than shown as a blank square.
+const SOCIAL_ICON = {
+  facebook: ICONS.facebook,
+  instagram: ICONS.instagram,
+  tiktok: ICONS.tiktok,
+  youtube: ICONS.youtube,
+  whatsapp: ICONS.whatsapp,
+  x: ICONS.x,
+};
+// Brand names, not translated — a shop's Arabic footer still says "Facebook".
+const SOCIAL_LABEL = {
+  facebook: 'Facebook', instagram: 'Instagram', tiktok: 'TikTok',
+  youtube: 'YouTube', whatsapp: 'WhatsApp', x: 'X',
+};
+
+/** Icon links to whatever the shop has switched on — nothing when none has. */
+function socialLinks() {
+  const rows = (shop.config?.social || []).filter((row) => row.url && SOCIAL_ICON[row.network]);
+  if (!rows.length) return null;
+  return el('div.social-links', { 'aria-label': t('followUs') },
+    rows.map((row) => el('a.social-link', {
+      href: row.url, target: '_blank', rel: 'noopener noreferrer', 'aria-label': SOCIAL_LABEL[row.network],
+    }, icon(SOCIAL_ICON[row.network], { size: 17 }))));
+}
+
 /** The announcement is optional and bilingual; an empty one takes no space. */
 function announcementBar() {
   const text = getLanguage() === 'ar'
@@ -107,6 +134,9 @@ export function buildHeader() {
       isOpen() && searchForm(),
       el('div.head-actions',
         languageToggle(),
+        // Reaching the shop is not conditional on it being open for orders.
+        el('a.icon-btn.contact-btn', { href: href('contact') },
+          icon(ICONS.mail, { size: 19 }), el('span.btn-label', t('contactUs'))),
         isOpen() && el('a.icon-btn.track-btn', { href: href('track') },
           icon(ICONS.truck, { size: 19 }), el('span.btn-label', t('trackOrder'))),
         isOpen() && cartButton()))),
@@ -122,19 +152,21 @@ export function buildFooter() {
         el('span.brand-mark', 'M&M'),
         el('p.foot-about', t('footerAbout')),
         wa && el('a.wa-link', { href: wa, target: '_blank', rel: 'noopener noreferrer' },
-          icon(ICONS.whatsapp, { size: 18 }), t('whatsappUs'))),
+          icon(ICONS.whatsapp, { size: 18 }), t('whatsappUs')),
+        socialLinks()),
       // A closed shop offers no links into a catalogue nobody can buy from;
       // what is left is the note about how payment works and a way to reach a
-      // human.
+      // human — which is also why "contact" survives the isOpen gate below.
       isOpen() && el('nav.foot-col', { 'aria-label': t('footerShop') },
         el('h3', t('footerShop')),
         el('a', { href: href('products') }, t('allProducts')),
         shop.categories.slice(0, 4).map((category) => el('a', { href: href(`category/${category.id}`) }, pick(category, 'name')))),
-      isOpen() && el('nav.foot-col', { 'aria-label': t('footerHelp') },
+      el('nav.foot-col', { 'aria-label': t('footerHelp') },
         el('h3', t('footerHelp')),
-        el('a', { href: href('track') }, t('trackOrder')),
-        el('a', { href: href('cart') }, t('cart')),
-        el('span.foot-note', t('payWithCash')))),
+        el('a', { href: href('contact') }, t('contactUs')),
+        isOpen() && el('a', { href: href('track') }, t('trackOrder')),
+        isOpen() && el('a', { href: href('cart') }, t('cart')),
+        isOpen() && el('span.foot-note', t('payWithCash')))),
     el('div.wrap.foot-base',
       el('span', `© ${year} ${shopName()}`),
       el('span', t('rightsReserved'))));

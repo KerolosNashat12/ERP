@@ -6,6 +6,17 @@
  * exist. So the failure message here says "check both", never "wrong phone":
  * confirming that an order number is real is itself information a stranger
  * should not be able to fish for.
+ *
+ * What a customer sees is a journey, not a field. The order walks
+ * جديد → تم القبول → قيد التوصيل → تم التسليم, and the progress line shows all
+ * four steps at once with the one it has reached marked — so "قيد التوصيل"
+ * arrives already meaning "two done, this one now, one to go" rather than being
+ * a word the customer has to interpret.
+ *
+ * The two endings that are not delivery stop the journey instead of continuing
+ * it: showing a half-finished progress line for a cancelled order would suggest
+ * it is still coming. They get a plain panel that says what happened, and the
+ * reason staff wrote, if they wrote one.
  */
 import { el, fill } from '../core/dom.js';
 import { api } from '../core/api.js';
@@ -14,12 +25,66 @@ import { money, date } from '../core/format.js';
 import { setPageMeta } from '../core/seo.js';
 import { field, validate, notEmpty, looksLikePhone } from '../ui/forms.js';
 
+/** Pill colour, short label and the sentence under it, for every status. */
 const STATUS = {
   pending: ['status-pending', 'statusPending', 'statusPendingNote'],
-  confirmed: ['status-confirmed', 'statusConfirmed', 'statusConfirmedNote'],
+  accepted: ['status-accepted', 'statusAccepted', 'statusAcceptedNote'],
+  out_for_delivery: ['status-out-for-delivery', 'statusOutForDelivery', 'statusOutForDeliveryNote'],
   delivered: ['status-delivered', 'statusDelivered', 'statusDeliveredNote'],
+  not_received: ['status-not-received', 'statusNotReceived', 'statusNotReceivedNote'],
   cancelled: ['status-cancelled', 'statusCancelled', 'statusCancelledNote'],
 };
+
+/** The journey, in order. Anything not on it is an ending, not a step. */
+const JOURNEY = ['pending', 'accepted', 'out_for_delivery', 'delivered'];
+
+/** Which timestamp the API returns for each step, so a done step can say when. */
+const STAMPED_AT = {
+  pending: 'placed_at',
+  accepted: 'accepted_at',
+  out_for_delivery: 'dispatched_at',
+  delivered: 'delivered_at',
+};
+
+/**
+ * The progress line: four steps, every one visible, the current one marked.
+ *
+ * Steps behind the order are `done`, the one it is on is `now`, the rest are
+ * plain — so the customer reads distance travelled and distance left without
+ * being told either in words. A step that has a timestamp shows it; the ones
+ * still ahead have nothing honest to put there.
+ */
+function progressLine(order) {
+  const reached = JOURNEY.indexOf(order.status);
+  if (reached < 0) return null;
+
+  return el('div.order-progress',
+    el('h3.order-progress-title', t('orderProgress')),
+    el('ol.progress-track',
+      JOURNEY.map((step, index) => {
+        const state = index < reached ? 'done' : (index === reached ? 'now' : 'todo');
+        const when = order[STAMPED_AT[step]];
+        return el(`li.progress-step.is-${state}`,
+          { 'aria-current': state === 'now' ? 'step' : null },
+          el('span.progress-dot', { 'aria-hidden': 'true' }),
+          el('span.progress-label', t(STATUS[step][1])),
+          el('span.progress-when',
+            state === 'todo' ? '' : (when ? date(when) : t(state === 'now' ? 'stepNow' : 'stepDone'))));
+      })));
+}
+
+/**
+ * An order that ended somewhere other than the customer's hands. No progress
+ * line — it is not on its way anywhere — just what happened and why.
+ */
+function endedPanel(order) {
+  const [, label, note] = STATUS[order.status];
+  const reason = order.status === 'cancelled' ? order.cancelled_reason : order.not_received_reason;
+  return el(`div.order-ended.is-${order.status === 'cancelled' ? 'cancelled' : 'not-received'}`,
+    el('strong.order-ended-title', t(label)),
+    el('p.order-ended-note', t(note)),
+    reason && el('p.order-ended-reason', `${t('endedReason')}: ${reason}`));
+}
 
 function orderCard(order) {
   const [className, label, note] = STATUS[order.status] || STATUS.pending;
@@ -28,6 +93,8 @@ function orderCard(order) {
   const address = [order.address?.line, order.address?.area, order.address?.city]
     .filter(Boolean).join(getLanguage() === 'ar' ? '، ' : ', ');
 
+  const onItsWay = JOURNEY.includes(order.status);
+
   return el('div.panel.order-card',
     el('div.order-head',
       el('div',
@@ -35,6 +102,7 @@ function orderCard(order) {
         el('strong.order-no-inline', order.order_no)),
       el('span.status-pill', { class: className }, label && t(label))),
     el('p.order-status-note', t(note)),
+    onItsWay ? progressLine(order) : endedPanel(order),
 
     el('dl.order-meta',
       el('div', el('dt', t('placedOn')), el('dd', date(order.placed_at))),

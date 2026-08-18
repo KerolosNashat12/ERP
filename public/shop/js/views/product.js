@@ -147,22 +147,77 @@ function variantPicker(product, onPick) {
   };
 }
 
-function quantityStepper(onChange) {
+/** The most this page will ever offer, whatever the shop is holding. */
+const BASKET_MAX = 99;
+
+/**
+ * What a variant's `available` means to this page: a number is a hard cap, and
+ * null — an untracked product, or an older API that does not send the field —
+ * is no cap at all. Written once so the stepper, the add button and the cart
+ * hand-off cannot read it three slightly different ways.
+ */
+function capOf(variant) {
+  if (!variant) return 0;
+  const value = variant.available;
+  if (value === null || value === undefined) return null;
+  const n = Math.floor(Number(value));
+  return Number.isFinite(n) ? Math.max(n, 0) : null;
+}
+
+/**
+ * The quantity stepper, which now stops where the stock does.
+ *
+ * The customer used to find out that seven was all there was after filling in a
+ * name, a phone number and an address — `WebOrderService.place()` refuses the
+ * order, correctly, but at the worst possible moment. So the cap is shown here
+ * instead: + goes dead on the last unit and a line says why.
+ *
+ * This is courtesy, not security. Nothing here is trusted; the server checks
+ * every line again inside the ordering transaction.
+ */
+function quantityStepper() {
+  let cap = null;
   let value = 1;
+
   const output = el('span.qty-value', { 'aria-live': 'polite' }, '1');
-  const set = (next) => {
-    value = Math.min(Math.max(next, 1), 99);
+  const note = el('p.stock-note', { role: 'status', 'aria-live': 'polite', hidden: true });
+  const minus = el('button.step', { type: 'button', 'aria-label': t('decrease'), onClick: () => set(value - 1) },
+    icon(ICONS.minus, { size: 16 }));
+  const plus = el('button.step', { type: 'button', 'aria-label': t('increase'), onClick: () => set(value + 1) },
+    icon(ICONS.plus, { size: 16 }));
+
+  /** The number the + button may reach — the cap, or the basket limit if none. */
+  const limit = () => (cap === null ? BASKET_MAX : Math.min(Math.max(cap, 1), BASKET_MAX));
+
+  function paint() {
     output.textContent = String(value);
-    onChange(value);
-  };
+    const atCap = value >= limit();
+    plus.disabled = atCap;
+    plus.classList.toggle('is-disabled', atCap);
+    minus.disabled = value <= 1;
+    minus.classList.toggle('is-disabled', value <= 1);
+
+    // Only ever said about a real stock cap. An untracked product has nothing
+    // to confess, and "only 99 left" is not a sentence anybody needs.
+    const say = cap !== null && cap > 0 && value >= cap;
+    note.hidden = !say;
+    note.textContent = say ? t('onlyNLeft', cap) : '';
+  }
+
+  function set(next) {
+    value = Math.min(Math.max(next, 1), limit());
+    paint();
+  }
+
+  paint();
   return {
-    node: el('div.stepper',
-      el('button.step', { type: 'button', 'aria-label': t('decrease'), onClick: () => set(value - 1) },
-        icon(ICONS.minus, { size: 16 })),
-      output,
-      el('button.step', { type: 'button', 'aria-label': t('increase'), onClick: () => set(value + 1) },
-        icon(ICONS.plus, { size: 16 }))),
+    node: el('div.qty-field', el('div.stepper', minus, output, plus), note),
     get value() { return value; },
+    /** Called whenever the chosen option changes — a different colour, a different shelf. */
+    setCap(next) {
+      cap = next;
+      set(value);
+    },
   };
 }
 
@@ -224,7 +279,7 @@ export default async function productView(root, route) {
     syncButton();
   });
 
-  const stepper = quantityStepper(() => {});
+  const stepper = quantityStepper();
   const selected = () => (picker.node ? picker.selected : (product.variants || [])[0] || null);
 
   const addButton = el('button.btn.btn-primary.btn-add', { type: 'button' },
@@ -232,7 +287,11 @@ export default async function productView(root, route) {
 
   function syncButton() {
     const variant = selected();
-    const blocked = !variant || variant.availability === 'out';
+    const cap = capOf(variant);
+    // `available === 0` and `availability === 'out'` are the same fact arriving
+    // by two routes; either one disables the button.
+    const blocked = !variant || variant.availability === 'out' || cap === 0;
+    stepper.setCap(blocked ? 0 : cap);
     addButton.disabled = blocked;
     addButton.classList.toggle('is-disabled', blocked);
     addButton.title = blocked ? t('unavailableVariant') : '';
@@ -240,8 +299,11 @@ export default async function productView(root, route) {
 
   addButton.addEventListener('click', () => {
     const variant = selected();
-    if (!variant || variant.availability === 'out') return;
-    cart.add({
+    const cap = capOf(variant);
+    if (!variant || variant.availability === 'out' || cap === 0) return;
+
+    const wanted = stepper.value;
+    const held = cart.add({
       variant_id: variant.id,
       product_id: product.id,
       name_en: product.name_en,
@@ -250,8 +312,13 @@ export default async function productView(root, route) {
       price: variant.price,
       tax_rate: product.tax_rate,
       image_id: variant.image_id || product.image_id,
-    }, stepper.value);
-    toast(t('addedToCart'), el('a.toast-link', { href: href('cart') }, t('viewCart')));
+    }, wanted, cap);
+
+    // The basket may already have held some of this. If the cap swallowed part
+    // of what was just asked for, say so rather than pretending it went in.
+    const capped = cap !== null && held < wanted;
+    toast(capped ? t('onlyNLeft', cap) : t('addedToCart'),
+      el('a.toast-link', { href: href('cart') }, t('viewCart')));
   });
 
   // If a single option was pre-selected, show its price rather than a range of one.

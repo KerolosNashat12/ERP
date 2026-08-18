@@ -20,6 +20,7 @@ import reportService from '../../services/ReportService.js';
 import labelService from '../../services/LabelService.js';
 import auditService from '../../services/AuditService.js';
 import { userService, settingsService, backupService } from '../../services/AdminService.js';
+import webAssetService from '../../services/WebAssetService.js';
 import passwordResetService from '../../services/PasswordResetService.js';
 import webOrderService from '../../services/WebOrderService.js';
 import {
@@ -366,7 +367,7 @@ router.post('/sales/:id/payment', requirePermission('sales.create'), validate(v.
 // -------------------------------------------------------------- web orders
 // The staff side of the shop. Placing and tracking an order is public and lives
 // in `shopOrders.js`; everything that decides an order's fate is here, behind a
-// session, because confirming one issues stock and raises an invoice.
+// session, because delivering one issues stock and raises a paid invoice.
 router.get('/web-orders', requirePermission('weborders.view'), asyncHandler(async (req, res) => {
   res.json(await webOrderService.list({ status: req.query.status, page: req.query.page }));
 }));
@@ -380,21 +381,37 @@ router.get('/web-orders/:id', requirePermission('weborders.view'), asyncHandler(
   res.json(await webOrderService.get(Number(req.params.id)));
 }));
 
-router.post('/web-orders/:id/confirm', requirePermission('weborders.confirm'),
+// One route per step of the lifecycle. `weborders.confirm` covers the three
+// that carry an order forward — they are one job, and whoever may start it must
+// be able to finish it — while the two that end an order early and put the
+// held stock back sit behind `weborders.cancel`.
+router.post('/web-orders/:id/accept', requirePermission('weborders.confirm'),
   asyncHandler(async (req, res) => {
-    res.json(await webOrderService.confirm(Number(req.params.id), req.context));
+    res.json(await webOrderService.accept(Number(req.params.id), req.context));
+  }));
+
+router.post('/web-orders/:id/dispatch', requirePermission('weborders.confirm'),
+  asyncHandler(async (req, res) => {
+    res.json(await webOrderService.dispatch(Number(req.params.id), req.context));
+  }));
+
+// The only step that sells anything: it issues the stock and raises the paid
+// invoice, because this is where the box and the cash change hands.
+router.post('/web-orders/:id/deliver', requirePermission('weborders.confirm'),
+  asyncHandler(async (req, res) => {
+    res.json(await webOrderService.deliver(Number(req.params.id), req.context));
+  }));
+
+router.post('/web-orders/:id/not-received', requirePermission('weborders.cancel'),
+  asyncHandler(async (req, res) => {
+    res.json(await webOrderService.markNotReceived(
+      Number(req.params.id), req.body?.reason, req.context,
+    ));
   }));
 
 router.post('/web-orders/:id/cancel', requirePermission('weborders.cancel'),
   asyncHandler(async (req, res) => {
     res.json(await webOrderService.cancel(Number(req.params.id), req.body?.reason, req.context));
-  }));
-
-// Delivery is the end of the same job as confirming it, so it needs no
-// permission of its own.
-router.post('/web-orders/:id/delivered', requirePermission('weborders.confirm'),
-  asyncHandler(async (req, res) => {
-    res.json(await webOrderService.markDelivered(Number(req.params.id), req.context));
   }));
 
 // -------------------------------------------------------------- promotions
@@ -515,6 +532,29 @@ router.post('/settings/backups/:file/restore', requirePermission('settings.backu
 }));
 router.delete('/settings/backups/:file', requirePermission('settings.backup'), asyncHandler(async (req, res) => {
   res.json(await backupService.remove(req.params.file, req.context));
+}));
+
+// The storefront banner image. `web.*` text settings ride the ordinary
+// `/settings` endpoints above; only the bytes need a dedicated route because
+// they cannot go through JSON-in-a-settings-row like the rest of `web.*` can.
+router.get('/settings/website/banner', requirePermission('settings.view'), asyncHandler(async (_req, res) => {
+  res.json(await webAssetService.get('banner'));
+}));
+router.get('/settings/website/banner/raw', requirePermission('settings.view'), asyncHandler(async (req, res) => {
+  const image = await webAssetService.bytes('banner');
+  if (!image) throw new NotFoundError('Website banner image', 'banner');
+  // Unlike a product photo, this URL has no id in it and stays the same after
+  // an owner replaces the image — so, unlike the product raw route, this must
+  // NOT be `immutable`. `no-cache` still lets the ETag skip re-sending the
+  // bytes on every load; it just makes the browser ask first.
+  sendImage(req, res, { ...image, created_at: image.updated_at }, { cacheControl: 'private, no-cache' });
+}));
+router.put('/settings/website/banner', requirePermission('settings.update'), validate(v.websiteBannerSchema),
+  asyncHandler(async (req, res) => {
+    res.json(await webAssetService.set(req.body.dataUrl, req.context, 'banner'));
+  }));
+router.delete('/settings/website/banner', requirePermission('settings.update'), asyncHandler(async (req, res) => {
+  res.json(await webAssetService.clear(req.context, 'banner'));
 }));
 
 export default router;

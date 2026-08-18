@@ -36,6 +36,34 @@
   --shadow: 0 2px 6px rgba(17, 24, 39, .05), 0 14px 34px rgba(17, 24, 39, .06);
   --wrap: 1180px;
 
+  /* --------------------------------------------------------------------
+     Card geometry. Photographs arrive from a phone camera in whatever shape
+     the person holding it chose — a tall clutch, a wide wallet, a square
+     ring — and a grid whose rows are as tall as their tallest picture looks
+     broken. So the SHAPE is fixed here and the photo is cropped into it,
+     rather than the stored image being re-cropped on upload: the original
+     bytes stay whole and the crop is a decision this sheet can change.
+
+     Everything below adds up to a card height that does not depend on its
+     contents at all: ratio-locked photo + a body of fixed rows. Two cards
+     with a one-word name and a name that wraps to three lines are the same
+     box, and their prices sit on the same line.
+     -------------------------------------------------------------------- */
+  --photo-ratio: 1 / 1;        /* square — right for accessories */
+  --card-brand-h: 16px;        /* reserved whether or not there IS a brand */
+  --card-name-lines: 2;
+  --card-name-size: 14.5px;
+  --card-name-leading: 1.35;
+  --card-name-h: calc(var(--card-name-size) * var(--card-name-leading) * var(--card-name-lines));
+  --card-price-h: 22px;
+  --card-body-gap: 3px;
+  --card-body-pad-start: 11px;
+  --card-body-pad-end: 14px;
+  --card-body-h: calc(
+    var(--card-body-pad-start) + var(--card-brand-h) + var(--card-body-gap)
+    + var(--card-name-h) + var(--card-body-gap) + var(--card-price-h)
+    + var(--card-body-pad-end));
+
   --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --font-ar: "Segoe UI", "Noto Naskh Arabic", "Dubai", Tahoma, sans-serif;
   --font-display: Georgia, "Times New Roman", "Noto Naskh Arabic", serif;
@@ -233,6 +261,7 @@ html[lang="ar"] .brand-word { letter-spacing: 0; text-transform: none; font-size
 .btn-label, .lang-label { display: none; }
 .lang-btn .lang-label { display: inline; font-size: 13px; letter-spacing: .02em; }
 .track-btn { display: none; }
+.contact-btn { display: none; }
 
 .cart-btn { background: var(--ink); color: #fff; padding-inline: 12px; }
 .cart-btn:hover { background: #1f2937; color: var(--gold-bright); }
@@ -278,17 +307,46 @@ html[lang="ar"] .brand-word { letter-spacing: 0; text-transform: none; font-size
 .chip.is-active { background: var(--ink); border-color: var(--ink); color: #fff; }
 
 /* --------------------------------------------------------------- hero ---- */
+/*
+ * One fixed-size box for every shop: 4:3 on a phone, 16:5 from 640px up (see
+ * the media query below) — never a letterbox slit, and never a box whose
+ * height depends on how much banner copy an ERP user typed. A shop with a
+ * photo gets it `cover`-cropped in; a shop without one keeps the original
+ * gradient/monogram fill (`.hero:not(.has-image)`), so an empty banner still
+ * reads as a finished page.
+ */
 .hero {
+  position: relative;
+  overflow: hidden;
+  aspect-ratio: 4 / 3;
+  color: #fff;
+}
+.hero:not(.has-image) {
   background:
     radial-gradient(120% 130% at 100% 0%, rgba(212, 175, 55, .16), transparent 55%),
     linear-gradient(160deg, #111827 0%, #1b2333 60%, #232c40 100%);
-  color: #fff;
 }
-.hero-inner { position: relative; padding-block: 46px 42px; display: grid; gap: 14px; justify-items: start; }
+/* A dark base under the photo while it decodes, rather than the paper `--bg`
+   flashing through for a frame. */
+.hero.has-image { background: #111827; }
+.hero-photo {
+  position: absolute;
+  inset: 0;
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+  object-position: center;
+}
+/* `config.banner.overlay` (0–80) as a darkening percentage over the photo —
+   set inline as `--hero-overlay` so the CSS never hardcodes the number. */
+.hero-overlay { position: absolute; inset: 0; background: rgba(0, 0, 0, var(--hero-overlay, .35)); }
+.hero-frame { position: absolute; inset: 0; display: flex; align-items: center; }
+.hero-inner { position: relative; padding-block: 20px; display: grid; gap: 14px; justify-items: start; }
 /* A monogram watermark, so the empty half of a wide hero reads as composition
    rather than as a missing photograph. Hidden on a phone, where there is no
-   empty half to fill. */
-.hero-inner::after {
+   empty half to fill, and only on the no-photo fill — a real photo already
+   supplies its own visual interest. */
+.hero:not(.has-image) .hero-inner::after {
   content: "M&M";
   display: none;
   position: absolute;
@@ -317,10 +375,29 @@ html[lang="ar"] .hero-eyebrow { letter-spacing: .06em; text-transform: none; fon
   font-size: clamp(27px, 8vw, 46px);
   max-width: 16ch;
   line-height: 1.2;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 html[lang="ar"] .hero-title { max-width: 20ch; }
-.hero-body { color: #c9d1de; max-width: 46ch; font-size: 15px; }
+.hero-body {
+  color: #c9d1de;
+  max-width: 46ch;
+  font-size: 15px;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
 .hero-cta { margin-block-start: 8px; }
+/* Photo behind it, not the navy gradient behind the fallback — a plain
+   overlay is not always enough, so the text carries its own shadow too. */
+.hero.has-image .hero-body { color: #f2f3f5; }
+.hero.has-image .hero-title,
+.hero.has-image .hero-body {
+  text-shadow: 0 2px 10px rgba(0, 0, 0, .55), 0 1px 3px rgba(0, 0, 0, .45);
+}
 
 /* ------------------------------------------------------------ sections --- */
 .section-head {
@@ -398,37 +475,94 @@ html[lang="ar"] .hero-title { max-width: 20ch; }
   transition: box-shadow .18s, transform .18s, border-color .18s;
 }
 .card:hover { box-shadow: var(--shadow); transform: translateY(-2px); border-color: #ded7c9; }
-.card-photo { position: relative; }
+/* The photo holds its own shape and never shrinks to make room for a long name. */
+.card-photo { position: relative; flex: none; aspect-ratio: var(--photo-ratio); }
 .card.is-out .photo { opacity: .55; }
-.card-badge { position: absolute; inset-block-end: 8px; inset-inline-start: 8px; }
-.card-body { padding: 11px 12px 14px; display: grid; gap: 3px; }
+.card-badge { position: absolute; inset-block-end: 8px; inset-inline-start: 8px; z-index: 1; }
+
+/*
+ * Named rows, not auto-placement: the brand line is OPTIONAL in the markup, and
+ * with auto-placement a card without one would pull its name up a row and come
+ * out shorter than its neighbours. With areas, a missing brand leaves its row
+ * empty and the card keeps its height.
+ *
+ * The last row is `1fr` and the price is pushed to its end, so however tall the
+ * card is stretched, the price sits on the bottom edge — one price line across
+ * the whole row, not a staircase.
+ */
+.card-body {
+  padding-block: var(--card-body-pad-start) var(--card-body-pad-end);
+  padding-inline: 12px;
+  display: grid;
+  grid-template-areas: "brand" "name" "price";
+  grid-template-rows: var(--card-brand-h) var(--card-name-h) 1fr;
+  gap: var(--card-body-gap);
+  flex: 1 1 auto;
+  min-block-size: var(--card-body-h);
+}
 .card-brand {
+  grid-area: brand;
   font-size: 11px;
+  line-height: var(--card-brand-h);
   letter-spacing: .11em;
   text-transform: uppercase;
   color: var(--ink-3);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 html[lang="ar"] .card-brand { letter-spacing: 0; text-transform: none; font-size: 12.5px; }
+/*
+ * Exactly two lines of room, always. A short name leaves the second line blank
+ * rather than shortening the card; a long one is clipped with an ellipsis.
+ */
 .card-name {
-  font-size: 14.5px;
+  grid-area: name;
+  font-size: var(--card-name-size);
   font-weight: 500;
-  line-height: 1.35;
+  line-height: var(--card-name-leading);
+  block-size: var(--card-name-h);
   display: -webkit-box;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: var(--card-name-lines);
   -webkit-box-orient: vertical;
   overflow: hidden;
+  text-overflow: ellipsis;
 }
-.card-price { font-weight: 600; color: var(--ink); margin-block-start: 3px; font-size: 15px; }
+.card-price {
+  grid-area: price;
+  align-self: end;
+  font-weight: 600;
+  color: var(--ink);
+  font-size: 15px;
+  line-height: var(--card-price-h);
+}
 
+/*
+ * The one photo box on the site. Ratio-locked, so it reserves its space before
+ * a byte has downloaded, and the image is absolutely positioned inside it so
+ * that nothing about the FILE — 1200x300, 120x1000, or a 404 — can change the
+ * size of the box it sits in. `cover` crops; `center` decides what survives.
+ */
 .photo {
   position: relative;
-  aspect-ratio: 1 / 1;
+  aspect-ratio: var(--photo-ratio);
+  inline-size: 100%;
   background: linear-gradient(150deg, #f6f3ee, #eae4da);
   display: grid;
   place-items: center;
   overflow: hidden;
 }
-.photo img { width: 100%; height: 100%; object-fit: cover; }
+.photo > img {
+  position: absolute;
+  inset: 0;
+  inline-size: 100%;
+  block-size: 100%;
+  max-inline-size: none;
+  object-fit: cover;
+  object-position: center;
+}
+/* No photograph at all: the same box, the monogram in the middle of it. */
+.photo-empty { aspect-ratio: var(--photo-ratio); }
 .photo-mark {
   font-family: var(--font-display);
   font-size: 22px;
@@ -541,14 +675,21 @@ html[lang="ar"] .card-brand { letter-spacing: 0; text-transform: none; font-size
 
 .product-layout { display: grid; gap: 22px; }
 .gallery { display: grid; gap: 10px; }
+/*
+ * The frame holds the ratio itself, not just the photo inside it. Switching
+ * from a tall photo to a wide one replaces the `.photo` node entirely, and for
+ * one frame there is nothing in here at all — without a ratio on the frame the
+ * whole page would jump every time a thumbnail is clicked.
+ */
 .gallery-main {
+  aspect-ratio: var(--photo-ratio);
   border-radius: var(--radius);
   overflow: hidden;
   border: 1px solid var(--line);
   background: var(--surface);
 }
-.gallery-main .photo { aspect-ratio: 1 / 1; }
-.gallery-main.skeleton { aspect-ratio: 1 / 1; }
+.gallery-main .photo { aspect-ratio: var(--photo-ratio); block-size: 100%; }
+.gallery-main.skeleton { aspect-ratio: var(--photo-ratio); }
 .thumbs {
   display: flex;
   gap: 8px;
@@ -558,9 +699,11 @@ html[lang="ar"] .card-brand { letter-spacing: 0; text-transform: none; font-size
 }
 .thumbs::-webkit-scrollbar { display: none; }
 .thumb {
+  position: relative;
   flex: none;
   width: 66px;
   height: 66px;
+  aspect-ratio: var(--photo-ratio);
   padding: 0;
   border-radius: var(--radius-sm);
   border: 1px solid var(--line);
@@ -568,7 +711,15 @@ html[lang="ar"] .card-brand { letter-spacing: 0; text-transform: none; font-size
   overflow: hidden;
   cursor: pointer;
 }
-.thumb img { width: 100%; height: 100%; object-fit: cover; }
+.thumb img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  object-fit: cover;
+  object-position: center;
+}
 .thumb.is-active { border-color: var(--gold); box-shadow: 0 0 0 1px var(--gold); }
 .thumb.skeleton { border: 0; }
 
@@ -647,8 +798,25 @@ html[lang="ar"] .product-brand { letter-spacing: 0; text-transform: none; font-s
   place-items: center;
   color: var(--ink-2);
 }
-.step:hover { background: var(--line-2); color: var(--ink); }
+.step:hover:not(:disabled) { background: var(--line-2); color: var(--ink); }
+/*
+ * A stepper that has hit the shop's stock. Visibly spent, not hidden: the
+ * button stays where it was so the control does not resize under the finger.
+ */
+.step:disabled, .step.is-disabled {
+  opacity: .38;
+  cursor: not-allowed;
+  background: none;
+}
 .qty-value { min-width: 34px; text-align: center; font-weight: 600; }
+.qty-field { display: grid; gap: 6px; justify-items: start; }
+/* "Only 7 left" — said at the stepper, where the decision is, not at checkout. */
+.stock-note {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--warn);
+}
+.stock-note[hidden] { display: none; }
 .btn-add { width: 100%; }
 
 /* -------------------------------------------------------------- panels --- */
@@ -674,6 +842,24 @@ html[lang="ar"] .product-brand { letter-spacing: 0; text-transform: none; font-s
 .note-list li::before { content: "—"; color: var(--gold); }
 .delivery-note { background: #fdfcf9; }
 
+/* --------------------------------------------------------------- contact --- */
+.contact-card { gap: 18px; }
+.contact-row { display: flex; gap: 14px; align-items: flex-start; }
+.contact-row-icon {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--gold-soft);
+  color: var(--gold);
+  display: grid;
+  place-items: center;
+}
+.contact-row-body { display: grid; gap: 2px; padding-block-start: 2px; }
+.contact-row-label { font-size: 12.5px; color: var(--ink-3); }
+.contact-value { font-size: 15.5px; font-weight: 500; white-space: pre-line; }
+a.contact-value:hover { color: var(--gold); }
+
 /* ---------------------------------------------------------------- cart --- */
 .cart-layout { display: grid; gap: 18px; }
 .cart-lines { display: grid; gap: 10px; }
@@ -688,7 +874,7 @@ html[lang="ar"] .product-brand { letter-spacing: 0; text-transform: none; font-s
   padding: 12px;
 }
 .cart-photo { grid-area: photo; width: 84px; border-radius: var(--radius-sm); overflow: hidden; }
-.cart-photo .photo { aspect-ratio: 1 / 1; }
+.cart-photo .photo { aspect-ratio: var(--photo-ratio); }
 .cart-detail { grid-area: detail; display: grid; gap: 2px; align-content: start; }
 .cart-name { font-size: 15px; font-weight: 600; }
 .cart-variant { font-size: 13px; color: var(--ink-2); }
@@ -889,10 +1075,83 @@ html[lang="ar"] .order-no-label { letter-spacing: .04em; text-transform: none; f
   white-space: nowrap;
 }
 .status-pending { background: var(--warn-soft); color: var(--warn); }
-.status-confirmed { background: #eaf1fe; color: #1f5fd0; }
+.status-accepted { background: #eaf1fe; color: #1f5fd0; }
+.status-out-for-delivery { background: var(--gold-soft); color: var(--gold); }
 .status-delivered { background: var(--ok-soft); color: var(--ok); }
+.status-not-received { background: var(--danger-soft); color: var(--danger); }
 .status-cancelled { background: var(--danger-soft); color: var(--danger); }
 .order-status-note { color: var(--ink-2); font-size: 14.5px; }
+
+/* The four-step journey. One row per step, the dots joined by a line that is
+   drawn from each dot to the next — so it mirrors itself in Arabic without a
+   single RTL override, because everything here is a logical property. */
+.order-progress { display: grid; gap: 10px; }
+.order-progress-title { font-size: 14px; color: var(--ink-3); font-weight: 600; }
+.progress-track {
+  display: grid;
+  gap: 0;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.progress-step {
+  display: grid;
+  grid-template-columns: 22px 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding-block: 9px;
+  position: relative;
+}
+.progress-dot {
+  inline-size: 12px;
+  block-size: 12px;
+  border-radius: 999px;
+  justify-self: center;
+  background: var(--surface);
+  border: 2px solid var(--line);
+  z-index: 1;
+}
+/* The connector: from this dot down to the next one. The last step has none,
+   which is what stops the line dangling past the end of the journey. */
+.progress-step:not(:last-child)::before {
+  content: "";
+  position: absolute;
+  inset-block-start: 50%;
+  block-size: 100%;
+  inline-size: 2px;
+  inset-inline-start: 10px;
+  background: var(--line);
+}
+.progress-label { font-size: 15px; color: var(--ink-3); }
+.progress-when { font-size: 12.5px; color: var(--ink-3); }
+
+.progress-step.is-done .progress-dot { background: var(--ok); border-color: var(--ok); }
+.progress-step.is-done:not(:last-child)::before { background: var(--ok); }
+.progress-step.is-done .progress-label { color: var(--ink-2); }
+
+.progress-step.is-now .progress-dot {
+  background: var(--gold-bright);
+  border-color: var(--gold);
+  box-shadow: 0 0 0 4px var(--gold-soft);
+}
+.progress-step.is-now .progress-label { color: var(--ink); font-weight: 700; }
+.progress-step.is-now .progress-when { color: var(--gold); font-weight: 600; }
+
+/* An order that stopped. Deliberately not a progress line: a half-drawn track
+   would read as "still on its way". */
+.order-ended {
+  border-radius: var(--radius-sm);
+  padding: 14px 16px;
+  display: grid;
+  gap: 6px;
+}
+.order-ended.is-not-received { background: var(--warn-soft); }
+.order-ended.is-cancelled { background: var(--danger-soft); }
+.order-ended-title { font-size: 16px; }
+.order-ended.is-not-received .order-ended-title { color: var(--warn); }
+.order-ended.is-cancelled .order-ended-title { color: var(--danger); }
+.order-ended-note { font-size: 14.5px; color: var(--ink-2); }
+.order-ended-reason { font-size: 13.5px; color: var(--ink-3); }
 .order-meta { display: grid; gap: 10px; border-block: 1px solid var(--line-2); padding-block: 12px; }
 .order-meta dt { font-size: 12.5px; color: var(--ink-3); }
 .order-meta dd { font-size: 14.5px; }
@@ -933,7 +1192,18 @@ html[lang="ar"] .order-no-label { letter-spacing: .04em; text-transform: none; f
 }
 @keyframes shimmer { from { background-position: 150% 0; } to { background-position: -50% 0; } }
 .skeleton-card { border-color: var(--line-2); }
-.skeleton-photo { aspect-ratio: 1 / 1; border-radius: 0; }
+.skeleton-photo { aspect-ratio: var(--photo-ratio); border-radius: 0; }
+/*
+ * The placeholder's body is three loose bars rather than a brand/name/price, so
+ * it opts out of the card's named rows — but keeps the height, so the grid does
+ * not resize the moment the real cards arrive.
+ */
+.skeleton-card .card-body {
+  grid-template-areas: none;
+  grid-template-rows: none;
+  grid-auto-rows: min-content;
+  align-content: start;
+}
 .skeleton-line { height: 12px; margin-block-start: 8px; }
 .w-40 { width: 40%; } .w-50 { width: 50%; } .w-80 { width: 80%; }
 @media (prefers-reduced-motion: reduce) {
@@ -989,6 +1259,19 @@ html[lang="ar"] .order-no-label { letter-spacing: .04em; text-transform: none; f
   font-size: 14px;
 }
 .wa-link:hover { border-color: var(--gold-bright); color: var(--gold-bright); }
+/* `config.social` — nothing rendered means no `.social-links` node at all,
+   never an empty row. */
+.social-links { display: flex; flex-wrap: wrap; gap: 8px; }
+.social-link {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid #33405a;
+  border-radius: 50%;
+  color: #c9d1de;
+}
+.social-link:hover { border-color: var(--gold-bright); color: var(--gold-bright); }
 .foot-col { display: grid; gap: 8px; align-content: start; }
 .foot-col h3 {
   font-size: 12px;
@@ -1033,6 +1316,13 @@ html[lang="ar"] .foot-col h3 { letter-spacing: .04em; text-transform: none; font
   .order-meta { grid-template-columns: repeat(3, 1fr); }
 }
 
+/* The hero switches shape here rather than at 900px like the rest of the
+   chrome — under this width a 16:5 box is the letterbox slit the spec rules
+   out, so the phone ratio (4:3, set above) holds until here. */
+@media (min-width: 640px) {
+  .hero { aspect-ratio: 16 / 5; }
+}
+
 @media (min-width: 900px) {
   .head-main { padding-block: 12px; }
   .head-inner {
@@ -1042,10 +1332,11 @@ html[lang="ar"] .foot-col h3 { letter-spacing: .04em; text-transform: none; font
   }
   .btn-label { display: inline; }
   .track-btn { display: inline-flex; }
+  .contact-btn { display: inline-flex; }
   .head-actions { gap: 6px; }
   .stack { gap: 34px; padding-block-start: 28px; }
-  .hero-inner { padding-block: 74px 68px; }
-  .hero-inner::after { display: block; }
+  .hero-inner { padding-block: 32px; }
+  .hero:not(.has-image) .hero-inner::after { display: block; }
   .product-layout { grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); gap: 40px; align-items: start; }
   .gallery { position: sticky; inset-block-start: 108px; }
   .product-info { gap: 14px; }

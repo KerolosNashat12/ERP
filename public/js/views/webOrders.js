@@ -5,9 +5,16 @@
  * is holding stock nobody can sell and is the only status that needs somebody
  * to do something. Everything else is history.
  *
- * Confirm / Cancel / Mark delivered are gated by `can(...)` rather than hidden
- * behind a role name, and Cancel always asks for a reason — an order that
- * vanished with no explanation is the thing the shop argues about later.
+ * The action buttons show only the LEGAL next steps for the order in front of
+ * you — `NEXT_STEPS` below is the screen's copy of the service's transition
+ * table — so nobody is offered a button that will only answer with an error.
+ * They are gated by `can(...)` rather than hidden behind a role name, and the
+ * two that end an order early always ask for a reason: an order that vanished
+ * with no explanation is the thing the shop argues about later.
+ *
+ * The one button that matters is "Delivered": that is where the stock actually
+ * leaves and the invoice is raised, so it is the only one styled as the primary
+ * action and the only dialog that talks about money.
  */
 import api from '../core/api.js';
 import {
@@ -19,7 +26,35 @@ import { money, number, dateTime } from '../core/format.js';
 import { can, setBadge } from '../core/store.js';
 import { navigate } from '../core/router.js';
 
-const STATUSES = ['pending', 'confirmed', 'delivered', 'cancelled'];
+const STATUSES = [
+  'pending', 'accepted', 'out_for_delivery', 'delivered', 'not_received', 'cancelled',
+];
+
+/**
+ * What can be done to an order in each state, mirroring `TRANSITIONS` in
+ * WebOrderService. Each entry is [verb, label key, permission, button class].
+ * The service refuses anything else anyway; this is so nothing illegal is ever
+ * offered in the first place.
+ */
+const NEXT_STEPS = {
+  pending: [
+    ['accept', 'acceptOrder', 'weborders.confirm', 'btn gold'],
+    ['cancel', 'cancelOrder', 'weborders.cancel', 'btn danger'],
+  ],
+  accepted: [
+    ['dispatch', 'dispatchOrder', 'weborders.confirm', 'btn gold'],
+    ['not-received', 'markNotReceived', 'weborders.cancel', 'btn'],
+    ['cancel', 'cancelOrder', 'weborders.cancel', 'btn danger'],
+  ],
+  out_for_delivery: [
+    ['deliver', 'markDelivered', 'weborders.confirm', 'btn primary'],
+    ['not-received', 'markNotReceived', 'weborders.cancel', 'btn'],
+    ['cancel', 'cancelOrder', 'weborders.cancel', 'btn danger'],
+  ],
+  delivered: [],
+  not_received: [],
+  cancelled: [],
+};
 
 export async function webOrdersView(root, route) {
   if (route.segments[1]) return orderDetailView(root, Number(route.segments[1]));
@@ -61,7 +96,7 @@ export async function webOrdersView(root, route) {
         },
       ],
       rows: data.rows,
-      rowClass: (r) => (r.status === 'cancelled' ? 'muted' : ''),
+      rowClass: (r) => (['cancelled', 'not_received'].includes(r.status) ? 'muted' : ''),
       onRowClick: (row) => navigate(`web-orders/${row.id}`),
       emptyMessage: t('noWebOrders'),
     }));
@@ -113,18 +148,18 @@ async function orderDetailView(root, id) {
       h('div', {},
         h('h2', {}, `${t('orderNo')} ${order.order_no}`),
         h('p', {}, statusTag(order.status), ' · ', dateTime(order.created_at),
-          order.confirmed_by_name ? ` · ${t('confirmedBy')}: ${order.confirmed_by_name}` : '')),
+          order.confirmed_by_name ? ` · ${t('acceptedBy')}: ${order.confirmed_by_name}` : '')),
       h('span', { class: 'spacer' }),
       h('button', { class: 'btn', onclick: () => navigate('web-orders') }, '‹ ' + t('back')),
       order.sale_id
         ? h('button', { class: 'btn', onclick: () => navigate(`sales/${order.sale_id}`) }, t('viewInvoice'))
         : null,
-      order.status === 'pending' && can('weborders.confirm')
-        ? h('button', { class: 'btn gold', onclick: () => openConfirm(order) }, t('confirmOrder')) : null,
-      order.status === 'confirmed' && can('weborders.confirm')
-        ? h('button', { class: 'btn primary', onclick: () => act(order, 'delivered', t('orderDelivered')) }, t('markDelivered')) : null,
-      ['pending', 'confirmed'].includes(order.status) && can('weborders.cancel')
-        ? h('button', { class: 'btn danger', onclick: () => openCancel(order) }, t('cancelOrder')) : null),
+      ...(NEXT_STEPS[order.status] || [])
+        .filter(([, , permission]) => can(permission))
+        .map(([verb, label, , cls]) => h('button', {
+          class: cls,
+          onclick: () => openStep(order, verb),
+        }, t(label)))),
 
     h('div', { class: 'grid cols-4' },
       kpi(t('total'), money(order.total_amount)),
@@ -136,8 +171,9 @@ async function orderDetailView(root, id) {
       h('div', { class: 'card-head' },
         h('h3', {}, t('orderItems')),
         h('span', { class: 'spacer' }),
-        // What this order is still holding off the shelf. Zero once it has been
-        // confirmed or cancelled — that is the reservation being given back.
+        // What this order is still holding off the shelf. It stays held right
+        // through to delivery and only reaches zero at the end — either sold on
+        // delivery, or given back when the order fails or is cancelled.
         tag(`${t('reservedUnits')}: ${number(order.lines.reduce((s, l) => s + Number(l.reserved || 0), 0))}`,
           order.lines.some((l) => Number(l.reserved) > 0) ? 'warn' : '')),
       h('div', { class: 'card-body tight' }, dataTable({
@@ -175,7 +211,9 @@ async function orderDetailView(root, id) {
             order.customer_note
               ? h('div', { class: 'small' }, `${t('customerNote')}: ${order.customer_note}`) : null,
             order.cancelled_reason
-              ? h('div', { class: 'small' }, `${t('cancelReason')} ${order.cancelled_reason}`) : null))),
+              ? h('div', { class: 'small' }, `${t('cancelReason')} ${order.cancelled_reason}`) : null,
+            order.not_received_reason
+              ? h('div', { class: 'small' }, `${t('notReceivedReason')} ${order.not_received_reason}`) : null))),
       h('div', { class: 'card' },
         h('div', { class: 'card-head' }, h('h3', {}, t('summary'))),
         h('div', { class: 'card-body' },
@@ -190,12 +228,40 @@ async function orderDetailView(root, id) {
   return undefined;
 }
 
-/** POST one of the three verbs, tell the user what happened, reload. */
+/**
+ * Every step, described once. Each entry names the button, the sentence that
+ * explains what the step actually does to stock and money, the confirmation
+ * class, whether it asks for a reason, and what to say when it worked.
+ */
+const STEPS = {
+  accept: {
+    title: 'acceptOrder', hint: 'acceptOrderHint', cls: 'btn gold',
+    done: 'orderAccepted', showTotals: true,
+  },
+  dispatch: {
+    title: 'dispatchOrder', hint: 'dispatchOrderHint', cls: 'btn gold',
+    done: 'orderDispatched',
+  },
+  deliver: {
+    title: 'markDelivered', hint: 'markDeliveredHint', cls: 'btn primary',
+    done: 'orderDelivered', showTotals: true,
+  },
+  'not-received': {
+    title: 'markNotReceived', hint: 'markNotReceivedHint', cls: 'btn danger',
+    done: 'orderNotReceived', reason: 'notReceivedReason',
+  },
+  cancel: {
+    title: 'cancelOrder', hint: 'cancelOrderHint', cls: 'btn danger',
+    done: 'orderCancelled', reason: 'cancelReason',
+  },
+};
+
+/** POST one step of the lifecycle, tell the user what happened, reload. */
 async function act(order, verb, okMessage, body) {
   try {
     const result = await api.post(`/api/web-orders/${order.id}/${verb}`, body || {});
-    // The service explains anything the shop still has to do by hand — a sale
-    // that needs voiding, most of all — so it is shown, not swallowed.
+    // The service explains anything the shop still has to do by hand — an old
+    // invoice that needs voiding, most of all — so it is shown, not swallowed.
     toast(result?.message || okMessage, 'ok', result?.message ? 6500 : 3800);
     try {
       const { pending } = await api.get('/api/web-orders/count');
@@ -207,43 +273,36 @@ async function act(order, verb, okMessage, body) {
   }
 }
 
-function openConfirm(order) {
-  const dialog = modal({
-    title: `${t('confirmOrder')} — ${order.order_no}`,
-    size: 'narrow',
-    body: h('div', { class: 'stack' },
-      h('p', { class: 'muted small' }, t('confirmOrderHint')),
-      h('div', { class: 'totals' },
-        row(t('customer'), order.customer_name || '—'),
-        row(t('products'), number(order.lines.length)),
-        row(t('total'), money(order.total_amount), 'grand'))),
-    footer: [
-      h('button', { class: 'btn', onclick: () => dialog.close() }, t('cancel')),
-      h('button', {
-        class: 'btn gold',
-        onclick: () => { dialog.close(); act(order, 'confirm', t('orderConfirmed')); },
-      }, t('confirmOrder')),
-    ],
-  });
-}
+/**
+ * Confirm a step before taking it. Every one of these changes what the shop
+ * believes about its stock, and two of them end the order, so none of them
+ * happens on a single click.
+ */
+function openStep(order, verb) {
+  const step = STEPS[verb];
+  const reason = step.reason ? textInput({ placeholder: t(step.reason) }) : null;
 
-function openCancel(order) {
-  const reason = textInput({ placeholder: t('cancelReason') });
   const dialog = modal({
-    title: `${t('cancelOrder')} — ${order.order_no}`,
+    title: `${t(step.title)} — ${order.order_no}`,
     size: 'narrow',
     body: h('div', { class: 'stack' },
-      h('p', { class: 'muted small' }, t('cancelOrderHint')),
-      field({ label: t('reason'), input: reason })),
+      h('p', { class: 'muted small' }, t(step.hint)),
+      step.showTotals
+        ? h('div', { class: 'totals' },
+          row(t('customer'), order.customer_name || '—'),
+          row(t('products'), number(order.lines.length)),
+          row(t('total'), money(order.total_amount), 'grand'))
+        : null,
+      reason ? field({ label: t('reason'), input: reason }) : null),
     footer: [
       h('button', { class: 'btn', onclick: () => dialog.close() }, t('back')),
       h('button', {
-        class: 'btn danger',
+        class: step.cls,
         onclick: () => {
           dialog.close();
-          act(order, 'cancel', t('orderCancelled'), { reason: reason.value });
+          act(order, verb, t(step.done), reason ? { reason: reason.value } : {});
         },
-      }, t('cancelOrder')),
+      }, t(step.title)),
     ],
   });
 }

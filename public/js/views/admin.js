@@ -4,7 +4,7 @@ import {
   h, mount, dataTable, pager, spinner, toast, toastError, textInput, selectInput,
   field, modal, debounce, tag, buildForm, confirmDialog, checkboxInput,
 } from '../core/ui.js';
-import { t, pick } from '../core/i18n.js';
+import { t, pick, getLanguage } from '../core/i18n.js';
 import { number, dateTime } from '../core/format.js';
 import { session, can, loadSession, setBadge } from '../core/store.js';
 import { devicesPanel } from './devices.js';
@@ -469,6 +469,42 @@ const format = (value) => {
 
 // ---------------------------------------------------------------- settings
 
+/**
+ * Same technique as the product photo uploader in catalog.js (canvas resize,
+ * re-encode as JPEG) — a shop banner is a full-width hero rather than a
+ * thumbnail, so it keeps a larger longest edge, but the compromise is the
+ * same one: nothing on the storefront needs the original megapixels.
+ */
+const BANNER_MAX_EDGE = 1600;
+const BANNER_QUALITY = 0.82;
+
+function compressBannerToDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const objectUrl = URL.createObjectURL(file);
+    const image = new Image();
+    image.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      const longest = Math.max(image.naturalWidth, image.naturalHeight) || 1;
+      const scale = Math.min(1, BANNER_MAX_EDGE / longest);
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+      canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+      const ctx = canvas.getContext('2d');
+      // JPEG has no transparency: without this, a transparent PNG is
+      // re-encoded onto black instead of the white the storefront expects.
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+      resolve(canvas.toDataURL('image/jpeg', BANNER_QUALITY));
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error(t('photoUnreadable')));
+    };
+    image.src = objectUrl;
+  });
+}
+
 export async function settingsView(root, route) {
   const settings = await api.get('/api/settings');
   const editable = can('settings.update');
@@ -534,6 +570,127 @@ export async function settingsView(root, route) {
     { name: 'address', label: t('address'), type: 'textarea', span: 3, disabled: !editable },
   ], await api.get('/api/location'), { columns: 3 });
 
+  // --- website tab: storefront banner, social links, contact page
+  const SOCIAL_NETWORKS = ['facebook', 'instagram', 'tiktok', 'youtube', 'whatsapp', 'x'];
+  const SOCIAL_LABEL_KEYS = {
+    facebook: 'socialFacebook', instagram: 'socialInstagram', tiktok: 'socialTiktok',
+    youtube: 'socialYoutube', whatsapp: 'socialWhatsapp', x: 'socialX',
+  };
+
+  const bannerForm = buildForm([
+    { name: 'web.banner_heading_en', label: t('bannerHeadingEn'), disabled: !editable },
+    { name: 'web.banner_heading_ar', label: t('bannerHeadingAr'), disabled: !editable },
+    { name: 'web.banner_text_en', label: t('bannerTextEn'), type: 'textarea', span: 3, disabled: !editable },
+    { name: 'web.banner_text_ar', label: t('bannerTextAr'), type: 'textarea', span: 3, disabled: !editable },
+    { name: 'web.banner_cta_label_en', label: t('bannerCtaLabelEn'), disabled: !editable },
+    { name: 'web.banner_cta_label_ar', label: t('bannerCtaLabelAr'), disabled: !editable },
+    { name: 'web.banner_cta_link', label: t('bannerCtaLink'), hint: t('bannerCtaLinkHint'), disabled: !editable },
+    {
+      name: 'web.banner_overlay', label: t('bannerOverlay'), type: 'number', min: 0, max: 80,
+      hint: t('bannerOverlayHint'), disabled: !editable,
+    },
+  ], settings, { columns: 3 });
+
+  const socialForm = buildForm(SOCIAL_NETWORKS.flatMap((net) => [
+    { name: `web.social_${net}_enabled`, label: t('socialShowOnSite'), type: 'checkbox', disabled: !editable },
+    {
+      name: `web.social_${net}`,
+      label: t(SOCIAL_LABEL_KEYS[net]),
+      span: 2,
+      hint: net === 'whatsapp' ? t('socialWhatsappHint') : undefined,
+      disabled: !editable,
+    },
+  ]), settings, { columns: 3 });
+
+  const contactForm = buildForm([
+    { name: 'web.contact_email', label: t('email'), disabled: !editable },
+    { name: 'web.contact_phone', label: t('phone'), disabled: !editable },
+    { name: 'web.contact_address_en', label: t('contactAddressEn'), type: 'textarea', span: 3, disabled: !editable },
+    { name: 'web.contact_address_ar', label: t('contactAddressAr'), type: 'textarea', span: 3, disabled: !editable },
+    { name: 'web.contact_hours_en', label: t('contactHoursEn'), disabled: !editable },
+    { name: 'web.contact_hours_ar', label: t('contactHoursAr'), disabled: !editable },
+    { name: 'web.contact_map_url', label: t('contactMapUrl'), span: 3, disabled: !editable },
+  ], settings, { columns: 3 });
+
+  let bannerMeta = { hasImage: false };
+  const bannerPreview = h('div', { class: 'banner-preview-frame' });
+
+  function bannerFieldValue(name) { return bannerForm.inputs.get(name)?.input.value || ''; }
+
+  function renderBannerPreview() {
+    const ar = getLanguage() === 'ar';
+    const primary = ar ? '_ar' : '_en';
+    const fallback = ar ? '_en' : '_ar';
+    const pickField = (base) => bannerFieldValue(`web.${base}${primary}`) || bannerFieldValue(`web.${base}${fallback}`);
+    const heading = pickField('banner_heading');
+    const text = pickField('banner_text');
+    const ctaLabel = pickField('banner_cta_label');
+    const overlay = Math.min(80, Math.max(0, Number(bannerFieldValue('web.banner_overlay')) || 0));
+
+    mount(bannerPreview,
+      h('div', { class: 'banner-preview-overlay', style: { background: `rgba(0,0,0,${overlay / 100})` } }),
+      !bannerMeta.hasImage ? h('div', { class: 'banner-preview-empty' }, t('noBannerPhoto')) : null,
+      h('div', { class: 'banner-preview-content' },
+        heading ? h('h3', {}, heading) : null,
+        text ? h('p', {}, text) : null,
+        ctaLabel ? h('span', { class: 'banner-preview-cta' }, ctaLabel) : null));
+    bannerPreview.style.backgroundImage = bannerMeta.hasImage ? `url(/api/settings/website/banner/raw?_=${Date.now()})` : 'none';
+  }
+
+  ['web.banner_heading_en', 'web.banner_heading_ar', 'web.banner_text_en', 'web.banner_text_ar',
+    'web.banner_cta_label_en', 'web.banner_cta_label_ar', 'web.banner_overlay']
+    .forEach((name) => bannerForm.inputs.get(name).input.addEventListener('input', renderBannerPreview));
+
+  async function loadBannerMeta() {
+    try { bannerMeta = await api.get('/api/settings/website/banner'); } catch { bannerMeta = { hasImage: false }; }
+    bannerRemoveBtn.disabled = !editable || !bannerMeta.hasImage;
+    renderBannerPreview();
+  }
+
+  async function onBannerFileChosen(event) {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    if (!file.type.startsWith('image/')) { toastError(new Error(t('photoNotAnImage'))); return; }
+    bannerUploadBtn.disabled = true;
+    try {
+      const dataUrl = await compressBannerToDataUrl(file);
+      bannerMeta = await api.put('/api/settings/website/banner', { dataUrl });
+      renderBannerPreview();
+      bannerRemoveBtn.disabled = !editable || !bannerMeta.hasImage;
+      toast(t('saved'));
+    } catch (error) { toastError(error); } finally { bannerUploadBtn.disabled = !editable; }
+  }
+
+  async function removeBannerPhoto() {
+    if (!await confirmDialog({ title: t('removeBannerPhoto'), message: t('bannerRemoveConfirm'), danger: true })) return;
+    try {
+      bannerMeta = await api.del('/api/settings/website/banner');
+      renderBannerPreview();
+      bannerRemoveBtn.disabled = true;
+      toast(t('deleted'));
+    } catch (error) { toastError(error); }
+  }
+
+  const bannerFileInput = h('input', {
+    type: 'file', accept: 'image/*', style: { display: 'none' }, disabled: !editable, onchange: onBannerFileChosen,
+  });
+  const bannerUploadBtn = h('button', {
+    class: 'btn sm', disabled: !editable, onclick: () => bannerFileInput.click(),
+  }, t('uploadPhoto'));
+  const bannerRemoveBtn = h('button', {
+    class: 'btn sm ghost', disabled: true, onclick: removeBannerPhoto,
+  }, t('removeBannerPhoto'));
+
+  async function saveWebsite() {
+    try {
+      await api.put('/api/settings', {
+        ...bannerForm.values(), ...socialForm.values(), ...contactForm.values(),
+      });
+      toast(t('saved'));
+    } catch (error) { toastError(error); }
+  }
+
   const backupsHost = h('div', { class: 'card-body tight' });
   async function loadBackups() {
     if (!can('settings.backup')) return;
@@ -588,6 +745,7 @@ export async function settingsView(root, route) {
     { key: 'company', label: t('company') },
     { key: 'operations', label: t('operatingRules') },
     { key: 'returns', label: t('returnsPolicy') },
+    ...(can('settings.view') ? [{ key: 'website', label: t('websiteTab') }] : []),
     { key: 'devices', label: t('devices') },
     ...(can('settings.backup') ? [{ key: 'backups', label: t('backups') }] : []),
   ];
@@ -617,6 +775,32 @@ export async function settingsView(root, route) {
           }, t('createBackup'))),
         backupsHost));
       loadBackups();
+      return;
+    }
+    if (activeTab === 'website') {
+      loadBannerMeta();
+      mount(body,
+        h('div', { class: 'card' },
+          h('div', { class: 'card-head' }, h('h3', {}, t('bannerCard'))),
+          h('div', { class: 'card-body stack' },
+            h('div', {},
+              h('small', { class: 'muted' }, t('bannerPreviewLabel')),
+              bannerPreview),
+            h('div', { class: 'row' },
+              bannerUploadBtn, bannerRemoveBtn, bannerFileInput),
+            bannerForm.node)),
+        h('div', { class: 'card', style: { marginTop: '14px' } },
+          h('div', { class: 'card-head' }, h('h3', {}, t('socialCard'))),
+          h('div', { class: 'card-body' },
+            h('p', { class: 'social-row-hint' }, t('socialHint')),
+            socialForm.node)),
+        h('div', { class: 'card', style: { marginTop: '14px' } },
+          h('div', { class: 'card-head' }, h('h3', {}, t('contactCard'))),
+          h('div', { class: 'card-body' },
+            h('p', { class: 'contact-note' }, t('contactNote')),
+            contactForm.node)),
+        editable ? h('div', { class: 'row', style: { marginTop: '14px', justifyContent: 'flex-end' } },
+          h('button', { class: 'btn primary', onclick: saveWebsite }, t('save'))) : null);
       return;
     }
 

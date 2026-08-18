@@ -22,12 +22,16 @@ import { getDb, transaction } from '../connection.js';
 import migration001 from './001-web-storefront.js';
 import migration002 from './002-web-orders.js';
 import migration003 from './003-web-order-sequence.js';
+import migration004 from './004-order-lifecycle.js';
+import migration005 from './005-website-settings.js';
 
 /** Ordered. Append only. */
 const MIGRATIONS = [
   migration001,
   migration002,
   migration003,
+  migration004,
+  migration005,
 ];
 
 async function ensureRegistry() {

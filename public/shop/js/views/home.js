@@ -8,14 +8,56 @@ import { shop } from '../core/store.js';
 import { productGrid, taxonomyTile, sectionHead } from '../ui/cards.js';
 import { skeletonGrid, errorState, emptyState } from '../ui/states.js';
 
+/**
+ * Pick the language side of a `{ en, ar }` config record. Falls back to the
+ * other language rather than blanking, same rule `pick()` applies to a row —
+ * a shop owner who only wrote the Arabic banner copy still gets a banner.
+ */
+const bt = (record) => {
+  if (!record) return '';
+  const wanted = getLanguage() === 'ar' ? record.ar : record.en;
+  const other = getLanguage() === 'ar' ? record.en : record.ar;
+  return (wanted && String(wanted).trim()) || (other && String(other).trim()) || '';
+};
+
+/**
+ * The hero is one fixed-size box (16:5 on desktop, 4:3 on a phone — see
+ * `.hero` in shop.css) whichever shop opens it: a shop with a banner photo
+ * gets that photo `cover`-cropped into the box; a shop that has not uploaded
+ * one yet gets the same box filled with the original gradient/monogram
+ * design, so "nothing configured" still reads as a finished page, not a
+ * missing one.
+ */
 function hero() {
-  return el('section.hero',
-    el('div.wrap.hero-inner',
-      el('p.hero-eyebrow', getLanguage() === 'ar' ? 'من القاهرة' : 'From Cairo'),
-      el('h1.hero-title', t('heroTagline')),
-      el('p.hero-body', t('heroBody')),
-      el('a.btn.btn-primary.hero-cta', { href: href('products') },
-        t('heroCta'), chevron(16))));
+  const banner = shop.config?.banner || {};
+  const heading = bt(banner.heading) || t('heroTagline');
+  const body = bt(banner.text) || t('heroBody');
+  const cta = banner.cta && bt(banner.cta.label) && banner.cta.link
+    ? { label: bt(banner.cta.label), href: href(banner.cta.link) }
+    : null;
+  const overlay = Number.isFinite(Number(banner.overlay)) ? Number(banner.overlay) : 35;
+  const image = banner.image || null;
+
+  const photo = image && el('img.hero-photo', {
+    src: image,
+    alt: '',
+    loading: 'eager',
+    decoding: 'async',
+    // A banner row can exist with `hasImage` stale for a moment after an ERP
+    // delete; falling back to the gradient beats a broken-image glyph on the
+    // storefront's most visible pixel.
+    onError: (event) => { event.currentTarget.closest('.hero')?.classList.remove('has-image'); event.currentTarget.remove(); },
+  });
+
+  return el('section.hero', { class: image ? 'has-image' : '' },
+    photo,
+    image && el('div.hero-overlay', { style: `--hero-overlay: ${overlay / 100}` }),
+    el('div.hero-frame',
+      el('div.wrap.hero-inner',
+        !image && el('p.hero-eyebrow', getLanguage() === 'ar' ? 'من القاهرة' : 'From Cairo'),
+        el('h1.hero-title', heading),
+        el('p.hero-body', body),
+        cta && el('a.btn.btn-primary.hero-cta', { href: cta.href }, cta.label, chevron(16)))));
 }
 
 export default async function homeView(root) {

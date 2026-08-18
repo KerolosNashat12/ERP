@@ -132,6 +132,40 @@ export async function seedBaseline() {
 
       ['pos.default_payment_method', 'cash', 'string', 'pos'],
       ['ui.default_language', 'en', 'string', 'ui'],
+
+      // --- website: banner, kept in step with migrations/005-website-settings.js
+      // so a fresh install and a migrated one end up with identical rows.
+      ['web.banner_heading_en', 'Accessories that finish the look', 'string', 'website'],
+      ['web.banner_heading_ar', 'إكسسوارات تكمل إطلالتك', 'string', 'website'],
+      ['web.banner_text_en', 'Bags, perfume and jewellery — chosen piece by piece.', 'string', 'website'],
+      ['web.banner_text_ar', 'شنط وعطور ومجوهرات — مختارة قطعة قطعة.', 'string', 'website'],
+      ['web.banner_cta_label_en', '', 'string', 'website'],
+      ['web.banner_cta_label_ar', '', 'string', 'website'],
+      ['web.banner_cta_link', '', 'string', 'website'],
+      ['web.banner_overlay', '35', 'number', 'website'],
+
+      // --- website: social links, each with its own visibility toggle
+      ['web.social_facebook', '', 'string', 'website'],
+      ['web.social_facebook_enabled', '0', 'boolean', 'website'],
+      ['web.social_instagram', '', 'string', 'website'],
+      ['web.social_instagram_enabled', '0', 'boolean', 'website'],
+      ['web.social_tiktok', '', 'string', 'website'],
+      ['web.social_tiktok_enabled', '0', 'boolean', 'website'],
+      ['web.social_youtube', '', 'string', 'website'],
+      ['web.social_youtube_enabled', '0', 'boolean', 'website'],
+      ['web.social_whatsapp', '', 'string', 'website'],
+      ['web.social_whatsapp_enabled', '0', 'boolean', 'website'],
+      ['web.social_x', '', 'string', 'website'],
+      ['web.social_x_enabled', '0', 'boolean', 'website'],
+
+      // --- website: contact (the تواصل معانا page and the footer)
+      ['web.contact_email', '', 'string', 'website'],
+      ['web.contact_phone', '', 'string', 'website'],
+      ['web.contact_address_en', '', 'string', 'website'],
+      ['web.contact_address_ar', '', 'string', 'website'],
+      ['web.contact_hours_en', '', 'string', 'website'],
+      ['web.contact_hours_ar', '', 'string', 'website'],
+      ['web.contact_map_url', '', 'string', 'website'],
     ];
     for (const [key, value, type, group] of settings) await insertSetting.run(key, value, type, group);
 
@@ -432,4 +466,46 @@ export async function hardenDefaultCredentials() {
     flagged.push(user.username);
   }
   return flagged;
+}
+
+/**
+ * Keep the permission catalogue in step with the code.
+ *
+ * `seedBaseline()` only runs on an empty database, so a release that adds a
+ * permission — `weborders.view`, say — never reached a shop that was already
+ * trading. The menu entry then silently disappears for everyone, because the
+ * permission it is gated on does not exist in that database at all. That is a
+ * confusing failure: the feature deployed, the code is there, and nothing in
+ * the interface admits why it cannot be seen.
+ *
+ * So the catalogue is synced on every start. Administrators are re-granted
+ * everything, because the role is defined as unrestricted and the code already
+ * refuses to let anyone edit it. Other roles are left exactly as configured —
+ * an operator who trimmed the cashier role should not find it silently widened
+ * by a deploy.
+ */
+export async function syncPermissionCatalogue() {
+  const db = getDb();
+
+  const insertPermission = db.prepare(`
+    INSERT INTO permissions (code, module, action, description) VALUES (?, ?, ?, ?)
+    ON CONFLICT(code) DO UPDATE SET module = excluded.module, action = excluded.action
+  `);
+
+  const added = [];
+  for (const p of ALL_PERMISSIONS) {
+    const existing = await db.prepare('SELECT id FROM permissions WHERE code = ?').get(p.code);
+    if (!existing) added.push(p.code);
+    await insertPermission.run(p.code, p.module, p.action, `${p.action} in ${p.module}`);
+  }
+
+  const adminRole = await db.prepare("SELECT id FROM roles WHERE code = 'admin'").get();
+  if (adminRole) {
+    await db.prepare(`
+      INSERT OR IGNORE INTO role_permissions (role_id, permission_id)
+      SELECT ?, id FROM permissions
+    `).run(adminRole.id);
+  }
+
+  return added;
 }

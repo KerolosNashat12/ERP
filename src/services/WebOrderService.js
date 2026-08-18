@@ -6,9 +6,22 @@
  * money has changed hands: the goods are still on the shelf and the shop has
  * only a promise. So placing an order RESERVES stock — `stock_levels.
  * reserved_quantity` goes up, `quantity` does not move and no ledger row is
- * written — and staff confirm it in the ERP, which is the moment it becomes a
- * real sale through SalesService, exactly as if it had been rung up at the
- * counter.
+ * written.
+ *
+ * That reservation survives the whole journey, because with cash on delivery
+ * nothing is sold until the courier hands the box over and takes the money:
+ *
+ *   pending → accepted → out_for_delivery → delivered
+ *
+ * `delivered` is the only step that touches the ledger. There the reservation
+ * is released, the goods are ISSUED through SalesService exactly as if they had
+ * been rung up at the counter, and the invoice is raised PAID because the cash
+ * came back with the courier. Everything before it is a promise; `accepted` and
+ * `out_for_delivery` move nothing at all.
+ *
+ * The two unhappy endings — `not_received` (the courier came back with the box)
+ * and `cancelled` — release the reservation and stop. No sale was ever created,
+ * so there is nothing to reverse.
  *
  * SECURITY: `place()` and `track()` answer UNAUTHENTICATED requests. Anyone on
  * the internet can call them, so:
@@ -26,11 +39,8 @@
  *    the customer's job without it.
  *
  * Payment is cash on delivery. There is no gateway and nothing here touches a
- * payment credential. The sale created at confirmation is therefore recorded
- * UNPAID — the shop is genuinely owed that money until the box is handed over,
- * and staff collect it against the invoice with the till's existing payment
- * screen. The delivery fee lives on the order, not on the invoice: it is a
- * service the shop charges for, not stock leaving the shelf.
+ * payment credential. The delivery fee lives on the order, not on the invoice:
+ * it is a service the shop charges for, not stock leaving the shelf.
  */
 import repositories from '../infrastructure/repositories/index.js';
 import { getDb, transaction } from '../infrastructure/database/connection.js';
@@ -45,7 +55,33 @@ import auditService from './AuditService.js';
 const MAX_LINES = 50;
 const MAX_QTY_PER_LINE = 99;
 
-const STATUSES = ['pending', 'confirmed', 'delivered', 'cancelled'];
+const STATUSES = [
+  'pending', 'accepted', 'out_for_delivery', 'delivered', 'not_received', 'cancelled',
+];
+
+/**
+ * The only moves an order may make. Written once, here, so the service, the
+ * screen and the error messages can never drift apart — and so that adding a
+ * step is one line rather than an archaeology exercise across four methods.
+ */
+const TRANSITIONS = {
+  pending: ['accepted', 'cancelled'],
+  accepted: ['out_for_delivery', 'not_received', 'cancelled'],
+  out_for_delivery: ['delivered', 'not_received', 'cancelled'],
+  delivered: [],
+  not_received: [],
+  cancelled: [],
+};
+
+/** Plain English for a status, for messages staff read rather than parse. */
+const SPOKEN = {
+  pending: 'new',
+  accepted: 'accepted',
+  out_for_delivery: 'out for delivery',
+  delivered: 'delivered',
+  not_received: 'not received',
+  cancelled: 'cancelled',
+};
 
 /**
  * What the public may order, written once so no query can forget half of it —
@@ -225,7 +261,7 @@ export class WebOrderService {
              address_line, address_area, address_city,
              subtotal, tax_amount, delivery_fee, total_amount,
              payment_method, language, customer_note, cancelled_reason,
-             confirmed_at, created_at
+             not_received_reason, confirmed_at, dispatched_at, delivered_at, created_at
       FROM web_orders WHERE UPPER(order_no) = ?
     `).get(number);
     if (!order || String(order.customer_phone).trim() !== caller) {
@@ -240,10 +276,16 @@ export class WebOrderService {
     // Neither the internal id nor the linked invoice leaves this method.
     return {
       order_no: order.order_no,
+      // The status, and the moment each step happened, so the storefront can
+      // draw a progress line instead of printing a database word at a customer.
       status: order.status,
       placed_at: order.created_at,
-      confirmed_at: order.confirmed_at,
+      accepted_at: order.confirmed_at,
+      dispatched_at: order.dispatched_at,
+      delivered_at: order.delivered_at,
+      // Why it ended badly, if it did. Staff wrote these for the customer.
       cancelled_reason: order.cancelled_reason,
+      not_received_reason: order.not_received_reason,
       payment_method: order.payment_method,
       language: order.language,
       customer_name: order.customer_name,
@@ -277,7 +319,7 @@ export class WebOrderService {
     const rows = await this.db.prepare(`
       SELECT o.id, o.order_no, o.status, o.customer_name, o.customer_phone,
              o.address_city, o.total_amount, o.delivery_fee, o.language,
-             o.sale_id, o.created_at, o.confirmed_at,
+             o.sale_id, o.created_at, o.confirmed_at, o.dispatched_at, o.delivered_at,
              s.invoice_no AS invoice_no,
              u.full_name  AS confirmed_by_name,
              (SELECT COUNT(*) FROM web_order_lines l WHERE l.order_id = o.id) AS line_count
@@ -331,23 +373,71 @@ export class WebOrderService {
   }
 
   /**
-   * Confirm — the moment the promise becomes a sale.
+   * Accept — staff have looked at the order and the shop will fulfil it.
    *
-   * The reservation is released first and the goods are then ISSUED by
-   * SalesService, so the stock movement, the moving-average cost, the customer
-   * balance and the audit trail all behave exactly as they do for a counter
-   * sale. Doing it any other way would mean a second, subtly different sales
-   * path to keep correct forever.
+   * Nothing moves. The goods stay reserved, no invoice is raised and no money
+   * is expected: accepting is a promise, and a promise is not a sale.
+   */
+  async accept(id, context = {}) {
+    return transaction(async () => {
+      const order = await this.get(id);
+      this.#requireTransition(order, 'accepted');
+      if (!order.lines.length) throw new BusinessRuleError('This order has no items');
+
+      const now = new Date().toISOString();
+      await this.db.prepare(`
+        UPDATE web_orders
+           SET status = 'accepted', confirmed_by = ?, confirmed_at = ?, updated_at = ?
+         WHERE id = ?
+      `).run(context.actor?.id || null, now, now, id);
+
+      await this.#log('ACCEPT', order, { status: 'accepted' }, context);
+      return {
+        ...(await this.get(id)),
+        message: 'Order accepted. The stock stays held — nothing is sold until it is delivered.',
+      };
+    });
+  }
+
+  /** Hand it to the courier. Still nothing sold, still nothing collected. */
+  async dispatch(id, context = {}) {
+    return transaction(async () => {
+      const order = await this.get(id);
+      this.#requireTransition(order, 'out_for_delivery');
+
+      const now = new Date().toISOString();
+      await this.db.prepare(`
+        UPDATE web_orders SET status = 'out_for_delivery', dispatched_at = ?, updated_at = ?
+         WHERE id = ?
+      `).run(now, now, id);
+
+      await this.#log('DISPATCH', order, { status: 'out_for_delivery' }, context);
+      return { ...(await this.get(id)), message: 'Order is out for delivery.' };
+    });
+  }
+
+  /**
+   * Deliver — the one step that moves goods and money.
+   *
+   * The box is in the customer's hands and the cash is in the courier's, so
+   * this is where the promise finally becomes a sale: the reservation is
+   * released and the same units are ISSUED by SalesService, which means the
+   * stock movement, the moving-average cost, the customer balance and the audit
+   * trail behave exactly as they do for a sale at the counter. Doing it any
+   * other way would mean a second, subtly different sales path to keep correct
+   * forever.
+   *
+   * The invoice is raised PAID: cash on delivery means the money came back with
+   * the courier, and an invoice the shop is not owed must not sit in the ledger
+   * pretending otherwise.
    *
    * Prices come off the order, not the catalogue: the customer is owed the
    * price they were shown, even if it changed last night.
    */
-  async confirm(id, context = {}) {
+  async deliver(id, context = {}) {
     return transaction(async () => {
       const order = await this.get(id);
-      if (order.status !== 'pending') {
-        throw new BusinessRuleError(`This order is ${order.status} — only a pending order can be confirmed`);
-      }
+      this.#requireTransition(order, 'delivered');
       if (!order.lines.length) throw new BusinessRuleError('This order has no items');
 
       const warehouseId = await this.inventory.locationId();
@@ -356,8 +446,10 @@ export class WebOrderService {
       // and a reservation still standing would make them look unavailable.
       await this.#releaseReservations(order, warehouseId);
 
-      // Days may have passed. Check before selling so the message names the
-      // item, rather than surfacing whichever line the ledger tripped on.
+      // Days may have passed since it was reserved, and a stocktake or a
+      // counter sale can have eaten into it. Check before selling so the
+      // message names the item, rather than surfacing whichever line the
+      // ledger happened to trip on.
       for (const line of order.lines) {
         if (!(await this.#tracksInventory(line.variant_id))) continue;
         const level = await this.stock.ensureLevel(line.variant_id, warehouseId);
@@ -365,64 +457,94 @@ export class WebOrderService {
         if (line.quantity > free) {
           throw new BusinessRuleError(
             `Not enough stock for ${line.sku} — ${line.description}: `
-            + `${free} available, ${line.quantity} ordered. Cancel the order or restock first.`,
+            + `${free} available, ${line.quantity} delivered. Restock before recording `
+            + 'this delivery, or record it as not received.',
             { variant_id: line.variant_id, available: free, requested: line.quantity },
           );
         }
       }
 
-      const sale = await this.sales.checkout({
-        customer_id: order.customer_id,
-        // Cash on delivery: the money is collected when the box is handed over,
-        // so the invoice is raised unpaid and settled from the sales screen.
-        payment_method: 'cash',
-        paid_amount: 0,
-        notes: `Web order ${order.order_no}`,
-        lines: order.lines.map((line) => ({
-          variant_id: line.variant_id,
-          quantity: line.quantity,
-          unit_price: line.unit_price,
-        })),
-      }, context);
+      // An order confirmed under the old lifecycle already has its invoice, and
+      // billing that customer twice would be worse than any tidiness gained.
+      const sale = order.sale_id
+        ? { id: order.sale_id, invoice_no: order.invoice_no }
+        : await this.sales.checkout({
+          customer_id: order.customer_id,
+          // Cash on delivery: the courier collected it, so the invoice is
+          // settled in cash here and now. `paid_amount` is left out on purpose
+          // — SalesService then pays the invoice in full, whatever it totals.
+          payment_method: 'cash',
+          notes: `Web order ${order.order_no}`,
+          lines: order.lines.map((line) => ({
+            variant_id: line.variant_id,
+            quantity: line.quantity,
+            unit_price: line.unit_price,
+          })),
+        }, context);
 
       const now = new Date().toISOString();
       await this.db.prepare(`
         UPDATE web_orders
-           SET status = 'confirmed', sale_id = ?, confirmed_by = ?, confirmed_at = ?, updated_at = ?
+           SET status = 'delivered', sale_id = ?, delivered_at = ?, updated_at = ?
          WHERE id = ?
-      `).run(sale.id, context.actor?.id || null, now, now, id);
+      `).run(sale.id, now, now, id);
 
-      await this.audit.record({
-        action: 'CONFIRM', module: 'weborders', entityType: 'web_order', entityId: id,
-        entityLabel: order.order_no,
-        before: { status: 'pending' },
-        after: { status: 'confirmed', sale_id: sale.id, invoice_no: sale.invoice_no },
-        actor: context.actor, request: context.request,
-      });
+      await this.#log('DELIVER', order,
+        { status: 'delivered', sale_id: sale.id, invoice_no: sale.invoice_no }, context);
 
       return {
         ...(await this.get(id)),
-        message: `Invoice ${sale.invoice_no} created — unpaid until the delivery is collected.`,
+        message: `Delivered. Invoice ${sale.invoice_no} created and paid in cash.`,
       };
     });
   }
 
   /**
-   * Cancel. Works from `pending` (nothing has happened yet) and from
-   * `confirmed` (staff got as far as raising the invoice).
+   * Not received — the courier went and came back with the box.
    *
-   * A confirmed order has a real sale behind it, with stock issued and possibly
-   * money taken. Voiding that automatically from here would reverse an invoice
-   * on the strength of a courier's phone call, so it is NOT done: the message
-   * says plainly what still has to happen at the till.
+   * Nothing was sold, so there is nothing to reverse: the reservation is given
+   * back and the goods are on the shelf again, sellable by the till the moment
+   * this returns.
+   */
+  async markNotReceived(id, reason, context = {}) {
+    return transaction(async () => {
+      const order = await this.get(id);
+      this.#requireTransition(order, 'not_received');
+
+      const warehouseId = await this.inventory.locationId();
+      const released = await this.#releaseReservations(order, warehouseId);
+
+      const now = new Date().toISOString();
+      await this.db.prepare(`
+        UPDATE web_orders
+           SET status = 'not_received', not_received_reason = ?, updated_at = ?
+         WHERE id = ?
+      `).run(trim(reason, 300), now, id);
+
+      await this.#log('NOT_RECEIVED', order,
+        { status: 'not_received', reason: trim(reason, 300), units_released: released }, context);
+
+      return {
+        ...(await this.get(id)),
+        message: 'Recorded as not received. The held stock is back on the shelf and nothing was sold.',
+      };
+    });
+  }
+
+  /**
+   * Cancel. Legal any time before the box is handed over.
+   *
+   * Under this lifecycle no sale exists until delivery, so cancelling releases
+   * the reservation and stops — there is no invoice to void. The exception is
+   * an order confirmed under the OLD rules, which raised its invoice early: its
+   * `sale_id` survived the migration, and voiding a real invoice on the
+   * strength of a courier's phone call is not something this method will do by
+   * itself. It says plainly what still has to happen at the till.
    */
   async cancel(id, reason, context = {}) {
     return transaction(async () => {
       const order = await this.get(id);
-      if (order.status === 'cancelled') throw new BusinessRuleError('This order is already cancelled');
-      if (order.status === 'delivered') {
-        throw new BusinessRuleError('This order was delivered — record a return instead of cancelling it');
-      }
+      this.#requireTransition(order, 'cancelled');
 
       const warehouseId = await this.inventory.locationId();
       const released = await this.#releaseReservations(order, warehouseId);
@@ -434,13 +556,8 @@ export class WebOrderService {
          WHERE id = ?
       `).run(trim(reason, 300), now, id);
 
-      await this.audit.record({
-        action: 'CANCEL', module: 'weborders', entityType: 'web_order', entityId: id,
-        entityLabel: order.order_no,
-        before: { status: order.status },
-        after: { status: 'cancelled', reason: trim(reason, 300), units_released: released },
-        actor: context.actor, request: context.request,
-      });
+      await this.#log('CANCEL', order,
+        { status: 'cancelled', reason: trim(reason, 300), units_released: released }, context);
 
       const message = order.sale_id
         ? `Order cancelled. Invoice ${order.invoice_no} is still live — void it from the sales `
@@ -450,29 +567,43 @@ export class WebOrderService {
     });
   }
 
-  async markDelivered(id, context = {}) {
-    return transaction(async () => {
-      const order = await this.get(id);
-      if (order.status !== 'confirmed') {
-        throw new BusinessRuleError(
-          `This order is ${order.status} — only a confirmed order can be marked delivered`,
-        );
-      }
-      const now = new Date().toISOString();
-      await this.db.prepare("UPDATE web_orders SET status = 'delivered', updated_at = ? WHERE id = ?")
-        .run(now, id);
+  // ----------------------------------------------------------------- helpers
 
-      await this.audit.record({
-        action: 'DELIVER', module: 'weborders', entityType: 'web_order', entityId: id,
-        entityLabel: order.order_no,
-        before: { status: 'confirmed' }, after: { status: 'delivered' },
-        actor: context.actor, request: context.request,
-      });
-      return this.get(id);
-    });
+  /**
+   * Refuse an illegal move, and say what would have been legal instead.
+   *
+   * "This order is delivered" on its own sends staff to look for a bug; naming
+   * the steps that ARE open from here answers the question they were about to
+   * ask. An end state says so, rather than listing nothing.
+   */
+  #requireTransition(order, next) {
+    const allowed = TRANSITIONS[order.status] || [];
+    if (allowed.includes(next)) return;
+    const from = SPOKEN[order.status] || order.status;
+    const to = SPOKEN[next] || next;
+    throw new BusinessRuleError(
+      allowed.length
+        ? `This order is ${from} — it cannot be marked ${to}. `
+          + `From here it can only be marked: ${allowed.map((s) => SPOKEN[s] || s).join(', ')}.`
+        : `This order is ${from}, which is where it ends — it cannot be marked ${to}.`,
+      { order_no: order.order_no, status: order.status, attempted: next, allowed },
+    );
   }
 
-  // ----------------------------------------------------------------- helpers
+  /** One audit row per lifecycle move, in the shape the trail already uses. */
+  #log(action, order, after, context) {
+    return this.audit.record({
+      action,
+      module: 'weborders',
+      entityType: 'web_order',
+      entityId: order.id,
+      entityLabel: order.order_no,
+      before: { status: order.status },
+      after,
+      actor: context.actor,
+      request: context.request,
+    });
+  }
 
   /**
    * Turn whatever arrived into a basket the shop can price.

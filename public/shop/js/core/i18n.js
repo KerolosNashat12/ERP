@@ -75,6 +75,8 @@ const dictionary = {
     codShort: 'Cash on delivery — you pay when it arrives.',
     unavailableVariant: 'This option is out of stock',
     moreImages: 'More photos',
+    // Said once, at the moment the stepper stops, rather than at checkout.
+    onlyNLeft: (n) => `Only ${n} left`,
 
     // --- cart
     yourCart: 'Your cart',
@@ -93,6 +95,7 @@ const dictionary = {
     freeDeliveryEarned: 'You have earned free delivery.',
     goToCheckout: 'Checkout',
     eachPrice: 'each',
+    cartAdjusted: 'We have fewer of something than when you added it, so we have adjusted your cart to what is left.',
 
     // --- checkout
     checkout: 'Checkout',
@@ -137,14 +140,22 @@ const dictionary = {
     trackButton: 'Find my order',
     tracking: 'Looking…',
     orderNotFound: 'We could not find an order with that number and that phone number. Check both and try again.',
-    statusPending: 'Waiting for confirmation',
-    statusPendingNote: 'We have your order and will call you to confirm it.',
-    statusConfirmed: 'Confirmed',
-    statusConfirmedNote: 'Your order is being prepared for delivery.',
+    statusPending: 'New',
+    statusPendingNote: 'We have your order and we will call you shortly to confirm it.',
+    statusAccepted: 'Accepted',
+    statusAcceptedNote: 'We have accepted your order and are getting it ready.',
+    statusOutForDelivery: 'Out for delivery',
+    statusOutForDeliveryNote: 'Your order is with the courier. Please have the cash ready.',
     statusDelivered: 'Delivered',
-    statusDeliveredNote: 'This order has been delivered. Thank you.',
+    statusDeliveredNote: 'Your order has arrived and has been paid for. Thank you.',
+    statusNotReceived: 'Not received',
+    statusNotReceivedNote: 'The courier could not hand your order over, so it came back to us. Call us and we will send it out again.',
     statusCancelled: 'Cancelled',
-    statusCancelledNote: 'This order was cancelled.',
+    statusCancelledNote: 'This order was cancelled and nothing was charged.',
+    orderProgress: 'Where your order is',
+    stepDone: 'Done',
+    stepNow: 'Now',
+    endedReason: 'Reason',
     placedOn: 'Placed on',
     items: 'Items',
     deliveringTo: 'Delivering to',
@@ -171,6 +182,21 @@ const dictionary = {
     footerHelp: 'Help',
     rightsReserved: 'All rights reserved.',
     payWithCash: 'Cash on delivery across Egypt',
+    followUs: 'Follow us',
+
+    // --- contact
+    contactUs: 'Contact us',
+    contactTitle: 'Get in touch',
+    contactIntro: 'Whichever way suits you — we are happy to hear from you.',
+    contactEmail: 'Email',
+    contactPhone: 'Phone',
+    contactWhatsapp: 'WhatsApp',
+    contactAddress: 'Address',
+    contactHours: 'Opening hours',
+    contactMap: 'Location',
+    contactMapCta: 'Open in Maps',
+    contactEmptyTitle: 'No contact details yet',
+    contactEmptyBody: 'This shop has not added a way to reach it here yet.',
   },
 
   ar: {
@@ -234,6 +260,10 @@ const dictionary = {
     codShort: 'الدفع عند الاستلام — تدفع لما الطلب يوصلك.',
     unavailableVariant: 'النوع ده مش متوفر حاليًا',
     moreImages: 'صور أكتر',
+    onlyNLeft: (n) => (n === 1 ? 'متبقي قطعة واحدة بس'
+      : n === 2 ? 'متبقي قطعتين بس'
+        : n <= 10 ? `متبقي ${n} قطع بس`
+          : `متبقي ${n} قطعة بس`),
 
     // --- cart
     yourCart: 'سلة مشترياتك',
@@ -252,6 +282,7 @@ const dictionary = {
     freeDeliveryEarned: 'التوصيل عليك مجاني.',
     goToCheckout: 'إتمام الطلب',
     eachPrice: 'للقطعة',
+    cartAdjusted: 'الكمية المتاحة قلّت من ساعة ما ضفت، فظبطنا السلة على اللي متبقي.',
 
     // --- checkout
     checkout: 'إتمام الطلب',
@@ -296,14 +327,22 @@ const dictionary = {
     trackButton: 'دوّر على طلبي',
     tracking: 'بندوّر…',
     orderNotFound: 'مالقيناش طلب بالرقم ده مع رقم الموبايل ده. راجع الاتنين وحاول تاني.',
-    statusPending: 'في انتظار التأكيد',
-    statusPendingNote: 'استلمنا طلبك وهنكلمك عشان نأكده.',
-    statusConfirmed: 'تم التأكيد',
-    statusConfirmedNote: 'بنجهّز طلبك للتوصيل.',
+    statusPending: 'جديد',
+    statusPendingNote: 'استلمنا طلبك وهنكلمك حالًا عشان نأكده.',
+    statusAccepted: 'تم القبول',
+    statusAcceptedNote: 'قبلنا طلبك وبنجهّزه.',
+    statusOutForDelivery: 'قيد التوصيل',
+    statusOutForDeliveryNote: 'طلبك مع المندوب. جهّز الفلوس كاش لو سمحت.',
     statusDelivered: 'تم التسليم',
-    statusDeliveredNote: 'الطلب ده اتسلّم. شكرًا ليك.',
+    statusDeliveredNote: 'طلبك وصلك واتدفع. شكرًا ليك.',
+    statusNotReceived: 'لم يتم الاستلام',
+    statusNotReceivedNote: 'المندوب مقدرش يسلّمك الطلب ورجع بيه تاني. كلمنا وهنبعته لك من جديد.',
     statusCancelled: 'ملغي',
-    statusCancelledNote: 'الطلب ده اتلغى.',
+    statusCancelledNote: 'الطلب ده اتلغى ومحصلناش منك أي فلوس.',
+    orderProgress: 'طلبك وصل لفين',
+    stepDone: 'تم',
+    stepNow: 'دلوقتي',
+    endedReason: 'السبب',
     placedOn: 'تاريخ الطلب',
     items: 'المنتجات',
     deliveringTo: 'التوصيل إلى',
@@ -330,6 +369,21 @@ const dictionary = {
     footerHelp: 'مساعدة',
     rightsReserved: 'كل الحقوق محفوظة.',
     payWithCash: 'الدفع عند الاستلام في كل مصر',
+    followUs: 'تابعنا',
+
+    // --- contact
+    contactUs: 'تواصل معانا',
+    contactTitle: 'تواصل معانا',
+    contactIntro: 'بأي طريقة تريحك — يهمنا نسمع منك.',
+    contactEmail: 'البريد الإلكتروني',
+    contactPhone: 'التليفون',
+    contactWhatsapp: 'واتساب',
+    contactAddress: 'العنوان',
+    contactHours: 'مواعيد العمل',
+    contactMap: 'الموقع',
+    contactMapCta: 'افتح على الخريطة',
+    contactEmptyTitle: 'لسه مفيش بيانات تواصل',
+    contactEmptyBody: 'المحل ده لسه ما ضافش طريقة يتواصل بيها هنا.',
   },
 };
 
