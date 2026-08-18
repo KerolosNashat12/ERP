@@ -52,3 +52,30 @@ ecc9824d7ebf3b18f446da4e3787a4d71290844f	HEAD
 CONNECTION OK
 From https://github.com/KerolosNashat12/ERP
  * branch            main       -> FETCH_HEAD
+warning: in the working copy of 'public/css/app.css', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'public/js/app.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'public/js/core/i18n.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'public/js/core/store.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'public/js/views/admin.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'public/js/views/auth.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'public/js/views/catalog.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'public/js/views/devices.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'public/js/views/masterData.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'public/js/views/promotions.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'push-log.txt', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/api/routes/index.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/api/validators.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/infrastructure/database/schema.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/infrastructure/database/seed.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/server.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/services/CatalogService.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/shared/permissions.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'tests/smoke.test.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/services/PasswordResetService.js', LF will be replaced by CRLF the next time Git touches it
+[main b0a7b0c] v1.6: dual database driver (local SQLite or hosted Turso), async data layer, Vercel deploy
+ 21 files changed, 1048 insertions(+), 87 deletions(-)
+ create mode 100644 git-diagnosis.txt
+ create mode 100644 src/services/PasswordResetService.js
+fatal: unable to access 'https://github.com/KerolosNashat12/ERP.git/': Failed to connect to github.com:443 after 21105 ms: Could not connect to server
+
+PUSH FAILED

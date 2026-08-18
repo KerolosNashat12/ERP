@@ -1,2 +1,1 @@
-Push started Tue 08/18/2026 12:56:37.60
-fatal: unable to access 'https://github.com/KerolosNashat12/ERP.git/': Failed to connect to github.com:443 after 21149 ms: Could not connect to server
+Retry push started Tue 08/18/2026 13:00:22.80
