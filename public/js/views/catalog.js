@@ -5,7 +5,7 @@ import {
   textInput, selectInput, numberInput, field, tag, modal, buildForm,
 } from '../core/ui.js';
 import { t, pick } from '../core/i18n.js';
-import { money, number } from '../core/format.js';
+import { money, number, fileSize } from '../core/format.js';
 import { can, lookup, invalidate } from '../core/store.js';
 import { onScan } from '../core/scanner.js';
 import { navigate } from '../core/router.js';
@@ -389,12 +389,298 @@ async function productFormView(root, route) {
       h('div', { class: 'card-body' },
         attributePicker,
         h('div', { class: 'muted small', style: { marginTop: '8px' } }, t('noAttributesNeeded'))),
-      matrixHost));
+      matrixHost),
+
+    // Below the matrix, because a photo can be pinned to one of its variants.
+    // Saved variants only: an unsaved row has no id to attach anything to.
+    photosCard(id, existing?.variants || []));
 
   renderAttributePicker();
   renderMatrix();
   // A leaked subscription would swallow scans on every other screen.
   return () => unsubscribeScan();
+}
+
+// ---------------------------------------------------------- photo gallery
+
+/**
+ * A phone photo is four or five megabytes and 4000 px wide. Nothing in a shop
+ * needs that: it is shown as a thumbnail on the till and at a few hundred
+ * pixels on the website, and the bytes live in the database, which is also the
+ * backup. So the browser does the work before the upload — draw into a canvas
+ * at a sane size, re-encode as JPEG, and send the result as a data URL.
+ *
+ * 1400 px on the longest edge at quality 0.82 puts a 5 MB photo at roughly
+ * 120 KB, which the staff can see for themselves under every thumbnail. The
+ * server enforces its own ceiling; this is what keeps uploads under it.
+ */
+const PHOTO_MAX_EDGE = 1400;
+const PHOTO_QUALITY = 0.82;
+
+function compressToDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const objectUrl = URL.createObjectURL(file);
+    const image = new Image();
+    image.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      const longest = Math.max(image.naturalWidth, image.naturalHeight) || 1;
+      const scale = Math.min(1, PHOTO_MAX_EDGE / longest);
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+      canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+      const ctx = canvas.getContext('2d');
+      // JPEG has no transparency: without this, a PNG cut-out is re-encoded
+      // onto black, and a product photographed on white comes out on black.
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+      resolve(canvas.toDataURL('image/jpeg', PHOTO_QUALITY));
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error(t('photoUnreadable')));
+    };
+    image.src = objectUrl;
+  });
+}
+
+/**
+ * The Photos card on the product editor.
+ *
+ * Photos hang off a product row, so on a product that has not been saved yet
+ * the card is present but inert, with a line saying why — better than hiding
+ * it, which would leave staff wondering where photos are set at all.
+ *
+ * Unlike the rest of this screen, it saves as it goes: an upload, a reorder or
+ * a change of main photo is written immediately rather than waiting for Save.
+ * There is nothing to reconcile — the product already exists — and a photo that
+ * vanished because somebody navigated away would be a nasty surprise.
+ */
+function photosCard(productId, productVariants = []) {
+  const body = h('div', { class: 'card-body' });
+  const card = h('div', { class: 'card', style: { marginTop: '14px' } },
+    h('div', { class: 'card-head' },
+      h('h3', {}, t('photos')),
+      h('span', { class: 'spacer' }),
+      h('span', { class: 'muted small' }, t('photosSubtitle'))),
+    body);
+
+  if (!productId) {
+    mount(body, h('div', { class: 'photo-drop disabled' },
+      h('span', { class: 'ico' }, '🖼'),
+      h('div', {}, t('savePhotosFirst'))));
+    return card;
+  }
+
+  const variantOptions = productVariants
+    .filter((variant) => variant.id)
+    .map((variant) => ({ value: variant.id, label: variant.variant_label || variant.sku }));
+
+  let images = [];
+  let dragId = null;
+  let working = false;
+
+  const fileInput = h('input', {
+    type: 'file',
+    // Anything the browser can decode: it is re-encoded as JPEG on the way out,
+    // so what the phone happens to have saved does not matter.
+    accept: 'image/*',
+    multiple: true,
+    style: { display: 'none' },
+    onchange: (event) => {
+      const files = [...event.target.files];
+      event.target.value = '';
+      addFiles(files);
+    },
+  });
+
+  const dropZone = h('div', {
+    class: 'photo-drop',
+    onclick: () => fileInput.click(),
+    ondragover: (event) => {
+      event.preventDefault();
+      dropZone.classList.add('over');
+    },
+    ondragleave: () => dropZone.classList.remove('over'),
+    ondrop: (event) => {
+      event.preventDefault();
+      dropZone.classList.remove('over');
+      // A tile being dragged for reordering also lands here; it carries no
+      // files, so this stays a no-op rather than an error.
+      addFiles([...(event.dataTransfer?.files || [])]);
+    },
+  },
+  h('span', { class: 'ico' }, '🖼'),
+  h('div', {}, t('dropPhotoHere')),
+  h('small', { class: 'muted' }, t('photoCompressHint')));
+
+  const gallery = h('div', { class: 'photo-grid' });
+
+  function tile(image, index) {
+    return h('div', {
+      class: `photo-tile${image.is_primary ? ' primary' : ''}`,
+      draggable: 'true',
+      ondragstart: (event) => {
+        dragId = image.id;
+        event.dataTransfer.effectAllowed = 'move';
+        // Firefox only starts a drag once something has been written.
+        event.dataTransfer.setData('text/plain', String(image.id));
+      },
+      ondragend: () => { dragId = null; },
+      // Always accepted, whether it is another tile being reordered or a file
+      // from the desktop: a drop the page does not handle makes the browser
+      // navigate away to the dropped image, losing whatever was being edited.
+      ondragover: (event) => event.preventDefault(),
+      ondrop: (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        const files = [...(event.dataTransfer?.files || [])];
+        if (files.length) addFiles(files);
+        else if (dragId) moveTo(dragId, index);
+      },
+    },
+    h('img', {
+      src: `/api/products/${productId}/images/${image.id}/raw`,
+      alt: pick(image, 'alt') || '',
+      loading: 'lazy',
+    }),
+    image.is_primary ? h('span', { class: 'photo-badge' }, `★ ${t('mainPhoto')}`) : null,
+    h('div', { class: 'photo-info' },
+      h('span', {}, fileSize(image.byte_size)),
+      image.width ? h('span', {}, `${image.width}×${image.height}`) : null),
+    selectInput({
+      options: variantOptions,
+      value: image.variant_id ?? '',
+      placeholder: t('allVariants'),
+      onchange: (event) => setVariant(image, event.target.value),
+    }),
+    h('div', { class: 'photo-actions' },
+      // Arrows as well as drag: the till is a touchscreen, where dragging a
+      // small tile accurately is a fiddle and a mis-drop is invisible.
+      h('button', {
+        class: 'btn sm ghost', type: 'button', title: t('movePhotoEarlier'),
+        disabled: index === 0, onclick: () => moveTo(image.id, index - 1),
+      }, '↑'),
+      h('button', {
+        class: 'btn sm ghost', type: 'button', title: t('movePhotoLater'),
+        disabled: index === images.length - 1, onclick: () => moveTo(image.id, index + 1),
+      }, '↓'),
+      h('span', { class: 'spacer' }),
+      h('button', {
+        class: 'btn sm ghost', type: 'button', title: t('makeMainPhoto'),
+        disabled: Boolean(image.is_primary), onclick: () => makePrimary(image),
+      }, '★'),
+      h('button', {
+        class: 'btn sm ghost', type: 'button', title: t('removePhoto'),
+        onclick: () => removeImage(image),
+      }, '🗑')));
+  }
+
+  function render() {
+    mount(gallery, ...images.map(tile));
+    mount(body,
+      fileInput,
+      dropZone,
+      working ? h('div', { class: 'muted small', style: { marginTop: '8px' } }, t('preparingPhoto')) : null,
+      images.length
+        ? gallery
+        : h('div', { class: 'empty' }, h('span', { class: 'ico' }, '◍'), h('div', {}, t('noPhotosYet'))));
+  }
+
+  async function load() {
+    try {
+      const data = await api.get(`/api/products/${productId}/images`);
+      images = data.rows;
+    } catch (error) {
+      toastError(error);
+    }
+    render();
+  }
+
+  async function addFiles(files) {
+    const pictures = files.filter((file) => file.type.startsWith('image/'));
+    if (!pictures.length) {
+      if (files.length) toast(t('photoNotAnImage'), 'warn');
+      return;
+    }
+    working = true;
+    render();
+    try {
+      // One at a time: compression is the expensive part, and uploading four
+      // photos at once on a shop's connection is how a request times out.
+      for (const file of pictures) {
+        const dataUrl = await compressToDataUrl(file);
+        await api.post(`/api/products/${productId}/images`, { dataUrl });
+      }
+      toast(t('photoAdded'));
+    } catch (error) {
+      toastError(error);
+    } finally {
+      working = false;
+      await load();
+    }
+  }
+
+  /** Optimistic: the tiles move at once, then the new order is persisted. */
+  async function moveTo(imageId, index) {
+    const from = images.findIndex((image) => image.id === imageId);
+    const to = Math.max(0, Math.min(images.length - 1, index));
+    if (from < 0 || from === to) return;
+    const next = [...images];
+    next.splice(to, 0, ...next.splice(from, 1));
+    images = next;
+    render();
+    try {
+      const result = await api.put(`/api/products/${productId}/images/order`, {
+        ids: images.map((image) => image.id),
+      });
+      images = result.rows;
+      render();
+      toast(t('photoOrderSaved'));
+    } catch (error) {
+      toastError(error);
+      await load();
+    }
+  }
+
+  async function makePrimary(image) {
+    try {
+      await api.put(`/api/products/${productId}/images/${image.id}/primary`);
+      toast(t('mainPhotoSet'));
+    } catch (error) {
+      toastError(error);
+    }
+    await load();
+  }
+
+  async function setVariant(image, value) {
+    try {
+      await api.put(`/api/products/${productId}/images/${image.id}`, {
+        variantId: value === '' ? null : Number(value),
+      });
+      toast(t('saved'));
+    } catch (error) {
+      toastError(error);
+    }
+    await load();
+  }
+
+  async function removeImage(image) {
+    if (!await confirmDialog({
+      title: t('removePhoto'), message: t('removePhotoConfirm'), danger: true,
+    })) return;
+    try {
+      await api.del(`/api/products/${productId}/images/${image.id}`);
+      toast(t('photoRemoved'));
+    } catch (error) {
+      toastError(error);
+    }
+    await load();
+  }
+
+  render();
+  load();
+  return card;
 }
 
 // -------------------------------------------------------- bulk price update

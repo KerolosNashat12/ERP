@@ -2,10 +2,13 @@
 import {
   initDb, applySchema, getDb, closeDb, supportsFileBackup, driverName,
 } from '../src/infrastructure/database/connection.js';
+import { runMigrations } from '../src/infrastructure/database/migrations/index.js';
 import config from '../src/config/index.js';
 
 await initDb();
 await applySchema();
+const applied = await runMigrations();
+if (applied.length) console.log(`Applied ${applied.length} migration(s): ${applied.join(', ')}`);
 
 const tables = (await getDb()
   .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")

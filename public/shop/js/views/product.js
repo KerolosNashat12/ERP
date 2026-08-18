@@ -1,0 +1,287 @@
+/**
+ * The product page — the only screen on the site where a decision is made, so
+ * it is the one that gets the most care: a gallery that answers "what does it
+ * actually look like", a price that changes with the option chosen, and a stock
+ * verdict on every option before the customer picks one.
+ */
+import { el, fill, icon, ICONS } from '../core/dom.js';
+import { api, imageUrl, ShopError } from '../core/api.js';
+import { t, pick, getLanguage, isRtl } from '../core/i18n.js';
+import { money, priceRange } from '../core/format.js';
+import { href } from '../core/router.js';
+import { setPageMeta } from '../core/seo.js';
+import { deliveryFee, freeDeliveryOver } from '../core/store.js';
+import * as cart from '../core/cart.js';
+import { availabilityBadge, productPhoto } from '../ui/cards.js';
+import { skeletonProduct, errorState, emptyState, toast } from '../ui/states.js';
+
+/** Breadcrumbs back to the shelf this came from, built from what the card carries. */
+function crumbs(product) {
+  const parts = [el('a', { href: href('') }, t('home'))];
+  if (product.brand_id) {
+    parts.push(el('span.crumb-sep', '/'));
+    parts.push(el('a', { href: href(`brand/${product.brand_id}`) }, pick(product, 'brand_name')));
+  }
+  return el('nav.crumbs', { 'aria-label': t('home') }, parts);
+}
+
+/**
+ * The gallery. One main photo and a row of thumbnails; the main photo is also
+ * driven from outside, because choosing a colour should show that colour.
+ */
+function gallery(product) {
+  const images = product.images || [];
+  const name = pick(product, 'name');
+  const main = el('div.gallery-main');
+  const thumbs = el('div.thumbs');
+  let current = null;
+
+  const altFor = (image) => (getLanguage() === 'ar'
+    ? (image.alt_ar || image.alt_en) : (image.alt_en || image.alt_ar)) || name;
+
+  function show(imageId, { focus = false } = {}) {
+    const image = images.find((entry) => entry.id === imageId) || images[0] || null;
+    const id = image ? image.id : product.image_id;
+    if (current === id) return;
+    current = id;
+    fill(main, productPhoto(id, image ? altFor(image) : name, { eager: true }));
+    thumbs.querySelectorAll('.thumb').forEach((node) => {
+      const active = Number(node.dataset.id) === id;
+      node.classList.toggle('is-active', active);
+      node.setAttribute('aria-selected', active ? 'true' : 'false');
+      if (active && focus) node.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    });
+  }
+
+  if (images.length > 1) {
+    thumbs.setAttribute('role', 'tablist');
+    thumbs.setAttribute('aria-label', t('moreImages'));
+    for (const image of images) {
+      thumbs.append(el('button.thumb', {
+        type: 'button',
+        role: 'tab',
+        dataset: { id: image.id },
+        'aria-label': altFor(image),
+        onClick: () => show(image.id),
+      }, el('img', { src: imageUrl(image.id), alt: '', loading: 'lazy', decoding: 'async' })));
+    }
+  }
+
+  show(images[0]?.id ?? product.image_id);
+  return { node: el('div.gallery', main, images.length > 1 && thumbs), show };
+}
+
+/**
+ * The option picker.
+ *
+ * Out-of-stock options stay visible — knowing the shop carries that colour is
+ * useful even when it is gone today — but they are `disabled`, greyed, struck
+ * through and labelled, so they cannot be chosen by mouse, keyboard or script
+ * that only checks for a class.
+ */
+function variantPicker(product, onPick) {
+  const variants = product.variants || [];
+  if (variants.length <= 1) return { node: null, selected: variants[0] || null };
+
+  const group = el('div.variants', { role: 'radiogroup', 'aria-label': t('chooseVariant') });
+  const buttons = new Map();
+  let selected = variants.find((variant) => variant.availability !== 'out') || null;
+
+  /**
+   * A radiogroup is one tab stop, not one per option, and the arrows move
+   * within it. Announcing the role without implementing the keyboard that goes
+   * with it would leave a screen-reader user waiting for arrow keys that do
+   * nothing — worse than plain buttons.
+   */
+  function choose(variant, { focus = false } = {}) {
+    if (!variant || variant.availability === 'out') return;
+    selected = variant;
+    buttons.forEach((node, entry) => {
+      const active = entry === variant;
+      node.setAttribute('aria-checked', active ? 'true' : 'false');
+      node.tabIndex = active ? 0 : -1;
+      if (active && focus) node.focus();
+    });
+    onPick(variant);
+  }
+
+  const pickable = variants.filter((variant) => variant.availability !== 'out');
+  function step(delta) {
+    const index = pickable.indexOf(selected);
+    const next = pickable[(index + delta + pickable.length) % pickable.length];
+    choose(next, { focus: true });
+  }
+
+  for (const variant of variants) {
+    const out = variant.availability === 'out';
+    const button = el('button.variant', {
+      type: 'button',
+      role: 'radio',
+      class: out ? 'is-out' : '',
+      disabled: out,
+      tabIndex: variant === selected ? 0 : -1,
+      'aria-checked': variant === selected ? 'true' : 'false',
+      title: out ? t('unavailableVariant') : '',
+      onClick: () => choose(variant),
+      onKeydown: (event) => {
+        // The arrows are written in logical terms so they keep meaning the same
+        // thing when the page mirrors: "next" is always the next option.
+        const forward = isRtl() ? 'ArrowLeft' : 'ArrowRight';
+        const back = isRtl() ? 'ArrowRight' : 'ArrowLeft';
+        if (event.key === forward || event.key === 'ArrowDown') { event.preventDefault(); step(1); }
+        else if (event.key === back || event.key === 'ArrowUp') { event.preventDefault(); step(-1); }
+      },
+    },
+    el('span.variant-label', variant.label || pick(product, 'name')),
+    variant.price !== null && el('span.variant-price', money(variant.price)),
+    out && el('span.variant-out', t('outOfStock')));
+    buttons.set(variant, button);
+    group.append(button);
+  }
+
+  return {
+    node: el('div.field',
+      el('span.field-label', t('chooseVariant')),
+      group),
+    get selected() { return selected; },
+  };
+}
+
+function quantityStepper(onChange) {
+  let value = 1;
+  const output = el('span.qty-value', { 'aria-live': 'polite' }, '1');
+  const set = (next) => {
+    value = Math.min(Math.max(next, 1), 99);
+    output.textContent = String(value);
+    onChange(value);
+  };
+  return {
+    node: el('div.stepper',
+      el('button.step', { type: 'button', 'aria-label': t('decrease'), onClick: () => set(value - 1) },
+        icon(ICONS.minus, { size: 16 })),
+      output,
+      el('button.step', { type: 'button', 'aria-label': t('increase'), onClick: () => set(value + 1) },
+        icon(ICONS.plus, { size: 16 }))),
+    get value() { return value; },
+  };
+}
+
+/** The small print that answers "and how much is delivery" without leaving the page. */
+function deliveryNote() {
+  const threshold = freeDeliveryOver();
+  return el('div.panel.delivery-note',
+    el('h2.panel-title', icon(ICONS.truck, { size: 18 }), t('deliveryTitle')),
+    el('ul.note-list',
+      el('li', t('codShort')),
+      deliveryFee() > 0 && el('li', t('deliveryFlat', money(deliveryFee()))),
+      threshold && el('li', t('deliveryFreeOver', money(threshold)))));
+}
+
+export default async function productView(root, route) {
+  const holder = el('div.wrap.stack', skeletonProduct());
+  root.append(holder);
+
+  let product;
+  try {
+    product = await api.product(route.params.id);
+  } catch (error) {
+    // A 404 here is ordinary: the piece sold out and was unpublished, and the
+    // link is doing the rounds on WhatsApp. It gets a shop-shaped page, not an
+    // error card.
+    if (error instanceof ShopError && error.status === 404) {
+      fill(holder, emptyState({
+        title: t('productGoneTitle'),
+        body: t('notFoundBody'),
+        action: el('a.btn.btn-primary', { href: href('products') }, t('allProducts')),
+      }));
+      setPageMeta({ title: t('productGoneTitle') });
+      return;
+    }
+    fill(holder, errorState(error, () => { root.replaceChildren(); productView(root, route); }));
+    return;
+  }
+
+  const name = pick(product, 'name');
+  const description = pick(product, 'description');
+  setPageMeta({
+    title: name,
+    description: (description || '').slice(0, 180)
+      || (getLanguage() === 'ar' ? `${name} — متاح الآن في إم آند إم للإكسسوارات.` : `${name} — available now at M&M Accessories.`),
+    image: product.image_id ? imageUrl(product.image_id) : null,
+  });
+
+  const view = gallery(product);
+  const priceNode = el('p.price', priceRange(product.price_from, product.price_to));
+  const badgeNode = el('div.availability', availabilityBadge(product.availability));
+
+  const picker = variantPicker(product, (variant) => {
+    priceNode.textContent = money(variant.price);
+    fill(badgeNode, availabilityBadge(variant.availability));
+    // Picking a colour should show that colour: the variant's own photo wins
+    // when it has one, and the gallery is left alone when it does not, rather
+    // than snapping back to the first frame.
+    if (variant.image_id) view.show(variant.image_id, { focus: true });
+    syncButton();
+  });
+
+  const stepper = quantityStepper(() => {});
+  const selected = () => (picker.node ? picker.selected : (product.variants || [])[0] || null);
+
+  const addButton = el('button.btn.btn-primary.btn-add', { type: 'button' },
+    icon(ICONS.bag, { size: 18 }), el('span', t('addToCart')));
+
+  function syncButton() {
+    const variant = selected();
+    const blocked = !variant || variant.availability === 'out';
+    addButton.disabled = blocked;
+    addButton.classList.toggle('is-disabled', blocked);
+    addButton.title = blocked ? t('unavailableVariant') : '';
+  }
+
+  addButton.addEventListener('click', () => {
+    const variant = selected();
+    if (!variant || variant.availability === 'out') return;
+    cart.add({
+      variant_id: variant.id,
+      product_id: product.id,
+      name_en: product.name_en,
+      name_ar: product.name_ar,
+      label: variant.label,
+      price: variant.price,
+      tax_rate: product.tax_rate,
+      image_id: variant.image_id || product.image_id,
+    }, stepper.value);
+    toast(t('addedToCart'), el('a.toast-link', { href: href('cart') }, t('viewCart')));
+  });
+
+  // If a single option was pre-selected, show its price rather than a range of one.
+  const initial = selected();
+  if (initial && (product.variants || []).length === 1) priceNode.textContent = money(initial.price);
+  if (initial && picker.node) {
+    priceNode.textContent = money(initial.price);
+    fill(badgeNode, availabilityBadge(initial.availability));
+    if (initial.image_id) view.show(initial.image_id);
+  }
+  syncButton();
+
+  fill(holder,
+    crumbs(product),
+    el('div.product-layout',
+      view.node,
+      el('div.product-info',
+        pick(product, 'brand_name') && el('a.product-brand', { href: href(`brand/${product.brand_id}`) },
+          pick(product, 'brand_name')),
+        el('h1.product-name', name),
+        priceNode,
+        badgeNode,
+        picker.node,
+        el('div.buy-row',
+          el('div.field.field-qty',
+            el('span.field-label', t('quantity')),
+            stepper.node),
+          addButton),
+        description && el('section.panel',
+          el('h2.panel-title', t('aboutThisPiece')),
+          el('p.prose', description)),
+        deliveryNote())));
+}

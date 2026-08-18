@@ -54,6 +54,10 @@ export async function seedBaseline() {
     await insertSequence.run('purchase_order', 'PO', 5, year);
     await insertSequence.run('sales_return', 'RET', 5, year);
     await insertSequence.run('stock_adjustment', 'ADJ', 5, year);
+    // Web orders are numbered apart from counter sales: WEB-2026-00001 tells
+    // staff where it came from before they open it, and an order that is later
+    // cancelled leaves no gap in the invoice book.
+    await insertSequence.run('web_order', 'WEB', 5, year);
 
     // The single shop location.
     await db.prepare(`

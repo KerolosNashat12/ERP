@@ -1,0 +1,35 @@
+<!doctype html>
+<!--
+  M&M Accessories — public storefront.
+
+  One HTML file for the whole shop: the server rewrites every /shop* path here
+  and the hash router takes it from there, so #/product/12 is a real link with
+  no server route behind it. Arabic is the default language and is set on the
+  first paint below rather than by JavaScript, so a slow connection never shows
+  a flash of left-to-right layout before the script lands.
+-->
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#111827">
+  <title>إم آند إم للإكسسوارات</title>
+  <meta name="description" content="شنط وعطور ومجوهرات مختارة من القاهرة. الدفع عند الاستلام والتوصيل لكل محافظات مصر.">
+  <meta property="og:site_name" content="M&amp;M Accessories">
+  <link rel="stylesheet" href="/shop/shop.css">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23111827'/%3E%3Ctext x='16' y='22' font-family='Georgia,serif' font-size='15' fill='%23d4af37' text-anchor='middle'%3EM%3C/text%3E%3C/svg%3E">
+</head>
+<body class="is-booting">
+  <!-- Replaced by the app on boot; visible only while the first request is in flight. -->
+  <div class="boot-screen" role="status" aria-live="polite">
+    <span class="boot-mark">M&amp;M</span>
+  </div>
+  <script type="module" src="/shop/js/main.js"></script>
+  <noscript>
+    <div class="boot-screen">
+      <p>هذا المتجر يحتاج إلى تفعيل الجافاسكريبت في المتصفح.<br>
+         This shop needs JavaScript enabled in your browser.</p>
+    </div>
+  </noscript>
+</body>
+</html>

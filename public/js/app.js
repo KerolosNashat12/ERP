@@ -14,6 +14,7 @@ import { suppliersView, brandsView, categoriesView, customersView, attributesVie
 import { inventoryView, movementsView, adjustmentsView } from './views/inventory.js';
 import { purchasesView } from './views/purchasing.js';
 import { salesView } from './views/sales.js';
+import { webOrdersView } from './views/webOrders.js';
 import { returnsView } from './views/returns.js';
 import { promotionsView } from './views/promotions.js';
 import { reportsView } from './views/reports.js';
@@ -31,6 +32,13 @@ const NAV = [
       { path: 'pos', label: 'pos', icon: '▤', permission: 'sales.create' },
       { path: 'sales', label: 'sales', icon: '₪', permission: 'sales.view' },
       { path: 'returns', label: 'returns', icon: '↩', permission: 'sales.view' },
+      {
+        path: 'web-orders',
+        label: 'webOrders',
+        icon: '⛟',
+        permission: 'weborders.view',
+        badge: 'pendingWebOrders',
+      },
       { path: 'customers', label: 'customers', icon: '☺', permission: 'customers.view' },
     ],
   },
@@ -78,6 +86,7 @@ const NAV = [
 
 const ROUTE_PERMISSIONS = {
   dashboard: 'dashboard.view', pos: 'sales.create', sales: 'sales.view', returns: 'sales.view',
+  'web-orders': 'weborders.view',
   products: 'products.view', brands: 'brands.view', categories: 'categories.view',
   attributes: 'attributes.view', labels: 'labels.view', inventory: 'inventory.view',
   movements: 'inventory.view', adjustments: 'inventory.view',
@@ -195,7 +204,7 @@ function renderNav() {
         },
         h('span', { class: 'ico' }, item.icon),
         t(item.label),
-        count ? h('span', { class: 'badge', title: t('pendingResets') }, count) : null);
+        count ? h('span', { class: 'badge', title: t(item.badge) }, count) : null);
       }),
     ];
   }));
@@ -228,6 +237,7 @@ async function startApp() {
     pos: posView,
     sales: salesView,
     returns: returnsView,
+    'web-orders': webOrdersView,
     products: productsView,
     brands: brandsView,
     categories: categoriesView,

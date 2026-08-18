@@ -145,7 +145,8 @@ CREATE TABLE IF NOT EXISTS brands (
   country     TEXT,
   supplier_id INTEGER REFERENCES suppliers(id) ON DELETE SET NULL,
   logo_url    TEXT,
-  is_active   INTEGER NOT NULL DEFAULT 1,
+  is_active    INTEGER NOT NULL DEFAULT 1,
+  is_published INTEGER NOT NULL DEFAULT 1,
   created_by  INTEGER REFERENCES users(id),
   created_at  TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   updated_at  TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
@@ -158,7 +159,9 @@ CREATE TABLE IF NOT EXISTS categories (
   name_ar     TEXT,
   parent_id   INTEGER REFERENCES categories(id) ON DELETE SET NULL,
   description TEXT,
-  is_active   INTEGER NOT NULL DEFAULT 1,
+  is_active     INTEGER NOT NULL DEFAULT 1,
+  is_published  INTEGER NOT NULL DEFAULT 1,
+  display_order INTEGER NOT NULL DEFAULT 0,
   created_by  INTEGER REFERENCES users(id),
   created_at  TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   updated_at  TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
@@ -233,6 +236,16 @@ CREATE TABLE IF NOT EXISTS products (
   image_url       TEXT,
   tags            TEXT,
   is_active       INTEGER NOT NULL DEFAULT 1,
+  -- Website visibility. Defaults to hidden on purpose: a product reaches
+  -- customers only when somebody deliberately publishes it.
+  is_published       INTEGER NOT NULL DEFAULT 0,
+  published_at       TEXT,
+  web_description_en TEXT,
+  web_description_ar TEXT,
+  -- No foreign key: products and product_images point at each other, and a
+  -- circular constraint cannot be created from empty. Reads join loosely, so a
+  -- stale id shows no photo rather than breaking the page.
+  primary_image_id   INTEGER,
   created_by      INTEGER REFERENCES users(id),
   created_at      TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   updated_at      TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
@@ -582,6 +595,30 @@ CREATE INDEX IF NOT EXISTS idx_redemptions_promo ON promotion_redemptions(promot
 -- =============================================================================
 --  8. REPORTING VIEWS
 -- =============================================================================
+
+-- ---------------------------------------------------------------- photographs
+-- The bytes live here rather than on a disk. A serverless host has no durable
+-- disk, and the shop PC has to work with the internet down; keeping images in
+-- SQLite means a photo is in the backup, travels with the data, and behaves
+-- identically in both places. The browser compresses and resizes before upload,
+-- so these rows are ~120 KB, not whole phone photos.
+CREATE TABLE IF NOT EXISTS product_images (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  product_id    INTEGER NOT NULL REFERENCES products(id)         ON DELETE CASCADE,
+  variant_id    INTEGER          REFERENCES product_variants(id) ON DELETE CASCADE,
+  data          BLOB    NOT NULL,
+  content_type  TEXT    NOT NULL DEFAULT 'image/jpeg',
+  byte_size     INTEGER NOT NULL DEFAULT 0,
+  width         INTEGER,
+  height        INTEGER,
+  alt_en        TEXT,
+  alt_ar        TEXT,
+  display_order INTEGER NOT NULL DEFAULT 0,
+  created_by    INTEGER REFERENCES users(id),
+  created_at    TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+CREATE INDEX IF NOT EXISTS idx_images_product ON product_images(product_id, display_order);
+CREATE INDEX IF NOT EXISTS idx_images_variant ON product_images(variant_id);
 
 -- ---------------------------------------------------------------- access recovery
 -- There is no mail server here on purpose: the system has to work with the

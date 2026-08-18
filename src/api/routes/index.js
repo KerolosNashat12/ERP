@@ -1,13 +1,16 @@
 /** API composition: mounts every module router under /api. */
 import { Router } from 'express';
 import config from '../../config/index.js';
-import { asyncHandler, authenticate, requirePermission, validate } from '../middleware/index.js';
+import {
+  asyncHandler, authenticate, requirePermission, sendImage, validate,
+} from '../middleware/index.js';
 import { crudRouter } from './crudRouter.js';
 import * as v from '../validators.js';
 
 import authService from '../../services/AuthService.js';
 import dashboardService from '../../services/DashboardService.js';
 import catalogService from '../../services/CatalogService.js';
+import imageService from '../../services/ImageService.js';
 import inventoryService from '../../services/InventoryService.js';
 import purchaseService from '../../services/PurchaseService.js';
 import salesService from '../../services/SalesService.js';
@@ -18,11 +21,13 @@ import labelService from '../../services/LabelService.js';
 import auditService from '../../services/AuditService.js';
 import { userService, settingsService, backupService } from '../../services/AdminService.js';
 import passwordResetService from '../../services/PasswordResetService.js';
+import webOrderService from '../../services/WebOrderService.js';
 import {
   supplierService, brandService, categoryService, warehouseService,
   customerService, attributeService,
 } from '../../services/masterDataServices.js';
 import repositories from '../../infrastructure/repositories/index.js';
+import { NotFoundError } from '../../shared/errors.js';
 
 const router = Router();
 
@@ -197,6 +202,53 @@ router.delete('/products/:id', requirePermission('products.delete'), asyncHandle
   res.json(await catalogService.remove(Number(req.params.id), req.context));
 }));
 
+// --------------------------------------------------------------- photos
+// Uploading, arranging and deleting a photo is editing the product, so it is
+// `products.update`; looking at one is `products.view`.
+router.get('/products/:id/images', requirePermission('products.view'), asyncHandler(async (req, res) => {
+  res.json({ rows: await imageService.list(Number(req.params.id)) });
+}));
+
+/**
+ * The bytes, for the editor's own gallery. The shop has its own endpoint that
+ * needs no session — this one exists because a product is photographed long
+ * before it is published, and until then it is only visible to staff.
+ */
+router.get('/products/:id/images/:imageId/raw', requirePermission('products.view'),
+  asyncHandler(async (req, res) => {
+    const image = await imageService.bytes(Number(req.params.imageId));
+    if (!image) throw new NotFoundError('Product photo', req.params.imageId);
+    sendImage(req, res, image, { cacheControl: 'private, max-age=31536000, immutable' });
+  }));
+
+router.post('/products/:id/images', requirePermission('products.update'),
+  validate(v.productImageSchema), asyncHandler(async (req, res) => {
+    res.status(201).json(await imageService.add(Number(req.params.id), req.body, req.context));
+  }));
+
+// Registered before `/:imageId`, which would otherwise swallow the word "order".
+router.put('/products/:id/images/order', requirePermission('products.update'),
+  validate(v.imageOrderSchema), asyncHandler(async (req, res) => {
+    res.json(await imageService.reorder(Number(req.params.id), req.body.ids, req.context));
+  }));
+
+router.put('/products/:id/images/:imageId/primary', requirePermission('products.update'),
+  asyncHandler(async (req, res) => {
+    res.json(await imageService.setPrimary(Number(req.params.id), Number(req.params.imageId), req.context));
+  }));
+
+router.put('/products/:id/images/:imageId', requirePermission('products.update'),
+  validate(v.productImageUpdateSchema), asyncHandler(async (req, res) => {
+    res.json(await imageService.update(
+      Number(req.params.id), Number(req.params.imageId), req.body, req.context,
+    ));
+  }));
+
+router.delete('/products/:id/images/:imageId', requirePermission('products.update'),
+  asyncHandler(async (req, res) => {
+    res.json(await imageService.remove(Number(req.params.id), Number(req.params.imageId), req.context));
+  }));
+
 // --------------------------------------------------------------- inventory
 router.get('/inventory/stock', requirePermission('inventory.view'), asyncHandler(async (req, res) => {
   res.json(await inventoryService.stockOnHand({
@@ -310,6 +362,40 @@ router.post('/sales/:id/payment', requirePermission('sales.create'), validate(v.
   asyncHandler(async (req, res) => res.json(
     await salesService.registerPayment(Number(req.params.id), req.body, req.context),
   )));
+
+// -------------------------------------------------------------- web orders
+// The staff side of the shop. Placing and tracking an order is public and lives
+// in `shopOrders.js`; everything that decides an order's fate is here, behind a
+// session, because confirming one issues stock and raises an invoice.
+router.get('/web-orders', requirePermission('weborders.view'), asyncHandler(async (req, res) => {
+  res.json(await webOrderService.list({ status: req.query.status, page: req.query.page }));
+}));
+
+// Registered before `/:id`, which would otherwise swallow the word "count".
+router.get('/web-orders/count', requirePermission('weborders.view'), asyncHandler(async (_req, res) => {
+  res.json({ pending: await webOrderService.pendingCount() });
+}));
+
+router.get('/web-orders/:id', requirePermission('weborders.view'), asyncHandler(async (req, res) => {
+  res.json(await webOrderService.get(Number(req.params.id)));
+}));
+
+router.post('/web-orders/:id/confirm', requirePermission('weborders.confirm'),
+  asyncHandler(async (req, res) => {
+    res.json(await webOrderService.confirm(Number(req.params.id), req.context));
+  }));
+
+router.post('/web-orders/:id/cancel', requirePermission('weborders.cancel'),
+  asyncHandler(async (req, res) => {
+    res.json(await webOrderService.cancel(Number(req.params.id), req.body?.reason, req.context));
+  }));
+
+// Delivery is the end of the same job as confirming it, so it needs no
+// permission of its own.
+router.post('/web-orders/:id/delivered', requirePermission('weborders.confirm'),
+  asyncHandler(async (req, res) => {
+    res.json(await webOrderService.markDelivered(Number(req.params.id), req.context));
+  }));
 
 // -------------------------------------------------------------- promotions
 router.use('/promotions', crudRouter({

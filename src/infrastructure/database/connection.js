@@ -43,7 +43,22 @@ function buildFacade() {
         run: (...params) => activeExecutor().run(sql, params),
       };
     },
-    exec: (sql) => driver.exec(sql),
+    /**
+     * Multi-statement DDL. Deliberately refuses to run inside a transaction:
+     * the driver's `exec` goes straight to the connection, not to the open
+     * transaction, so calling it mid-transaction takes a second write lock on
+     * the same database and deadlocks with SQLITE_BUSY. That failure is silent
+     * and slow to diagnose, so it is turned into an explanatory error instead.
+     */
+    exec(sql) {
+      if (txStore.getStore()) {
+        throw new Error(
+          'getDb().exec() cannot run inside a transaction — it bypasses the open '
+          + 'transaction and deadlocks. Use getDb().prepare(sql).run() per statement.',
+        );
+      }
+      return driver.exec(sql);
+    },
     get driverName() {
       return driver.name;
     },

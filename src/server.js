@@ -9,7 +9,10 @@ import {
   initDb, applySchema, getDb, closeDb, driverName,
 } from './infrastructure/database/connection.js';
 import { seedBaseline, hardenDefaultCredentials } from './infrastructure/database/seed.js';
+import { runMigrations } from './infrastructure/database/migrations/index.js';
 import apiRouter from './api/routes/index.js';
+import shopRouter from './api/routes/shop.js';
+import shopOrdersRouter from './api/routes/shopOrders.js';
 import { attachRequestContext, errorHandler, notFoundHandler } from './api/middleware/index.js';
 
 const isHostedDb = () => config.database.driver === 'libsql';
@@ -46,11 +49,24 @@ export function createApp() {
     });
   });
 
+  // Public storefront API. Mounted before the ERP router so nothing about the
+  // shop can accidentally inherit its authentication middleware — and equally,
+  // so the ERP's routes are never reachable without a session.
+  app.use('/api/shop', shopRouter);
+  app.use('/api/shop', shopOrdersRouter);
+
   app.use('/api', apiRouter);
   app.use('/api', notFoundHandler);
 
   // Static SPA — no build step, so it also works from a USB stick.
-  app.use(express.static(config.paths.public, { index: false, maxAge: '1h' }));
+  // `redirect: false` matters: without it a request for /shop is answered with a
+  // 301 to /shop/, so the address people share bounces before it loads. Assets
+  // still resolve here first; only the bare directory falls through to the
+  // storefront handler below.
+  app.use(express.static(config.paths.public, { index: false, redirect: false, maxAge: '1h' }));
+  app.get('/shop*', (_req, res) => {
+    res.sendFile(path.join(config.paths.public, 'shop', 'index.html'));
+  });
   app.get('*', (_req, res) => {
     res.sendFile(path.join(config.paths.public, 'index.html'));
   });
@@ -97,12 +113,22 @@ async function bootstrapHostedDatabase() {
   // This covers new tables, indexes and views — not a new column on an existing
   // table, which still needs a real migration.
   await applySchema();
+  await applyMigrations();
 
   if (existing !== null && existing > 0) return;
 
   console.log('Hosted database is empty — seeding the administrator…');
   await seedBaseline();
   console.log('✔ Hosted database ready. Sign in as admin / admin123 — you will be asked to change it.');
+}
+
+/**
+ * Structural changes that `CREATE … IF NOT EXISTS` cannot make — adding a column
+ * to a table that already exists, mostly. Each runs once and is recorded.
+ */
+async function applyMigrations() {
+  const ran = await runMigrations();
+  if (ran.length) console.log(`✔ Applied ${ran.length} migration(s): ${ran.join(', ')}`);
 }
 
 /**
@@ -146,6 +172,7 @@ async function prepareDatabase() {
     console.log('No database found — creating one from the schema…');
   }
   await applySchema();
+  await applyMigrations();
 
   if ((await countUsers()) === 0) {
     console.warn('\n⚠  No users found. Run `npm run db:seed` before signing in.\n');

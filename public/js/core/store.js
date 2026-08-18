@@ -28,13 +28,14 @@ export function clearSession() {
   session.location = null;
   session.lookups = {};
   badges.pendingResets = 0;
+  badges.pendingWebOrders = 0;
 }
 
 /**
  * Counters the shell paints onto navigation items. They live here so a view can
  * update one after acting without reaching into the shell module.
  */
-export const badges = { pendingResets: 0 };
+export const badges = { pendingResets: 0, pendingWebOrders: 0 };
 
 export function setBadge(name, value) {
   badges[name] = Number(value) || 0;
@@ -43,11 +44,20 @@ export function setBadge(name, value) {
 
 /** Best-effort: a badge is a hint, so a failed fetch must not break the shell. */
 export async function refreshBadges() {
-  if (!can('users.view')) return setBadge('pendingResets', 0);
+  await Promise.all([
+    refreshBadge('pendingResets', 'users.view', '/api/users/reset-requests/count'),
+    refreshBadge('pendingWebOrders', 'weborders.view', '/api/web-orders/count'),
+  ]);
+}
+
+async function refreshBadge(name, permission, path) {
+  if (!can(permission)) return setBadge(name, 0);
   try {
-    const { pending } = await api.get('/api/users/reset-requests/count');
-    setBadge('pendingResets', pending);
-  } catch { /* the counter simply stays as it was */ }
+    const { pending } = await api.get(path);
+    return setBadge(name, pending);
+  } catch {
+    return undefined; // the counter simply stays as it was
+  }
 }
 
 /** Typed accessors over the flat settings map. */

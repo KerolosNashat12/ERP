@@ -31,6 +31,18 @@ export function percent(value) {
   return `${number(value, 1)}%`;
 }
 
+/**
+ * Photo and file sizes. Kilobytes up to a megabyte, because that is the range
+ * staff are checking — "118 KB" tells them the compression worked, "0.1 MB"
+ * does not.
+ */
+export function fileSize(value) {
+  const size = Number(value || 0);
+  if (size < 1024) return `${number(size)} B`;
+  if (size < 1024 * 1024) return `${number(Math.round(size / 1024))} KB`;
+  return `${number(Math.round((size / (1024 * 1024)) * 10) / 10, 1)} MB`;
+}
+
 export function date(value) {
   if (!value) return '—';
   const parsed = new Date(value);

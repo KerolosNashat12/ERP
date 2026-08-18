@@ -68,6 +68,35 @@ export const validate = (schema, source = 'body') => (req, _res, next) => {
 /** Wraps async handlers so rejected promises reach the error middleware. */
 export const asyncHandler = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 
+/**
+ * Serve stored photo bytes.
+ *
+ * The bytes behind an id never change — editing a photo means uploading a new
+ * one, which gets a new id — so the response is immutable for a year and the
+ * validator can be built from the row instead of hashing the payload on every
+ * request. That is what keeps the shop's product grid off the database: after
+ * the first paint the browser never asks again, and a browser that does ask
+ * gets 304 and no bytes.
+ *
+ * `res.end()` rather than `res.send()`: send() would try to charset-tag the
+ * body and generate an ETag of its own.
+ */
+export function sendImage(req, res, image, { cacheControl = 'public, max-age=31536000, immutable' } = {}) {
+  const etag = `"img-${image.id}-${image.byte_size}-${image.created_at}"`;
+  res.setHeader('ETag', etag);
+  res.setHeader('Cache-Control', cacheControl);
+
+  const conditional = req.get('if-none-match');
+  if (conditional && conditional.split(',').some((candidate) => candidate.trim() === etag)) {
+    return res.status(304).end();
+  }
+
+  const body = Buffer.isBuffer(image.data) ? image.data : Buffer.from(image.data);
+  res.setHeader('Content-Type', image.content_type || 'application/octet-stream');
+  res.setHeader('Content-Length', body.length);
+  return res.end(body);
+}
+
 export function notFoundHandler(req, res) {
   res.status(404).json({ error: { code: 'NOT_FOUND', message: `No route for ${req.method} ${req.path}` } });
 }

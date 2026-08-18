@@ -11,6 +11,10 @@
 /** SQLite has no boolean, and `undefined` is not a bindable value anywhere. */
 export function normaliseBindValue(value) {
   if (value === undefined) return null;
+  // Product photos bind a Buffer. Both drivers take a Uint8Array as a BLOB, so
+  // it must reach them untouched — this case is listed first and explicitly so
+  // that a later `typeof`/`instanceof` test cannot quietly mangle the bytes.
+  if (ArrayBuffer.isView(value)) return value;
   if (typeof value === 'boolean') return value ? 1 : 0;
   if (value instanceof Date) return value.toISOString();
   if (typeof value === 'bigint') return Number(value);
@@ -44,9 +48,23 @@ export function normaliseParams(params) {
   return params.map(normaliseBindValue);
 }
 
-/** Integers arrive as BigInt from some drivers; nothing above wants that. */
+/**
+ * Integers arrive as BigInt from some drivers; nothing above wants that.
+ *
+ * BLOBs disagree in the same way: the file driver hands back a Uint8Array and
+ * the networked one an ArrayBuffer. Both become a Buffer here, so a photo read
+ * back is byte-for-byte what was written whichever driver is live, and the
+ * serving endpoint can hand it straight to `res.end()`.
+ */
 export function normaliseRowValue(value) {
-  return typeof value === 'bigint' ? Number(value) : value;
+  if (typeof value === 'bigint') return Number(value);
+  if (value instanceof ArrayBuffer) return Buffer.from(value);
+  if (ArrayBuffer.isView(value)) {
+    return Buffer.isBuffer(value)
+      ? value
+      : Buffer.from(value.buffer, value.byteOffset, value.byteLength);
+  }
+  return value;
 }
 
 export function normaliseRow(row) {

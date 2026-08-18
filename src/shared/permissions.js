@@ -22,6 +22,7 @@ export const MODULES = {
   audit: ['view', 'export'],
   settings: ['view', 'update', 'backup'],
   labels: ['view', 'print'],
+  weborders: ['view', 'confirm', 'cancel'],
 };
 
 export const ALL_PERMISSIONS = Object.entries(MODULES).flatMap(([module, actions]) =>
@@ -49,6 +50,7 @@ export const ROLE_DEFINITIONS = [
       ...forModules(
         'dashboard', 'suppliers', 'brands', 'categories', 'attributes', 'products',
         'inventory', 'purchases', 'customers', 'sales', 'promotions', 'reports', 'labels',
+        'weborders',
       ),
       'audit.view',
       'settings.view',

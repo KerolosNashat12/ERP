@@ -305,6 +305,8 @@ export const statusTag = (status) => {
   const map = {
     draft: '', ordered: 'info', partially_received: 'warn', received: 'ok', completed: 'ok',
     cancelled: 'danger', void: 'danger', posted: 'ok', paid: 'ok', partial: 'warn', unpaid: 'danger',
+    // web orders: pending is the one that needs somebody to act
+    pending: 'warn', confirmed: 'info', delivered: 'ok',
   };
   return tag(t(camel(status), status.replace(/_/g, ' ')), map[status] ?? '');
 };

@@ -34,6 +34,28 @@ export class InventoryRepository {
     `).run(quantity, averageCost, new Date().toISOString(), variantId, warehouseId);
   }
 
+  /**
+   * Hold stock without moving it, or give the hold back (`delta` is signed).
+   *
+   * Deliberately separate from `setLevel`/`recordMovement`: a reservation is a
+   * promise, not a movement. The goods are still on the shelf, so `quantity`
+   * must not change and no ledger row may be written — a web order that posted
+   * a movement would take the shop's takings out of step with its stock before
+   * anybody had picked anything.
+   *
+   * Clamped at zero so a double release can never leave the balance negative
+   * and quietly make unsellable stock look available.
+   */
+  async adjustReserved(variantId, warehouseId, delta) {
+    await this.ensureLevel(variantId, warehouseId);
+    await this.db.prepare(`
+      UPDATE stock_levels
+         SET reserved_quantity = MAX(ROUND(reserved_quantity + ?, 3), 0), updated_at = ?
+       WHERE variant_id = ? AND warehouse_id = ?
+    `).run(Number(delta), new Date().toISOString(), variantId, warehouseId);
+    return this.getLevel(variantId, warehouseId);
+  }
+
   async recordMovement(movement) {
     const info = await this.db.prepare(`
       INSERT INTO stock_movements
