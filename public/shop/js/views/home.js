@@ -20,6 +20,30 @@ const bt = (record) => {
   return (wanted && String(wanted).trim()) || (other && String(other).trim()) || '';
 };
 
+// `config.banner.align` is physical ('right' means the text sits on the
+// right-hand side of the photo in BOTH languages), so it maps straight onto
+// `justify-content` on a flex row whose own `direction` is pinned to `ltr` in
+// CSS (see `.hero-frame` in shop.css) — `flex-start` there is always the true
+// left, `flex-end` always the true right, independent of page language.
+const ALIGN = { left: 'flex-start', center: 'center', right: 'flex-end' };
+const VALIGN = { top: 'flex-start', middle: 'center', bottom: 'flex-end' };
+// Ratios, not fixed sizes, so the existing `clamp()` viewport scaling in
+// shop.css keeps doing its job at every one of the three settings.
+const SIZE_SCALE = { small: 0.82, medium: 1, large: 1.18 };
+// `textColor: 'dark'` is for a light or busy-but-pale photo, where dark text
+// needs a LIGHT scrim to sit on, not the usual dark one — inverting the
+// overlay's colour, not just the ink, is what actually keeps it readable.
+const TEXT_COLOR = {
+  light: {
+    ink: '#ffffff', bodyInk: '#f2f3f5', scrim: '0 0 0',
+    shadow: '0 2px 10px rgba(0, 0, 0, .55), 0 1px 3px rgba(0, 0, 0, .45)',
+  },
+  dark: {
+    ink: '#15181f', bodyInk: '#262a33', scrim: '255 255 255',
+    shadow: '0 2px 10px rgba(255, 255, 255, .55), 0 1px 3px rgba(255, 255, 255, .4)',
+  },
+};
+
 /**
  * The hero is one fixed-size box (16:5 on desktop, 4:3 on a phone — see
  * `.hero` in shop.css) whichever shop opens it: a shop with a banner photo
@@ -38,6 +62,28 @@ function hero() {
   const overlay = Number.isFinite(Number(banner.overlay)) ? Number(banner.overlay) : 35;
   const image = banner.image || null;
 
+  const align = ALIGN[banner.align] || ALIGN.right;
+  const valign = VALIGN[banner.valign] || VALIGN.middle;
+  const scale = SIZE_SCALE[banner.size] || SIZE_SCALE.medium;
+  const boxWidthRaw = Number(banner.boxWidth);
+  const boxWidth = Number.isFinite(boxWidthRaw) ? Math.min(Math.max(boxWidthRaw, 30), 100) : 45;
+  const colors = TEXT_COLOR[banner.textColor] || TEXT_COLOR.light;
+
+  // One `style` string of custom properties rather than a class per
+  // align×valign×size×color×width combination — shop.css has one generic
+  // ruleset that reads all five, so this is the only place any of them is
+  // decided.
+  const heroStyle = [
+    `--hero-align: ${align}`,
+    `--hero-valign: ${valign}`,
+    `--hero-scale: ${scale}`,
+    `--hero-box-width: ${boxWidth}%`,
+    `--hero-ink: ${colors.ink}`,
+    `--hero-body-ink: ${colors.bodyInk}`,
+    `--hero-scrim: ${colors.scrim}`,
+    `--hero-text-shadow: ${colors.shadow}`,
+  ].join('; ');
+
   const photo = image && el('img.hero-photo', {
     src: image,
     alt: '',
@@ -49,11 +95,11 @@ function hero() {
     onError: (event) => { event.currentTarget.closest('.hero')?.classList.remove('has-image'); event.currentTarget.remove(); },
   });
 
-  return el('section.hero', { class: image ? 'has-image' : '' },
+  return el('section.hero', { class: image ? 'has-image' : '', style: heroStyle },
     photo,
     image && el('div.hero-overlay', { style: `--hero-overlay: ${overlay / 100}` }),
     el('div.hero-frame',
-      el('div.wrap.hero-inner',
+      el('div.hero-inner',
         !image && el('p.hero-eyebrow', getLanguage() === 'ar' ? 'من القاهرة' : 'From Cairo'),
         el('h1.hero-title', heading),
         el('p.hero-body', body),

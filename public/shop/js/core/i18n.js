@@ -71,6 +71,14 @@ const dictionary = {
     aboutThisPiece: 'About this piece',
     deliveryTitle: 'Delivery & payment',
     deliveryFlat: (fee) => `Delivery ${fee} anywhere in Egypt.`,
+    // Percent-mode delivery is a different promise from a flat fee, so it gets
+    // its own sentence rather than reusing `deliveryFlat` with a "%" spliced
+    // in — a minimum or a cap changes what the shopper should actually expect
+    // to pay, and that has to be said, not implied.
+    deliveryPercent: (percent) => `Delivery costs ${percent}% of your order, anywhere in Egypt.`,
+    deliveryPercentMin: (percent, min) => `Delivery costs ${percent}% of your order, with a minimum charge of ${min}.`,
+    deliveryPercentMax: (percent, max) => `Delivery costs ${percent}% of your order, capped at ${max}.`,
+    deliveryPercentMinMax: (percent, min, max) => `Delivery costs ${percent}% of your order, between ${min} and ${max}.`,
     deliveryFreeOver: (amount) => `Delivery is free on orders over ${amount}.`,
     codShort: 'Cash on delivery — you pay when it arrives.',
     unavailableVariant: 'This option is out of stock',
@@ -256,6 +264,12 @@ const dictionary = {
     aboutThisPiece: 'عن القطعة دي',
     deliveryTitle: 'التوصيل والدفع',
     deliveryFlat: (fee) => `التوصيل ${fee} لكل محافظات مصر.`,
+    // وضع النسبة وعد مختلف عن الرسم الثابت، فمحتاج جملة خاصة بيه — لو فيه حد
+    // أدنى أو أقصى للتوصيل، العميل لازم يعرفه قبل ما يوصل للسلة.
+    deliveryPercent: (percent) => `الشحن ${percent}٪ من قيمة طلبك، لكل محافظات مصر.`,
+    deliveryPercentMin: (percent, min) => `الشحن ${percent}٪ من قيمة طلبك، بحد أدنى ${min}.`,
+    deliveryPercentMax: (percent, max) => `الشحن ${percent}٪ من قيمة طلبك، بحد أقصى ${max}.`,
+    deliveryPercentMinMax: (percent, min, max) => `الشحن ${percent}٪ من قيمة طلبك، من ${min} لحد ${max}.`,
     deliveryFreeOver: (amount) => `التوصيل مجاني للطلبات فوق ${amount}.`,
     codShort: 'الدفع عند الاستلام — تدفع لما الطلب يوصلك.',
     unavailableVariant: 'النوع ده مش متوفر حاليًا',

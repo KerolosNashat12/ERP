@@ -7,10 +7,10 @@
 import { el, fill, icon, ICONS } from '../core/dom.js';
 import { api, imageUrl, ShopError } from '../core/api.js';
 import { t, pick, getLanguage, isRtl } from '../core/i18n.js';
-import { money, priceRange } from '../core/format.js';
+import { money, number, priceRange } from '../core/format.js';
 import { href } from '../core/router.js';
 import { setPageMeta } from '../core/seo.js';
-import { deliveryFee, freeDeliveryOver } from '../core/store.js';
+import { deliveryFee, freeDeliveryOver, deliverySettings } from '../core/store.js';
 import * as cart from '../core/cart.js';
 import { availabilityBadge, productPhoto } from '../ui/cards.js';
 import { skeletonProduct, errorState, emptyState, toast } from '../ui/states.js';
@@ -221,14 +221,35 @@ function quantityStepper() {
   };
 }
 
+/**
+ * The delivery line, worded to match what `deliveryFor()` will actually charge:
+ * a flat fee is one promise ("delivery 50"), a percentage is another ("delivery
+ * 5% of your order") and a percent with a floor or a ceiling is a third — a
+ * shopper who reads "5%" and then gets charged the minimum on a small order
+ * should not feel misled by the small print that sold them the trip.
+ */
+function percentDeliveryLine(delivery) {
+  const pct = number(delivery.percent);
+  if (delivery.min !== null && delivery.max !== null) {
+    return t('deliveryPercentMinMax', pct, money(delivery.min), money(delivery.max));
+  }
+  if (delivery.min !== null) return t('deliveryPercentMin', pct, money(delivery.min));
+  if (delivery.max !== null) return t('deliveryPercentMax', pct, money(delivery.max));
+  return t('deliveryPercent', pct);
+}
+
 /** The small print that answers "and how much is delivery" without leaving the page. */
 function deliveryNote() {
   const threshold = freeDeliveryOver();
+  const delivery = deliverySettings();
+  const feeLine = delivery.mode === 'percent'
+    ? (delivery.percent > 0 && el('li', percentDeliveryLine(delivery)))
+    : (deliveryFee() > 0 && el('li', t('deliveryFlat', money(deliveryFee()))));
   return el('div.panel.delivery-note',
     el('h2.panel-title', icon(ICONS.truck, { size: 18 }), t('deliveryTitle')),
     el('ul.note-list',
       el('li', t('codShort')),
-      deliveryFee() > 0 && el('li', t('deliveryFlat', money(deliveryFee()))),
+      feeLine,
       threshold && el('li', t('deliveryFreeOver', money(threshold)))));
 }
 

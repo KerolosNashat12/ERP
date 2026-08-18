@@ -287,6 +287,8 @@ export const labelBatchSchema = z.object({
   })).min(1, 'Select at least one item'),
   labelSize: z.string().trim().default('40x30'),
   qrSize: z.coerce.number().int().min(80).max(400).default(180),
+  // Overrides `labels.symbology` for this one batch; omitted uses the setting.
+  symbology: z.enum(['code128', 'ean13', 'qr']).optional(),
 });
 
 export const voucherBatchSchema = z.object({

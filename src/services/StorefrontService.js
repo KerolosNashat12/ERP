@@ -53,6 +53,8 @@ const CONFIG_KEYS = [
   'web.banner_text_en', 'web.banner_text_ar',
   'web.banner_cta_label_en', 'web.banner_cta_label_ar', 'web.banner_cta_link',
   'web.banner_overlay',
+  'web.banner_align', 'web.banner_valign', 'web.banner_text_size',
+  'web.banner_text_color', 'web.banner_box_width',
 
   // --- website: social links + their visibility toggles
   'web.social_facebook', 'web.social_facebook_enabled',
@@ -67,7 +69,33 @@ const CONFIG_KEYS = [
   'web.contact_address_en', 'web.contact_address_ar',
   'web.contact_hours_en', 'web.contact_hours_ar',
   'web.contact_map_url',
+
+  // --- shipping. shop.delivery_fee and shop.free_delivery_over are already
+  // listed above and keep their meaning; these are the round-2 additions.
+  'shop.delivery_mode', 'shop.delivery_percent', 'shop.delivery_min', 'shop.delivery_max',
 ];
+
+/**
+ * Banner text placement: physical positions the owner picked in the ERP
+ * preview, shown identically in Arabic and English. A stored value outside
+ * this list (hand-edited row, a future enum member this build predates) falls
+ * back to the documented default rather than reaching the browser.
+ */
+const BANNER_ALIGN = ['right', 'center', 'left'];
+const BANNER_VALIGN = ['top', 'middle', 'bottom'];
+const BANNER_TEXT_SIZE = ['small', 'medium', 'large'];
+const BANNER_TEXT_COLOR = ['light', 'dark'];
+const DELIVERY_MODES = ['flat', 'percent'];
+
+/** `value` if it is one of `allowed`, the documented default otherwise. */
+const enumOr = (value, allowed, fallback) => (allowed.includes(value) ? value : fallback);
+
+/** Clamped into [min, max]; a non-finite stored value is the default, not 0. */
+const clamped = (value, min, max, fallback) => {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(Math.max(n, min), max);
+};
 
 /** `network` key -> the `web.social_*` setting name it reads, in display order. */
 const SOCIAL_NETWORKS = ['facebook', 'instagram', 'tiktok', 'youtube', 'whatsapp', 'x'];
@@ -269,6 +297,11 @@ export class StorefrontService {
           ? { label: { en: ctaLabelEn, ar: ctaLabelAr }, link: ctaLink }
           : null,
         overlay: num('web.banner_overlay', 35),
+        align: enumOr(s.get('web.banner_align'), BANNER_ALIGN, 'right'),
+        valign: enumOr(s.get('web.banner_valign'), BANNER_VALIGN, 'middle'),
+        size: enumOr(s.get('web.banner_text_size'), BANNER_TEXT_SIZE, 'medium'),
+        textColor: enumOr(s.get('web.banner_text_color'), BANNER_TEXT_COLOR, 'light'),
+        boxWidth: clamped(s.get('web.banner_box_width'), 30, 100, 45),
       },
 
       social,
@@ -283,6 +316,19 @@ export class StorefrontService {
         address: { en: str('web.contact_address_en'), ar: str('web.contact_address_ar') },
         hours: { en: str('web.contact_hours_en'), ar: str('web.contact_hours_ar') },
         mapUrl: str('web.contact_map_url'),
+      },
+
+      // The shipping TERMS, for display — `deliveryFee` and `freeDeliveryOver`
+      // above are unchanged and stay the top-level truth existing code reads.
+      // The actual charge is only ever computed server side, in
+      // WebOrderService, from these same settings via `deliveryFor()`.
+      delivery: {
+        mode: enumOr(s.get('shop.delivery_mode'), DELIVERY_MODES, 'flat'),
+        fee: num('shop.delivery_fee', 0),
+        percent: clamped(s.get('shop.delivery_percent'), 0, 100, 0),
+        min: num('shop.delivery_min', 0) > 0 ? num('shop.delivery_min', 0) : null,
+        max: num('shop.delivery_max', 0) > 0 ? num('shop.delivery_max', 0) : null,
+        freeOver: freeOver > 0 ? freeOver : null,
       },
     };
   }

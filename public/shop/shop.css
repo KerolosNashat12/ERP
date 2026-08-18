@@ -338,10 +338,57 @@ html[lang="ar"] .brand-word { letter-spacing: 0; text-transform: none; font-size
   object-position: center;
 }
 /* `config.banner.overlay` (0–80) as a darkening percentage over the photo —
-   set inline as `--hero-overlay` so the CSS never hardcodes the number. */
-.hero-overlay { position: absolute; inset: 0; background: rgba(0, 0, 0, var(--hero-overlay, .35)); }
-.hero-frame { position: absolute; inset: 0; display: flex; align-items: center; }
-.hero-inner { position: relative; padding-block: 20px; display: grid; gap: 14px; justify-items: start; }
+   set inline as `--hero-overlay` so the CSS never hardcodes the number. The
+   scrim colour itself is `--hero-scrim` (an "R G B" triplet): black for light
+   text on a photo, white for dark text, so the darkening still helps the text
+   read instead of fighting it. */
+.hero-overlay { position: absolute; inset: 0; background: rgb(var(--hero-scrim, 0 0 0) / var(--hero-overlay, .35)); }
+/*
+ * `--hero-align` / `--hero-valign` / `--hero-scale` / `--hero-box-width` /
+ * `--hero-ink` / `--hero-body-ink` / `--hero-scrim` / `--hero-text-shadow` are
+ * all set inline on `.hero` from `config.banner` (see `hero()` in
+ * js/views/home.js) — one generic ruleset reads them rather than a CSS class
+ * per align×valign×size×color×width combination.
+ *
+ * Placement is PHYSICAL and must match in Arabic and English (the settings
+ * contract: the shop owner picks a side in the preview and gets that same
+ * side in both languages). Flexbox's own `flex-start`/`flex-end` are LOGICAL
+ * — they flip with `direction` — so `.hero-frame` pins its own `direction` to
+ * `ltr` regardless of the page's language, making `flex-start` always the
+ * true left and `flex-end` always the true right. `.hero-inner` then resets
+ * `direction` back to the real page direction (see the `html[dir="rtl"]` rule
+ * below) so the words inside the box still read Arabic-right-to-left; only
+ * the box's position on the photo stays fixed.
+ */
+.hero-frame {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  direction: ltr;
+  padding-inline: 16px;
+  align-items: var(--hero-valign, center);
+  justify-content: var(--hero-align, flex-end);
+}
+@media (min-width: 560px) { .hero-frame { padding-inline: 22px; } }
+html[dir="rtl"] .hero-inner { direction: rtl; }
+.hero-inner {
+  position: relative;
+  padding-block: 20px;
+  display: grid;
+  gap: 14px;
+  justify-items: start;
+  inline-size: var(--hero-box-width, 45%);
+  /*
+   * A box sized to 30–45% of a wide desktop banner is a comfortable column;
+   * that same percentage of a 360px phone banner is well under 200px, which
+   * wraps every word in the heading onto its own line. Rather than a fixed
+   * breakpoint that only patches one screen size, the box has a floor it
+   * never shrinks below — `min()` lets that floor yield to the banner's own
+   * width once the banner itself is narrower than the floor, so it still
+   * never overflows a phone that is narrower than 260px.
+   */
+  min-inline-size: min(100%, 260px);
+}
 /* A monogram watermark, so the empty half of a wide hero reads as composition
    rather than as a missing photograph. Hidden on a phone, where there is no
    empty half to fill, and only on the no-photo fill — a real photo already
@@ -369,10 +416,14 @@ html[lang="ar"] .brand-word { letter-spacing: 0; text-transform: none; font-size
   color: var(--gold-bright);
 }
 html[lang="ar"] .hero-eyebrow { letter-spacing: .06em; text-transform: none; font-size: 13px; }
+/* Font sizes are `clamp()`s scaled by `--hero-scale` (small/medium/large from
+   `config.banner.size`, ~0.82/1/1.18 — see `SIZE_SCALE` in home.js) rather
+   than three separate rulesets, so the viewport-responsive clamp still holds
+   at every size. */
 .hero-title {
   font-family: var(--font-display);
   font-weight: 400;
-  font-size: clamp(27px, 8vw, 46px);
+  font-size: clamp(calc(27px * var(--hero-scale, 1)), calc(8vw * var(--hero-scale, 1)), calc(46px * var(--hero-scale, 1)));
   max-width: 16ch;
   line-height: 1.2;
   display: -webkit-box;
@@ -384,19 +435,31 @@ html[lang="ar"] .hero-title { max-width: 20ch; }
 .hero-body {
   color: #c9d1de;
   max-width: 46ch;
-  font-size: 15px;
+  font-size: calc(15px * var(--hero-scale, 1));
   display: -webkit-box;
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
 .hero-cta { margin-block-start: 8px; }
-/* Photo behind it, not the navy gradient behind the fallback — a plain
-   overlay is not always enough, so the text carries its own shadow too. */
-.hero.has-image .hero-body { color: #f2f3f5; }
+/*
+ * Colour only changes over a real photo — the no-photo gradient fill is a
+ * fixed dark-navy design element the shop owner never sees or edits, so
+ * `config.banner.textColor` (which exists to keep text legible against THEIR
+ * photo) has nothing to apply to there; it would only risk dark-on-dark text
+ * on a banner nobody uploaded anything for.
+ *
+ * `--hero-ink` / `--hero-body-ink` / `--hero-text-shadow` come from
+ * `TEXT_COLOR` in home.js: white ink + a dark shadow for `light` (the
+ * default — most product photos are busy enough to need it), a near-black
+ * ink + a light shadow for `dark` (a plain or pale photo, paired with the
+ * light `--hero-scrim` above instead of the usual dark one).
+ */
+.hero.has-image .hero-title { color: var(--hero-ink, #fff); }
+.hero.has-image .hero-body { color: var(--hero-body-ink, #f2f3f5); }
 .hero.has-image .hero-title,
 .hero.has-image .hero-body {
-  text-shadow: 0 2px 10px rgba(0, 0, 0, .55), 0 1px 3px rgba(0, 0, 0, .45);
+  text-shadow: var(--hero-text-shadow, 0 2px 10px rgba(0, 0, 0, .55), 0 1px 3px rgba(0, 0, 0, .45));
 }
 
 /* ------------------------------------------------------------ sections --- */

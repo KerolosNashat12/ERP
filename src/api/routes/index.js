@@ -463,6 +463,16 @@ router.post('/labels/batch', requirePermission('labels.print'), validate(v.label
 router.get('/labels/qr', requirePermission('labels.view'), asyncHandler(async (req, res) => {
   res.json({ dataUri: await labelService.qrDataUri(req.query.payload || '', { size: Number(req.query.size) || 160 }) });
 }));
+// Same idea as /labels/qr but for any symbology — defaults to labels.symbology
+// when ?symbology= is omitted, and a payload that can't be encoded (letters
+// in an EAN-13, say) reaches here as the ValidationError's 422, never a
+// silently-wrong code.
+router.get('/labels/code', requirePermission('labels.view'), asyncHandler(async (req, res) => {
+  const { dataUri, aspect, symbology } = await labelService.codeImage(req.query.payload || '', {
+    symbology: req.query.symbology, size: Number(req.query.size) || 180,
+  });
+  res.json({ dataUri, symbology, aspect });
+}));
 
 // ------------------------------------------------------------------- audit
 router.get('/audit', requirePermission('audit.view'), asyncHandler(async (req, res) => {

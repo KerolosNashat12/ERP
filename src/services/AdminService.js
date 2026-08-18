@@ -152,6 +152,27 @@ export class UserService {
   }
 }
 
+/**
+ * Settings that must be one of a fixed set of values. A typo here is not a
+ * shop preference, it is a broken storefront — `enumOr()` in
+ * StorefrontService would silently paper over it with the documented default,
+ * which hides the mistake instead of catching it at the one moment (the ERP
+ * save) where someone is looking.
+ */
+const SETTING_ENUMS = {
+  'web.banner_align': ['right', 'center', 'left'],
+  'web.banner_valign': ['top', 'middle', 'bottom'],
+  'web.banner_text_size': ['small', 'medium', 'large'],
+  'web.banner_text_color': ['light', 'dark'],
+  'shop.delivery_mode': ['flat', 'percent'],
+};
+
+/** Settings that must be a number within [min, max]. Same reasoning as above. */
+const SETTING_RANGES = {
+  'web.banner_box_width': [30, 100],
+  'shop.delivery_percent': [0, 100],
+};
+
 export class SettingsService {
   constructor(deps = {}) {
     this.settings = deps.settings || repositories.settings;
@@ -162,8 +183,29 @@ export class SettingsService {
     return this.settings.asObject();
   }
 
+  /** Throws ValidationError (422) the moment one bad value is found. */
+  #assertValid(key, value) {
+    const allowed = SETTING_ENUMS[key];
+    if (allowed && !allowed.includes(value)) {
+      throw new ValidationError(
+        `${key} must be one of: ${allowed.join(', ')}`, { key, value, allowed },
+      );
+    }
+    const range = SETTING_RANGES[key];
+    if (range) {
+      const [min, max] = range;
+      const n = Number(value);
+      if (!Number.isFinite(n) || n < min || n > max) {
+        throw new ValidationError(`${key} must be a number between ${min} and ${max}`, { key, value, min, max });
+      }
+    }
+  }
+
   async update(values, context = {}) {
     return transaction(async () => {
+      for (const [key, value] of Object.entries(values || {})) {
+        this.#assertValid(key, value);
+      }
       const before = await this.settings.asObject();
       for (const [key, value] of Object.entries(values || {})) {
         await this.settings.set(key, value);

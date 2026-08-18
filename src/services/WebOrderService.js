@@ -46,6 +46,7 @@ import repositories from '../infrastructure/repositories/index.js';
 import { getDb, transaction } from '../infrastructure/database/connection.js';
 import { BusinessRuleError, NotFoundError, ValidationError } from '../shared/errors.js';
 import { calculateLine, round2, round3 } from '../shared/money.js';
+import { deliveryFor } from '../shared/delivery.js';
 import inventoryService from './InventoryService.js';
 import salesService from './SalesService.js';
 import { customerService } from './masterDataServices.js';
@@ -659,19 +660,50 @@ export class WebOrderService {
     return Boolean(row?.track_inventory);
   }
 
+  /**
+   * The only place a web order is priced. Every line was already looked up
+   * from the database in `place()`, so the client's own numbers never reach
+   * here — a client that posts its own delivery figure is simply not asked.
+   *
+   * Delivery itself is `deliveryFor()`, the one rule shared with the ERP
+   * preview and mirrored (line for line, see that file) in the storefront
+   * basket — this is the server side of that contract, and the only side that
+   * actually charges anything.
+   */
   async #totals(lines) {
     const subtotal = round2(lines.reduce((s, l) => s + round2(l.quantity * l.unit_price), 0));
     const taxAmount = round2(lines.reduce((s, l) => s + l.tax_amount, 0));
-    const goods = round2(subtotal + taxAmount);
-
-    const fee = Number(await this.settings.get('shop.delivery_fee', 0)) || 0;
-    const freeOver = Number(await this.settings.get('shop.free_delivery_over', 0)) || 0;
     // Measured against what the customer pays for the goods, tax included —
     // that is the number on the basket they were looking at when they decided
     // whether it was worth adding one more thing to earn free delivery.
-    const deliveryFee = freeOver > 0 && goods >= freeOver ? 0 : round2(Math.max(fee, 0));
+    const goods = round2(subtotal + taxAmount);
+
+    const deliveryFee = deliveryFor(goods, await this.#deliverySettings());
 
     return { subtotal, taxAmount, deliveryFee, totalAmount: round2(goods + deliveryFee) };
+  }
+
+  /**
+   * `deliveryFor()`'s settings shape, read from the `shop.*` rows. 0 means
+   * "not set" for min/max/freeOver everywhere this system stores them, so it
+   * is translated to null here rather than asking the pure function to know
+   * that convention.
+   */
+  async #deliverySettings() {
+    const mode = await this.settings.get('shop.delivery_mode', 'flat');
+    const fee = Number(await this.settings.get('shop.delivery_fee', 0)) || 0;
+    const percent = Number(await this.settings.get('shop.delivery_percent', 0)) || 0;
+    const min = Number(await this.settings.get('shop.delivery_min', 0)) || 0;
+    const max = Number(await this.settings.get('shop.delivery_max', 0)) || 0;
+    const freeOver = Number(await this.settings.get('shop.free_delivery_over', 0)) || 0;
+    return {
+      mode,
+      fee,
+      percent,
+      min: min > 0 ? min : null,
+      max: max > 0 ? max : null,
+      freeOver: freeOver > 0 ? freeOver : null,
+    };
   }
 
   /**

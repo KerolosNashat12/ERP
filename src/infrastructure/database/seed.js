@@ -122,6 +122,15 @@ export async function seedBaseline() {
       ['labels.show_sku', '1', 'boolean', 'labels'],
       ['labels.show_shop_name', '0', 'boolean', 'labels'],
 
+      // --- labels: 1D symbology, kept in step with
+      // migrations/007-barcode-symbology.js. The shop's scanner (a Zebex
+      // Z-3151HS) is a laser wedge that can't read a QR code at all, so the
+      // default is code128, not qr. qr_size_mm above keeps its old meaning
+      // for the 'qr' symbology only.
+      ['labels.symbology', 'code128', 'string', 'labels'],
+      ['labels.code_height_mm', '12', 'number', 'labels'],
+      ['labels.show_code_text', '1', 'boolean', 'labels'],
+
       // --- barcode / QR scanner
       ['scanner.enabled', '1', 'boolean', 'scanner'],
       ['scanner.max_key_interval_ms', '60', 'number', 'scanner'], // scanner speed threshold
@@ -129,6 +138,9 @@ export async function seedBaseline() {
       ['scanner.strip_prefix', '', 'string', 'scanner'],
       ['scanner.strip_suffix', '', 'string', 'scanner'],
       ['scanner.beep_on_scan', '1', 'boolean', 'scanner'],
+      // Free text: the device preset the owner picked in Settings -> Devices,
+      // kept in step with migrations/007-barcode-symbology.js.
+      ['scanner.model', '', 'string', 'scanner'],
 
       ['pos.default_payment_method', 'cash', 'string', 'pos'],
       ['ui.default_language', 'en', 'string', 'ui'],
@@ -166,6 +178,22 @@ export async function seedBaseline() {
       ['web.contact_hours_en', '', 'string', 'website'],
       ['web.contact_hours_ar', '', 'string', 'website'],
       ['web.contact_map_url', '', 'string', 'website'],
+
+      // --- website: banner text placement, kept in step with
+      // migrations/006-banner-and-shipping.js. Physical positions, not
+      // language-relative — the owner picks what they see in the preview.
+      ['web.banner_align', 'right', 'string', 'website'],
+      ['web.banner_valign', 'middle', 'string', 'website'],
+      ['web.banner_text_size', 'medium', 'string', 'website'],
+      ['web.banner_text_color', 'light', 'string', 'website'],
+      ['web.banner_box_width', '45', 'number', 'website'],
+
+      // --- shipping, kept in step with migrations/006-banner-and-shipping.js.
+      // shop.delivery_fee and shop.free_delivery_over already exist above.
+      ['shop.delivery_mode', 'flat', 'string', 'shop'],
+      ['shop.delivery_percent', '0', 'number', 'shop'],
+      ['shop.delivery_min', '0', 'number', 'shop'],
+      ['shop.delivery_max', '0', 'number', 'shop'],
     ];
     for (const [key, value, type, group] of settings) await insertSetting.run(key, value, type, group);
 

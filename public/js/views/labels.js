@@ -12,62 +12,117 @@ import {
 } from '../core/ui.js';
 import { t, pick, getLanguage } from '../core/i18n.js';
 import { money } from '../core/format.js';
-import { devices } from '../core/store.js';
+import { devices, setting, settingNumber, settingBool } from '../core/store.js';
 import { navigate } from '../core/router.js';
 import { variantPicker } from './pickers.js';
 
+/** Fallback width/height ratios used only until a real codeAspect arrives. */
+const DEFAULT_CODE_ASPECT = { code128: 2.6, ean13: 1.9, qr: 1 };
+
 /**
  * The price must always fit on one line, so its type size steps down as the
- * text-column narrows or the number gets longer.
+ * text-column narrows or the number gets longer. `columnMm` is the width of
+ * whatever sits beside/under the code — narrower for the QR side-column,
+ * the full printable width for a 1D barcode stacked above the text.
  */
-function priceSize(label, cfg, base) {
+function priceSize(label, columnMm, base) {
   const text = `${label.currency} ${Number(label.price).toFixed(2)}`;
-  const columnMm = Math.max(cfg.widthMm - cfg.qrSizeMm - 4, 8);
   // ~0.55mm of width per character at 1mm type.
   const fits = columnMm / (text.length * 0.55);
   return Math.max(Math.min(base * 1.35, fits), base * 0.8);
 }
 
-/** One printable label, sized from the device configuration. */
-export function labelCard(label, cfg) {
+function infoBlock(label, cfg, base, priceColumnMm) {
   const ar = getLanguage() === 'ar';
   const name = ar ? (label.productNameAr || label.productNameEn) : label.productNameEn;
-  // Type scales with the label so a 30×20 tag stays readable.
-  const base = Math.max(Math.min(cfg.heightMm / 4.6, 3.2), 1.7);
-
-  return h('div', {
-    class: 'qr-label',
-    style: {
-      width: `${cfg.widthMm}mm`,
-      height: `${cfg.heightMm}mm`,
-      marginInlineEnd: `${cfg.gapMm}mm`,
-      marginBlockEnd: `${cfg.gapMm}mm`,
-      paddingInlineStart: `${Math.max(cfg.offsetXMm, 0) + 1}mm`,
-      paddingBlockStart: `${Math.max(cfg.offsetYMm, 0) + 1}mm`,
-      transform: (cfg.offsetXMm < 0 || cfg.offsetYMm < 0)
-        ? `translate(${Math.min(cfg.offsetXMm, 0)}mm, ${Math.min(cfg.offsetYMm, 0)}mm)`
-        : undefined,
-    },
-  },
-  h('img', { src: label.qr, alt: label.barcode, style: { width: `${cfg.qrSizeMm}mm`, height: `${cfg.qrSizeMm}mm` } }),
-  h('div', { class: 'info', style: { fontSize: `${base}mm`, lineHeight: 1.2 } },
+  return h('div', { class: 'info', style: { fontSize: `${base}mm`, lineHeight: 1.2 } },
     cfg.showShopName ? h('div', { class: 'shop', style: { fontSize: `${base * 0.8}mm` } }, label.company?.name || '') : null,
     cfg.showProductName ? h('div', { class: 'n' }, name) : null,
     cfg.showVariant && label.variantLabel ? h('div', { class: 'v' }, label.variantLabel) : null,
     cfg.showPrice
-      ? h('div', { class: 'p', style: { fontSize: `${priceSize(label, cfg, base)}mm` } },
+      ? h('div', { class: 'p', style: { fontSize: `${priceSize(label, priceColumnMm, base)}mm` } },
         `${label.currency} ${Number(label.price).toFixed(2)}`)
       : null,
-    cfg.showSku ? h('div', { class: 's', style: { fontSize: `${base * 0.8}mm` } }, label.sku) : null));
+    cfg.showSku ? h('div', { class: 's', style: { fontSize: `${base * 0.8}mm` } }, label.sku) : null);
+}
+
+/**
+ * One printable label, sized from the device configuration.
+ *
+ * `anchorHeight` (used only by the Settings → Devices live preview) sizes a
+ * 1D code off the configured bar height directly instead of the printable
+ * width, so dragging the "bar height" setting visibly grows or shrinks the
+ * preview without waiting on a server round trip. The real print path (the
+ * label sheet built from a batch, and the "print test labels" button) never
+ * sets this — there the code always spans the label's printable width, per
+ * the contract. Either way width and height are derived from the same
+ * codeAspect (the actual SVG's width/height ratio), so the image is only
+ * ever scaled uniformly — a non-uniform stretch would distort the bar
+ * widths that encode the data, and a distorted barcode fails to scan.
+ */
+export function labelCard(label, cfg, { anchorHeight = false } = {}) {
+  // Type scales with the label so a 30×20 tag stays readable.
+  const base = Math.max(Math.min(cfg.heightMm / 4.6, 3.2), 1.7);
+  const symbology = label.symbology || cfg.symbology || 'qr';
+  const is1d = symbology === 'code128' || symbology === 'ean13';
+
+  const insetXMm = Math.max(cfg.offsetXMm, 0) + 1;
+  const insetYMm = Math.max(cfg.offsetYMm, 0) + 1;
+
+  const outerStyle = {
+    width: `${cfg.widthMm}mm`,
+    height: `${cfg.heightMm}mm`,
+    marginInlineEnd: `${cfg.gapMm}mm`,
+    marginBlockEnd: `${cfg.gapMm}mm`,
+    paddingInlineStart: `${insetXMm}mm`,
+    paddingBlockStart: `${insetYMm}mm`,
+    transform: (cfg.offsetXMm < 0 || cfg.offsetYMm < 0)
+      ? `translate(${Math.min(cfg.offsetXMm, 0)}mm, ${Math.min(cfg.offsetYMm, 0)}mm)`
+      : undefined,
+  };
+
+  if (is1d) {
+    const printableWidthMm = Math.max(cfg.widthMm - insetXMm - 1, 10);
+    const maxCodeHeightMm = Math.max(cfg.heightMm - insetYMm - base * 2.4, 4);
+    const aspect = Number(label.codeAspect) > 0 ? Number(label.codeAspect) : DEFAULT_CODE_ASPECT[symbology] || 2.6;
+
+    let codeWidthMm;
+    let codeHeightMm;
+    if (anchorHeight) {
+      codeHeightMm = Math.min(Math.max(Number(cfg.codeHeightMm) || 12, 3), maxCodeHeightMm);
+      codeWidthMm = Math.min(codeHeightMm * aspect, printableWidthMm);
+    } else {
+      codeWidthMm = printableWidthMm;
+      codeHeightMm = Math.min(codeWidthMm / aspect, maxCodeHeightMm);
+    }
+
+    return h('div', { class: 'qr-label code1d', style: outerStyle, dataset: { symbology } },
+      h('img', {
+        class: 'code-img',
+        src: label.codeImage || label.qr,
+        alt: label.barcode,
+        style: { width: `${codeWidthMm}mm`, height: `${codeHeightMm}mm` },
+      }),
+      infoBlock(label, cfg, base, codeWidthMm));
+  }
+
+  return h('div', { class: 'qr-label', style: outerStyle, dataset: { symbology: 'qr' } },
+    h('img', { class: 'code-img', src: label.codeImage || label.qr, alt: label.barcode, style: { width: `${cfg.qrSizeMm}mm`, height: `${cfg.qrSizeMm}mm` } }),
+    infoBlock(label, cfg, base, Math.max(cfg.widthMm - cfg.qrSizeMm - 4, 8)));
 }
 
 /** A full sheet of labels ready to print. */
-export function labelSheet(labels, cfg) {
-  return h('div', { class: 'label-sheet' }, labels.map((label) => labelCard(label, cfg)));
+export function labelSheet(labels, cfg, opts = {}) {
+  return h('div', { class: 'label-sheet' }, labels.map((label) => labelCard(label, cfg, opts)));
 }
 
 export function labelStyle() {
-  return devices().label;
+  return {
+    ...devices().label,
+    symbology: setting('labels.symbology', 'code128'),
+    codeHeightMm: settingNumber('labels.code_height_mm', 12),
+    showCodeText: settingBool('labels.show_code_text', true),
+  };
 }
 
 export async function labelsView(root) {
@@ -139,6 +194,10 @@ export async function labelsView(root) {
         items: queue.map((q) => ({ variant_id: q.variant_id, copies: q.copies })),
         labelSize: `${cfg.widthMm}x${cfg.heightMm}`,
         qrSize: 180,
+        // The batch defaults to labels.symbology server-side; sending it
+        // explicitly keeps this sheet in sync with any unsaved change made
+        // moments ago in Settings → Devices in the same session.
+        symbology: cfg.symbology,
       });
       const sheet = labelSheet(batch.labels, cfg);
       mount(previewHost, sheet);

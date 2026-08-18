@@ -535,13 +535,21 @@ test('reports run and export as CSV', async () => {
   assert.ok(String(csv).includes('SKU'));
 });
 
-test('QR label batch renders data URIs', async () => {
+test('label batch renders data URIs (round 3: defaults to code128, not qr)', async () => {
   const batch = await api('/api/labels/batch', {
     method: 'POST',
     body: { items: [{ variant_id: state.variant.id, copies: 2 }], labelSize: '40x30' },
   });
   assert.equal(batch.labels.length, 2);
-  assert.ok(batch.labels[0].qr.startsWith('data:image/png;base64,'));
+  // The shop's scanner is 1D-only, so labels.symbology now defaults to
+  // code128 rather than qr — see tests/labels-symbology.test.js for the full
+  // coverage of symbology / codeImage / codeAspect and the round-trip-tested
+  // encoders in tests/barcode.test.js. `qr` is kept equal to `codeImage` this
+  // release so a label sheet mid-deploy that only knows `label.qr` still has
+  // something to render.
+  assert.equal(batch.labels[0].symbology, 'code128');
+  assert.ok(batch.labels[0].codeImage.startsWith('data:image/svg+xml;base64,'));
+  assert.equal(batch.labels[0].qr, batch.labels[0].codeImage);
 });
 
 test('audit log captured every mutation', async () => {

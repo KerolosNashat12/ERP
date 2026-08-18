@@ -485,6 +485,14 @@ html[dir="rtl"] .kpi .label { letter-spacing: 0; }
 .qr-label .info .s { font-family: ui-monospace, monospace; white-space: nowrap; }
 .qr-label .info .shop { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
+/* A 1D barcode (Code 128 / EAN-13) is wide and short, not square, so it
+   stacks above the text instead of sitting beside it. Width and height come
+   from JS, computed off the server's reported codeAspect so the image is
+   only ever scaled uniformly — never stretched, which would distort the bar
+   widths that encode the data and make the code fail to scan. */
+.qr-label.code1d { flex-direction: column; align-items: flex-start; }
+.qr-label.code1d .info { width: 100%; flex: none; }
+
 /* ------------------------------------------------------- website settings */
 /* 16:5 matches the storefront hero exactly, so what the owner sees here is
    what a shopper sees, not an approximation. */
@@ -495,17 +503,62 @@ html[dir="rtl"] .kpi .label { letter-spacing: 0; }
 }
 .banner-preview-overlay { position: absolute; inset: 0; }
 .banner-preview-empty { position: relative; color: var(--ink-3); font-size: 13px; }
+/*
+ * Position (left/right/top/bottom + translate) is set inline per-render from
+ * web.banner_align/valign/box_width — physical values the owner picked, kept
+ * physical here on purpose (never inset-inline-start/end) so Arabic and
+ * English show the exact same placement, matching the round-2 contract.
+ */
 .banner-preview-content {
-  position: relative; z-index: 1; display: grid; gap: 6px; justify-items: center;
-  text-align: center; color: #fff; padding: 12px; max-width: 82%;
+  z-index: 1; box-sizing: border-box; color: #fff; padding: 12px;
 }
+.banner-preview-content.color-dark { color: #15181f; }
+.banner-preview-content.talign-left { text-align: left; }
+.banner-preview-content.talign-center { text-align: center; }
+.banner-preview-content.talign-right { text-align: right; }
 .banner-preview-content h3 { margin: 0; font-size: 21px; line-height: 1.25; }
-.banner-preview-content p { margin: 0; font-size: 13px; opacity: .92; }
+.banner-preview-content p { margin: 6px 0 0; font-size: 13px; opacity: .92; }
+.banner-preview-content.size-small h3 { font-size: 15px; }
+.banner-preview-content.size-small p { font-size: 11px; }
+.banner-preview-content.size-large h3 { font-size: 28px; }
+.banner-preview-content.size-large p { font-size: 15px; }
 .banner-preview-cta {
-  margin-top: 4px; padding: 6px 18px; border-radius: 20px; background: #fff;
-  color: #111; font-size: 12.5px; font-weight: 600;
+  display: inline-block; margin-top: 8px; padding: 6px 18px; border-radius: 20px;
+  background: #fff; color: #111; font-size: 12.5px; font-weight: 600;
 }
 .social-row-hint, .contact-note { color: var(--ink-3); font-size: 12.5px; margin: 0 0 12px; }
+
+/* ---------------------------------------------------- banner crop-on-upload */
+.crop-body { display: flex; flex-direction: column; }
+.crop-stage {
+  position: relative; width: 100%; max-width: 640px; aspect-ratio: 4 / 3;
+  margin: 0 auto; overflow: hidden; border-radius: var(--radius-sm);
+  background: #14181f; cursor: grab; touch-action: none; user-select: none;
+}
+.crop-stage.dragging { cursor: grabbing; }
+/* left/top (not inset-inline/block-start) on purpose: the drag/zoom math
+   below tracks a physical x/y offset, and dir="rtl" must not mirror it. */
+.crop-image {
+  position: absolute; left: 0; top: 0; max-width: none;
+  transform-origin: 0 0; pointer-events: none;
+}
+/* The box-shadow "spotlight" trick: a huge shadow outside the window rect
+   dims everything except the crop frame, without clip-path browser quirks. */
+.crop-window {
+  position: absolute; box-shadow: 0 0 0 2000px rgba(10, 14, 20, .64);
+  border: 2px solid #fff; border-radius: 2px; pointer-events: none;
+}
+.crop-controls { display: flex; align-items: center; gap: 10px; margin-top: 14px; }
+.crop-controls input[type="range"] { flex: 1; }
+.crop-hint { color: var(--ink-3); font-size: 12.5px; margin: 8px 0 0; text-align: center; }
+.crop-preview-wrap { margin-top: 16px; }
+.crop-live-preview { margin-top: 6px; }
+
+/* ------------------------------------------------------------- shipping */
+.shipping-example {
+  margin: 14px 0 0; padding: 10px 12px; border-radius: var(--radius-sm);
+  background: var(--accent-soft); color: var(--ink-2); font-size: 13px; font-weight: 600;
+}
 
 /* --------------------------------------------------------------- receipt */
 .receipt { font-family: ui-monospace, "Courier New", monospace; color: #000; }

@@ -5,7 +5,7 @@ import {
   field, modal, debounce, tag, buildForm, confirmDialog, checkboxInput,
 } from '../core/ui.js';
 import { t, pick, getLanguage } from '../core/i18n.js';
-import { number, dateTime } from '../core/format.js';
+import { number, dateTime, money } from '../core/format.js';
 import { session, can, loadSession, setBadge } from '../core/store.js';
 import { devicesPanel } from './devices.js';
 
@@ -470,39 +470,37 @@ const format = (value) => {
 // ---------------------------------------------------------------- settings
 
 /**
- * Same technique as the product photo uploader in catalog.js (canvas resize,
- * re-encode as JPEG) — a shop banner is a full-width hero rather than a
- * thumbnail, so it keeps a larger longest edge, but the compromise is the
- * same one: nothing on the storefront needs the original megapixels.
+ * The storefront hero is a fixed 16:5 crop. Cropping client-side before the
+ * upload — rather than compressing whatever rectangle the file happens to be
+ * — is what lets the owner answer "does my product end up behind the
+ * heading text" before saving, instead of finding out on the live site.
  */
-const BANNER_MAX_EDGE = 1600;
-const BANNER_QUALITY = 0.82;
+const BANNER_CROP_W = 1600;
+const BANNER_CROP_H = 500;
+const BANNER_CROP_RATIO = BANNER_CROP_W / BANNER_CROP_H;
+const BANNER_JPEG_QUALITY = 0.85;
 
-function compressBannerToDataUrl(file) {
-  return new Promise((resolve, reject) => {
-    const objectUrl = URL.createObjectURL(file);
-    const image = new Image();
-    image.onload = () => {
-      URL.revokeObjectURL(objectUrl);
-      const longest = Math.max(image.naturalWidth, image.naturalHeight) || 1;
-      const scale = Math.min(1, BANNER_MAX_EDGE / longest);
-      const canvas = document.createElement('canvas');
-      canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
-      canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
-      const ctx = canvas.getContext('2d');
-      // JPEG has no transparency: without this, a transparent PNG is
-      // re-encoded onto black instead of the white the storefront expects.
-      ctx.fillStyle = '#ffffff';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
-      resolve(canvas.toDataURL('image/jpeg', BANNER_QUALITY));
-    };
-    image.onerror = () => {
-      URL.revokeObjectURL(objectUrl);
-      reject(new Error(t('photoUnreadable')));
-    };
-    image.src = objectUrl;
-  });
+/**
+ * Positions the heading/text box physically (left/right/top/bottom, never
+ * inline-start/end): the contract requires the owner's chosen position to
+ * render identically in Arabic and English, and logical properties would
+ * flip it under dir="rtl".
+ */
+function bannerContentPositionStyle(align, valign, boxWidth) {
+  const style = { position: 'absolute', width: `${boxWidth}%` };
+  if (align === 'left') style.left = '0';
+  else if (align === 'right') style.right = '0';
+  else style.left = '50%';
+  if (valign === 'top') style.top = '0';
+  else if (valign === 'bottom') style.bottom = '0';
+  else style.top = '50%';
+  style.transform = `translate(${align === 'center' ? '-50%' : '0'}, ${valign === 'middle' ? '-50%' : '0'})`;
+  return style;
+}
+
+function clampNum(value, min, max) {
+  const n = Number(value);
+  return Math.min(max, Math.max(min, Number.isFinite(n) ? n : min));
 }
 
 export async function settingsView(root, route) {
@@ -589,6 +587,41 @@ export async function settingsView(root, route) {
       name: 'web.banner_overlay', label: t('bannerOverlay'), type: 'number', min: 0, max: 80,
       hint: t('bannerOverlayHint'), disabled: !editable,
     },
+    {
+      name: 'web.banner_align', label: t('bannerAlign'), type: 'select', required: true, disabled: !editable,
+      options: [
+        { value: 'right', label: t('alignRight') },
+        { value: 'center', label: t('alignCenter') },
+        { value: 'left', label: t('alignLeft') },
+      ],
+    },
+    {
+      name: 'web.banner_valign', label: t('bannerValign'), type: 'select', required: true, disabled: !editable,
+      options: [
+        { value: 'top', label: t('valignTop') },
+        { value: 'middle', label: t('valignMiddle') },
+        { value: 'bottom', label: t('valignBottom') },
+      ],
+    },
+    {
+      name: 'web.banner_text_size', label: t('bannerTextSize'), type: 'select', required: true, disabled: !editable,
+      options: [
+        { value: 'small', label: t('sizeSmall') },
+        { value: 'medium', label: t('sizeMedium') },
+        { value: 'large', label: t('sizeLarge') },
+      ],
+    },
+    {
+      name: 'web.banner_text_color', label: t('bannerTextColor'), type: 'select', required: true, disabled: !editable,
+      options: [
+        { value: 'light', label: t('colorLight') },
+        { value: 'dark', label: t('colorDark') },
+      ],
+    },
+    {
+      name: 'web.banner_box_width', label: t('bannerBoxWidth'), type: 'number', min: 30, max: 100,
+      hint: t('bannerBoxWidthHint'), disabled: !editable,
+    },
   ], settings, { columns: 3 });
 
   const socialForm = buildForm(SOCIAL_NETWORKS.flatMap((net) => [
@@ -617,29 +650,59 @@ export async function settingsView(root, route) {
 
   function bannerFieldValue(name) { return bannerForm.inputs.get(name)?.input.value || ''; }
 
-  function renderBannerPreview() {
+  /** Everything the live preview (and the crop modal's mini-preview) need to draw the text over a photo. */
+  function bannerTextSpec() {
     const ar = getLanguage() === 'ar';
     const primary = ar ? '_ar' : '_en';
     const fallback = ar ? '_en' : '_ar';
     const pickField = (base) => bannerFieldValue(`web.${base}${primary}`) || bannerFieldValue(`web.${base}${fallback}`);
-    const heading = pickField('banner_heading');
-    const text = pickField('banner_text');
-    const ctaLabel = pickField('banner_cta_label');
-    const overlay = Math.min(80, Math.max(0, Number(bannerFieldValue('web.banner_overlay')) || 0));
+    return {
+      heading: pickField('banner_heading'),
+      text: pickField('banner_text'),
+      ctaLabel: pickField('banner_cta_label'),
+      overlay: clampNum(bannerFieldValue('web.banner_overlay'), 0, 80),
+      align: bannerFieldValue('web.banner_align') || 'right',
+      valign: bannerFieldValue('web.banner_valign') || 'middle',
+      size: bannerFieldValue('web.banner_text_size') || 'medium',
+      color: bannerFieldValue('web.banner_text_color') || 'light',
+      boxWidth: clampNum(bannerFieldValue('web.banner_box_width'), 30, 100),
+    };
+  }
 
+  /** The overlay tint + heading/text/CTA nodes, shared by the settings preview and the crop modal's preview. */
+  function bannerOverlayNodes(spec) {
+    return [
+      h('div', { class: 'banner-preview-overlay', style: { background: `rgba(0,0,0,${spec.overlay / 100})` } }),
+      h('div', {
+        class: `banner-preview-content talign-${spec.align} color-${spec.color} size-${spec.size}`,
+        style: bannerContentPositionStyle(spec.align, spec.valign, spec.boxWidth),
+      },
+        spec.heading ? h('h3', {}, spec.heading) : null,
+        spec.text ? h('p', {}, spec.text) : null,
+        spec.ctaLabel ? h('span', { class: 'banner-preview-cta' }, spec.ctaLabel) : null),
+    ];
+  }
+
+  function renderBannerPreview() {
+    const spec = bannerTextSpec();
     mount(bannerPreview,
-      h('div', { class: 'banner-preview-overlay', style: { background: `rgba(0,0,0,${overlay / 100})` } }),
-      !bannerMeta.hasImage ? h('div', { class: 'banner-preview-empty' }, t('noBannerPhoto')) : null,
-      h('div', { class: 'banner-preview-content' },
-        heading ? h('h3', {}, heading) : null,
-        text ? h('p', {}, text) : null,
-        ctaLabel ? h('span', { class: 'banner-preview-cta' }, ctaLabel) : null));
+      ...bannerOverlayNodes(spec),
+      !bannerMeta.hasImage ? h('div', { class: 'banner-preview-empty' }, t('noBannerPhoto')) : null);
     bannerPreview.style.backgroundImage = bannerMeta.hasImage ? `url(/api/settings/website/banner/raw?_=${Date.now()})` : 'none';
   }
 
-  ['web.banner_heading_en', 'web.banner_heading_ar', 'web.banner_text_en', 'web.banner_text_ar',
-    'web.banner_cta_label_en', 'web.banner_cta_label_ar', 'web.banner_overlay']
-    .forEach((name) => bannerForm.inputs.get(name).input.addEventListener('input', renderBannerPreview));
+  const BANNER_LIVE_FIELDS = [
+    'web.banner_heading_en', 'web.banner_heading_ar', 'web.banner_text_en', 'web.banner_text_ar',
+    'web.banner_cta_label_en', 'web.banner_cta_label_ar', 'web.banner_overlay',
+    'web.banner_align', 'web.banner_valign', 'web.banner_text_size', 'web.banner_text_color', 'web.banner_box_width',
+  ];
+  BANNER_LIVE_FIELDS.forEach((name) => {
+    const { input } = bannerForm.inputs.get(name);
+    // 'input' covers text/number as you type; 'change' covers the <select>
+    // controls, which some browsers only fire 'input' for inconsistently.
+    input.addEventListener('input', renderBannerPreview);
+    input.addEventListener('change', renderBannerPreview);
+  });
 
   async function loadBannerMeta() {
     try { bannerMeta = await api.get('/api/settings/website/banner'); } catch { bannerMeta = { hasImage: false }; }
@@ -647,19 +710,181 @@ export async function settingsView(root, route) {
     renderBannerPreview();
   }
 
-  async function onBannerFileChosen(event) {
+  /**
+   * Opens the crop dialog for a freshly-chosen file. Nothing is uploaded
+   * until Save: picking a photo used to compress-and-PUT immediately, which
+   * meant the owner only discovered an awkward crop after opening the shop.
+   */
+  function openBannerCropModal(file) {
+    const objectUrl = URL.createObjectURL(file);
+    const image = new Image();
+    image.onerror = () => { URL.revokeObjectURL(objectUrl); toastError(new Error(t('photoUnreadable'))); };
+    image.onload = () => {
+      // naturalWidth/naturalHeight already reflect EXIF orientation: Chromium
+      // and Firefox decode <img> sources pre-rotated (image-orientation:
+      // from-image is the default), so a portrait phone photo needs no
+      // manual correction here.
+      const naturalW = image.naturalWidth;
+      const naturalH = image.naturalHeight;
+
+      const stage = h('div', { class: 'crop-stage' });
+      const imgNode = h('img', { class: 'crop-image', src: objectUrl, alt: '', draggable: false });
+      const windowBox = h('div', { class: 'crop-window' });
+      stage.append(imgNode, windowBox);
+
+      const zoomSlider = h('input', { type: 'range', min: '1', max: '3', step: '0.01', value: '1' });
+      const preview = h('div', { class: 'banner-preview-frame crop-live-preview' });
+
+      let frameX = 0;
+      let frameY = 0;
+      let frameW = 0;
+      let frameH = 0;
+      let frameFitScale = 1;
+      let scale = 1;
+      let imgLeft = 0;
+      let imgTop = 0;
+
+      // The image must always fully cover the frame — never letterboxed —
+      // so imgLeft/imgTop are clamped to keep the frame's window inside it.
+      function clamp() {
+        const dispW = naturalW * scale;
+        const dispH = naturalH * scale;
+        imgLeft = Math.min(0, Math.max(frameW - dispW, imgLeft));
+        imgTop = Math.min(0, Math.max(frameH - dispH, imgTop));
+      }
+
+      function updatePreview() {
+        const previewW = preview.clientWidth || frameW;
+        const ratio = previewW / frameW;
+        preview.style.backgroundRepeat = 'no-repeat';
+        preview.style.backgroundImage = `url(${objectUrl})`;
+        preview.style.backgroundSize = `${naturalW * scale * ratio}px ${naturalH * scale * ratio}px`;
+        preview.style.backgroundPosition = `${imgLeft * ratio}px ${imgTop * ratio}px`;
+        mount(preview, ...bannerOverlayNodes(bannerTextSpec()));
+      }
+
+      function applyVisual() {
+        const dispW = naturalW * scale;
+        const dispH = naturalH * scale;
+        imgNode.style.width = `${dispW}px`;
+        imgNode.style.height = `${dispH}px`;
+        imgNode.style.transform = `translate(${frameX + imgLeft}px, ${frameY + imgTop}px)`;
+        updatePreview();
+      }
+
+      // Sizes the frame window against the stage's actual rendered size (the
+      // stage is responsive), then re-centres the photo at the new scale.
+      function layoutFrame() {
+        const rect = stage.getBoundingClientRect();
+        frameW = rect.width * 0.86;
+        frameH = frameW / BANNER_CROP_RATIO;
+        if (frameH > rect.height * 0.86) {
+          frameH = rect.height * 0.86;
+          frameW = frameH * BANNER_CROP_RATIO;
+        }
+        frameX = (rect.width - frameW) / 2;
+        frameY = (rect.height - frameH) / 2;
+        windowBox.style.left = `${frameX}px`;
+        windowBox.style.top = `${frameY}px`;
+        windowBox.style.width = `${frameW}px`;
+        windowBox.style.height = `${frameH}px`;
+
+        // Scale so the shorter-relative edge covers the frame — a photo
+        // narrower or shorter than the frame is scaled up, never letterboxed.
+        frameFitScale = Math.max(frameW / naturalW, frameH / naturalH);
+        scale = frameFitScale * Number(zoomSlider.value);
+        imgLeft = (frameW - naturalW * scale) / 2;
+        imgTop = (frameH - naturalH * scale) / 2;
+        clamp();
+        applyVisual();
+      }
+
+      zoomSlider.addEventListener('input', () => {
+        // Zoom around the frame's centre so the point the owner is looking
+        // at does not jump when the slider moves.
+        const cx = frameW / 2;
+        const cy = frameH / 2;
+        const imgX = (cx - imgLeft) / scale;
+        const imgY = (cy - imgTop) / scale;
+        scale = frameFitScale * Number(zoomSlider.value);
+        imgLeft = cx - imgX * scale;
+        imgTop = cy - imgY * scale;
+        clamp();
+        applyVisual();
+      });
+
+      let dragging = false;
+      let dragStart = { x: 0, y: 0, imgLeft: 0, imgTop: 0 };
+      stage.addEventListener('pointerdown', (event) => {
+        dragging = true;
+        stage.classList.add('dragging');
+        stage.setPointerCapture(event.pointerId);
+        dragStart = { x: event.clientX, y: event.clientY, imgLeft, imgTop };
+      });
+      stage.addEventListener('pointermove', (event) => {
+        if (!dragging) return;
+        imgLeft = dragStart.imgLeft + (event.clientX - dragStart.x);
+        imgTop = dragStart.imgTop + (event.clientY - dragStart.y);
+        clamp();
+        applyVisual();
+      });
+      const endDrag = () => { dragging = false; stage.classList.remove('dragging'); };
+      stage.addEventListener('pointerup', endDrag);
+      stage.addEventListener('pointercancel', endDrag);
+
+      const saveBtn = h('button', { class: 'btn primary' }, t('save'));
+      saveBtn.addEventListener('click', async () => {
+        saveBtn.disabled = true;
+        try {
+          // Map the frame window (in stage pixels) back to the original
+          // image's own pixel space, then draw straight into the final size.
+          const srcX = -imgLeft / scale;
+          const srcY = -imgTop / scale;
+          const srcW = frameW / scale;
+          const srcH = frameH / scale;
+          const canvas = document.createElement('canvas');
+          canvas.width = BANNER_CROP_W;
+          canvas.height = BANNER_CROP_H;
+          canvas.getContext('2d').drawImage(image, srcX, srcY, srcW, srcH, 0, 0, BANNER_CROP_W, BANNER_CROP_H);
+          const dataUrl = canvas.toDataURL('image/jpeg', BANNER_JPEG_QUALITY);
+          bannerMeta = await api.put('/api/settings/website/banner', { dataUrl });
+          renderBannerPreview();
+          bannerRemoveBtn.disabled = !editable || !bannerMeta.hasImage;
+          toast(t('saved'));
+          dialog.close();
+        } catch (error) { toastError(error); saveBtn.disabled = false; }
+      });
+
+      const dialog = modal({
+        title: t('cropBannerTitle'),
+        size: 'wide',
+        body: h('div', { class: 'crop-body' },
+          stage,
+          h('div', { class: 'crop-controls' },
+            h('span', { class: 'small muted' }, t('cropZoom')),
+            zoomSlider),
+          h('p', { class: 'crop-hint' }, t('cropDragHint')),
+          h('div', { class: 'crop-preview-wrap' },
+            h('small', { class: 'muted' }, t('cropPreviewLabel')),
+            preview)),
+        footer: [
+          h('button', { class: 'btn', onclick: () => dialog.close() }, t('cancel')),
+          saveBtn,
+        ],
+        onClose: () => URL.revokeObjectURL(objectUrl),
+      });
+
+      layoutFrame();
+    };
+    image.src = objectUrl;
+  }
+
+  function onBannerFileChosen(event) {
     const file = event.target.files?.[0];
     event.target.value = '';
     if (!file) return;
     if (!file.type.startsWith('image/')) { toastError(new Error(t('photoNotAnImage'))); return; }
-    bannerUploadBtn.disabled = true;
-    try {
-      const dataUrl = await compressBannerToDataUrl(file);
-      bannerMeta = await api.put('/api/settings/website/banner', { dataUrl });
-      renderBannerPreview();
-      bannerRemoveBtn.disabled = !editable || !bannerMeta.hasImage;
-      toast(t('saved'));
-    } catch (error) { toastError(error); } finally { bannerUploadBtn.disabled = !editable; }
+    openBannerCropModal(file);
   }
 
   async function removeBannerPhoto() {
@@ -682,10 +907,82 @@ export async function settingsView(root, route) {
     class: 'btn sm ghost', disabled: true, onclick: removeBannerPhoto,
   }, t('removeBannerPhoto'));
 
+  // --- shipping: same mode/fields split the storefront basket and the
+  // order service both live by (see src/shared/delivery.js) — flat charges a
+  // fee, percent charges goodsTotal * percent with an optional floor/cap,
+  // and free_delivery_over overrides either one above a threshold.
+  const SHIPPING_EXAMPLE_ORDER = 500;
+
+  const shippingForm = buildForm([
+    {
+      name: 'shop.delivery_mode', label: t('deliveryMode'), type: 'select', required: true, disabled: !editable,
+      options: [
+        { value: 'flat', label: t('deliveryModeFlat') },
+        { value: 'percent', label: t('deliveryModePercent') },
+      ],
+    },
+    { name: 'shop.delivery_fee', label: t('deliveryFeeAmount'), type: 'number', min: 0, disabled: !editable },
+    { name: 'shop.delivery_percent', label: t('deliveryPercent'), type: 'number', min: 0, max: 100, disabled: !editable },
+    {
+      name: 'shop.delivery_min', label: t('deliveryMin'), type: 'number', min: 0,
+      hint: t('deliveryMinHint'), disabled: !editable,
+    },
+    {
+      name: 'shop.delivery_max', label: t('deliveryMax'), type: 'number', min: 0,
+      hint: t('deliveryMaxHint'), disabled: !editable,
+    },
+    {
+      name: 'shop.free_delivery_over', label: t('freeDeliveryOverLabel'), type: 'number', min: 0,
+      hint: t('freeDeliveryOverHint'), disabled: !editable,
+    },
+  ], settings, { columns: 3 });
+
+  const shippingExample = h('p', { class: 'shipping-example' });
+
+  /**
+   * Mirrors the rule in src/shared/delivery.js (and its storefront twin in
+   * public/shop/js/core/store.js) for the worked-example line only — this is
+   * illustrative, not authoritative, so it reads straight off the raw form
+   * values where 0 means "not set", exactly as the settings themselves store it.
+   */
+  function deliveryForExample(goodsTotal, s) {
+    const freeOver = Number(s['shop.free_delivery_over']) || 0;
+    if (freeOver > 0 && goodsTotal >= freeOver) return 0;
+    if (s['shop.delivery_mode'] === 'percent') {
+      let value = Math.round(goodsTotal * (Number(s['shop.delivery_percent']) || 0) / 100 * 100) / 100;
+      const min = Number(s['shop.delivery_min']) || 0;
+      const max = Number(s['shop.delivery_max']) || 0;
+      if (min > 0 && value < min) value = min;
+      if (max > 0 && value > max) value = max;
+      return Math.max(0, value);
+    }
+    return Math.max(0, Math.round((Number(s['shop.delivery_fee']) || 0) * 100) / 100);
+  }
+
+  function renderShippingCard() {
+    const values = shippingForm.values();
+    const mode = values['shop.delivery_mode'] || 'flat';
+    const flatOnly = ['shop.delivery_fee'];
+    const percentOnly = ['shop.delivery_percent', 'shop.delivery_min', 'shop.delivery_max'];
+    flatOnly.forEach((name) => {
+      shippingForm.inputs.get(name).holder.style.display = mode === 'flat' ? '' : 'none';
+    });
+    percentOnly.forEach((name) => {
+      shippingForm.inputs.get(name).holder.style.display = mode === 'percent' ? '' : 'none';
+    });
+    const fee = deliveryForExample(SHIPPING_EXAMPLE_ORDER, values);
+    mount(shippingExample, `${t('shippingExamplePrefix')} ${money(SHIPPING_EXAMPLE_ORDER)} → ${t('shippingExampleLabel')} ${fee > 0 ? money(fee) : t('freeDelivery')}`);
+  }
+
+  for (const [, { input }] of shippingForm.inputs) {
+    input.addEventListener('input', renderShippingCard);
+    input.addEventListener('change', renderShippingCard);
+  }
+
   async function saveWebsite() {
     try {
       await api.put('/api/settings', {
-        ...bannerForm.values(), ...socialForm.values(), ...contactForm.values(),
+        ...bannerForm.values(), ...socialForm.values(), ...contactForm.values(), ...shippingForm.values(),
       });
       toast(t('saved'));
     } catch (error) { toastError(error); }
@@ -779,6 +1076,7 @@ export async function settingsView(root, route) {
     }
     if (activeTab === 'website') {
       loadBannerMeta();
+      renderShippingCard();
       mount(body,
         h('div', { class: 'card' },
           h('div', { class: 'card-head' }, h('h3', {}, t('bannerCard'))),
@@ -799,6 +1097,11 @@ export async function settingsView(root, route) {
           h('div', { class: 'card-body' },
             h('p', { class: 'contact-note' }, t('contactNote')),
             contactForm.node)),
+        h('div', { class: 'card', style: { marginTop: '14px' } },
+          h('div', { class: 'card-head' }, h('h3', {}, t('shippingCard'))),
+          h('div', { class: 'card-body' },
+            shippingForm.node,
+            shippingExample)),
         editable ? h('div', { class: 'row', style: { marginTop: '14px', justifyContent: 'flex-end' } },
           h('button', { class: 'btn primary', onclick: saveWebsite }, t('save'))) : null);
       return;
