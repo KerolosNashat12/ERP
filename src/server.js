@@ -88,10 +88,19 @@ let bootstrap = null;
 
 async function bootstrapHostedDatabase() {
   const existing = await countUsers();
+
+  // Applied on EVERY start, not only when the database is empty. That is what
+  // makes a deploy which adds a table actually work: without it the new code
+  // ships, builds cleanly, and then fails at runtime on a table the database
+  // never got. Every statement is `CREATE … IF NOT EXISTS` and the views are
+  // dropped and recreated, so re-applying is safe and costs one round trip.
+  // This covers new tables, indexes and views — not a new column on an existing
+  // table, which still needs a real migration.
+  await applySchema();
+
   if (existing !== null && existing > 0) return;
 
-  console.log('Hosted database is empty — applying the schema and seeding the administrator…');
-  await applySchema();
+  console.log('Hosted database is empty — seeding the administrator…');
   await seedBaseline();
   console.log('✔ Hosted database ready. Sign in as admin / admin123 — you will be asked to change it.');
 }
