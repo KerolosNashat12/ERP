@@ -2,7 +2,7 @@
 import api, { onUnauthorized } from './core/api.js';
 import { h, mount, toast, toastError, modal } from './core/ui.js';
 import { t, setLanguage, getLanguage, pick } from './core/i18n.js';
-import { session, can, loadSession, clearSession } from './core/store.js';
+import { session, can, loadSession, clearSession, badges, refreshBadges } from './core/store.js';
 import { defineRoutes, startRouter, navigate } from './core/router.js';
 import { startScanner, onScan, triggerScan } from './core/scanner.js';
 
@@ -69,7 +69,7 @@ const NAV = [
   {
     group: 'navSystem',
     items: [
-      { path: 'users', label: 'users', icon: '☷', permission: 'users.view' },
+      { path: 'users', label: 'users', icon: '☷', permission: 'users.view', badge: 'pendingResets' },
       { path: 'audit', label: 'audit', icon: '⎗', permission: 'audit.view' },
       { path: 'settings', label: 'settings', icon: '✦', permission: 'settings.view' },
     ],
@@ -186,11 +186,17 @@ function renderNav() {
     if (!items.length) return [];
     return [
       h('div', { class: 'nav-group' }, t(section.group)),
-      ...items.map((item) => h('a', {
-        href: `#/${item.path}`,
-        class: current === item.path ? 'active' : '',
-        onclick: () => document.getElementById('sidebar')?.classList.remove('open'),
-      }, h('span', { class: 'ico' }, item.icon), t(item.label))),
+      ...items.map((item) => {
+        const count = item.badge ? badges[item.badge] : 0;
+        return h('a', {
+          href: `#/${item.path}`,
+          class: current === item.path ? 'active' : '',
+          onclick: () => document.getElementById('sidebar')?.classList.remove('open'),
+        },
+        h('span', { class: 'ico' }, item.icon),
+        t(item.label),
+        count ? h('span', { class: 'badge', title: t('pendingResets') }, count) : null);
+      }),
     ];
   }));
 }
@@ -258,6 +264,10 @@ async function startApp() {
     if (title) title.textContent = item ? t(item.label) : t('dashboard');
   });
 
+  // Pending password resets are the one thing an admin has to notice without
+  // opening the screen, so the counter is fetched as soon as the shell is up.
+  refreshBadges();
+
   if (!window.location.hash || window.location.hash === '#/') {
     navigate(firstAllowedRoute(), true);
   }
@@ -267,6 +277,9 @@ async function startApp() {
   onScan(async (code) => {
     if (window.location.hash.startsWith('#/pos')) return;
     if (document.querySelector('.pos-search input[data-scan-target]')) return;
+    // The product editor consumes scans itself — there a scan is a code being
+    // entered, not a product being looked up.
+    if (/^#\/products\/(new|\d+\/edit)\b/.test(window.location.hash)) return;
     try {
       const variant = await api.get(`/api/products/scan/${encodeURIComponent(code)}`);
       if (can('products.view')) navigate(`products/${variant.product_id}`);
@@ -288,6 +301,8 @@ function firstAllowedRoute() {
   }
   return 'dashboard';
 }
+
+window.addEventListener('badges:changed', renderNav);
 
 onUnauthorized(() => {
   clearSession();

@@ -591,3 +591,113 @@ test('backup can be created and listed', async () => {
   assert.ok(list.rows.some((b) => b.file === created.file));
   await api(`/api/settings/backups/${created.file}`, { method: 'DELETE' });
 });
+
+// --------------------------------------------------------------- new in v1.8
+
+test('a product needs no attributes — it gets one variant with the code you scanned', async () => {
+  const code = `SIMPLE-${Date.now().toString().slice(-6)}`;
+  const created = await api('/api/products', {
+    method: 'POST',
+    body: {
+      sku_prefix: code,
+      name_en: 'Plain Keyring',
+      base_cost: 40,
+      base_price: 90,
+      tax_rate: 14,
+      attribute_ids: [],
+      variants: [],
+    },
+  });
+
+  assert.equal(created.variants.length, 1, 'exactly one variant is created behind the scenes');
+  const [variant] = created.variants;
+  assert.equal(variant.sku, code, 'the variant takes the product code as its SKU');
+  assert.equal(variant.barcode, code, 'and the same code as its barcode, so it scans');
+
+  // It has to be a real, sellable variant — not a placeholder row.
+  const scanned = await api(`/api/products/scan/${encodeURIComponent(code)}`);
+  assert.equal(scanned.variant_id, variant.id, 'scanning the code finds it');
+
+  // Saving again must not spawn a second variant or orphan the first.
+  const resaved = await api(`/api/products/${created.id}`, {
+    method: 'PUT',
+    body: {
+      sku_prefix: code,
+      name_en: 'Plain Keyring',
+      base_cost: 40,
+      base_price: 95,
+      tax_rate: 14,
+      attribute_ids: [],
+      variants: [],
+    },
+  });
+  assert.equal(resaved.variants.length, 1, 'still one variant after a re-save');
+  assert.equal(resaved.variants[0].id, variant.id, 'and it is the same row, so stock survives');
+});
+
+test('a locked-out user is let back in by an administrator, never by email', async () => {
+  const username = `locked_${Date.now().toString().slice(-6)}`;
+  const roles = await api('/api/users/roles');
+  const cashierRole = roles.rows.find((r) => r.code === 'cashier');
+  await api('/api/users', {
+    method: 'POST',
+    body: {
+      username,
+      full_name: 'Locked Out Tester',
+      password: 'initial123',
+      role_id: cashierRole.id,
+    },
+  });
+
+  const adminCookie = cookie;
+
+  // The request is unauthenticated by design — the user cannot sign in.
+  cookie = '';
+  const requested = await api('/api/auth/forgot-password', {
+    method: 'POST',
+    body: { username, note: 'Cannot sign in at the till' },
+  });
+  assert.equal(requested.requested, true);
+
+  // An unknown username must look identical, or this becomes a way to
+  // discover which staff accounts exist.
+  const unknown = await api('/api/auth/forgot-password', {
+    method: 'POST',
+    body: { username: 'no-such-person' },
+  });
+  assert.deepEqual(unknown, requested, 'unknown and real usernames answer the same way');
+
+  cookie = adminCookie;
+  const pending = await api('/api/users/reset-requests');
+  const mine = pending.rows.find((r) => r.username === username);
+  assert.ok(mine, 'the request reaches the administrator queue');
+  assert.equal(mine.note, 'Cannot sign in at the till');
+
+  const { pending: count } = await api('/api/users/reset-requests/count');
+  assert.ok(count >= 1, 'and is counted for the badge');
+
+  const approval = await api(`/api/users/reset-requests/${mine.id}/approve`, { method: 'POST' });
+  assert.ok(approval.oneTimePassword, 'approval issues a one-time password');
+
+  // Approving twice must not mint a second password for the same request.
+  await assert.rejects(
+    () => api(`/api/users/reset-requests/${mine.id}/approve`, { method: 'POST' }),
+    (e) => e.status >= 400,
+    'an already-handled request cannot be approved again',
+  );
+
+  cookie = '';
+  const signedIn = await api('/api/auth/login', {
+    method: 'POST',
+    body: { username, password: approval.oneTimePassword },
+  });
+  assert.equal(signedIn.user.mustChangePassword, true, 'and forces a change immediately');
+
+  await assert.rejects(
+    () => api('/api/auth/login', { method: 'POST', body: { username, password: 'initial123' } }),
+    (e) => e.status === 401,
+    'the old password is dead',
+  );
+
+  cookie = adminCookie;
+});

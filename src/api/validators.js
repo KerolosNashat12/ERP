@@ -111,6 +111,8 @@ export const productSchema = z.object({
   tags: optionalString,
   is_active: z.coerce.boolean().default(true),
   attribute_ids: z.array(id).default([]),
+  // May be empty: a product with no attributes gets one default variant made
+  // for it, because stock, sales and labels are always keyed to a variant.
   variants: z.array(z.object({
     id: id.optional().nullable(),
     sku: optionalString,
@@ -126,7 +128,7 @@ export const productSchema = z.object({
       attribute_id: id,
       attribute_value_id: id,
     })).default([]),
-  })).min(1, 'Add at least one variant'),
+  })).default([]),
 });
 
 export const purchaseOrderSchema = z.object({
@@ -286,4 +288,10 @@ export const voucherBatchSchema = z.object({
   count: z.coerce.number().int().min(1).max(500).default(10),
   value: z.coerce.number().positive(),
   expiresAt: optionalString,
+});
+
+/** Username only — a locked-out user has nothing else to offer. */
+export const forgotPasswordSchema = z.object({
+  username: z.string().min(1, 'Username is required'),
+  note: z.string().max(300).optional().nullable(),
 });

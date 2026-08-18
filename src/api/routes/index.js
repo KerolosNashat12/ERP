@@ -17,6 +17,7 @@ import reportService from '../../services/ReportService.js';
 import labelService from '../../services/LabelService.js';
 import auditService from '../../services/AuditService.js';
 import { userService, settingsService, backupService } from '../../services/AdminService.js';
+import passwordResetService from '../../services/PasswordResetService.js';
 import {
   supplierService, brandService, categoryService, warehouseService,
   customerService, attributeService,
@@ -60,6 +61,15 @@ router.post('/auth/password', authenticate, validate(v.changePasswordSchema), as
 
 router.put('/auth/preferences', authenticate, asyncHandler(async (req, res) => {
   res.json(await authService.updatePreferences(req.user.id, req.body, req.context));
+}));
+
+/**
+ * Raising a password reset is deliberately unauthenticated — the whole point is
+ * that the caller cannot sign in. The service always answers the same way, so
+ * this cannot be used to discover which usernames exist.
+ */
+router.post('/auth/forgot-password', validate(v.forgotPasswordSchema), asyncHandler(async (req, res) => {
+  res.json(await passwordResetService.request(req.body, req.context.request));
 }));
 
 // Everything below requires a session.
@@ -369,6 +379,24 @@ router.get('/users/roles', requirePermission('users.view'), asyncHandler(async (
 router.put('/users/roles/:id/permissions', requirePermission('users.update'), asyncHandler(async (req, res) => {
   res.json(await userService.updateRolePermissions(Number(req.params.id), req.body.permissions || [], req.context));
 }));
+router.get('/users/reset-requests', requirePermission('users.view'), asyncHandler(async (req, res) => {
+  res.json(await passwordResetService.list({ status: req.query.status || 'pending' }));
+}));
+
+router.get('/users/reset-requests/count', requirePermission('users.view'), asyncHandler(async (_req, res) => {
+  res.json({ pending: await passwordResetService.pendingCount() });
+}));
+
+router.post('/users/reset-requests/:id/approve', requirePermission('users.reset_password'),
+  asyncHandler(async (req, res) => {
+    res.json(await passwordResetService.approve(Number(req.params.id), req.context));
+  }));
+
+router.post('/users/reset-requests/:id/reject', requirePermission('users.reset_password'),
+  asyncHandler(async (req, res) => {
+    res.json(await passwordResetService.reject(Number(req.params.id), req.context));
+  }));
+
 router.get('/users/:id', requirePermission('users.view'), asyncHandler(async (req, res) => {
   res.json(await userService.get(Number(req.params.id)));
 }));

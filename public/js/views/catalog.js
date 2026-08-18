@@ -7,6 +7,7 @@ import {
 import { t, pick } from '../core/i18n.js';
 import { money, number } from '../core/format.js';
 import { can, lookup, invalidate } from '../core/store.js';
+import { onScan } from '../core/scanner.js';
 import { navigate } from '../core/router.js';
 import { productDetailsView } from './productDetails.js';
 
@@ -154,7 +155,7 @@ async function productFormView(root, route) {
   }));
 
   const header = buildForm([
-    { name: 'sku_prefix', label: t('skuPrefix'), required: true, hint: 'e.g. MM-HB01 — variants extend it' },
+    { name: 'sku_prefix', label: t('skuPrefix'), required: true, hint: t('skuPrefixHint'), placeholder: t('scanOrType') },
     { name: 'name_en', label: t('nameEn'), required: true },
     { name: 'name_ar', label: t('nameAr') },
     { name: 'brand_id', label: t('brand'), type: 'select', options: brands.map((b) => ({ value: b.id, label: pick(b, 'name') })) },
@@ -162,8 +163,8 @@ async function productFormView(root, route) {
     { name: 'supplier_id', label: t('supplier'), type: 'select', options: suppliers.map((s) => ({ value: s.id, label: pick(s, 'name') })) },
     { name: 'unit', label: t('unit') },
     { name: 'tax_rate', label: t('taxRate'), type: 'number' },
-    { name: 'base_cost', label: t('costPrice'), type: 'number', hint: 'Default for new variants' },
-    { name: 'base_price', label: t('sellingPrice'), type: 'number', hint: 'Default for new variants' },
+    { name: 'base_cost', label: t('costPrice'), type: 'number', hint: t('defaultForNewVariants') },
+    { name: 'base_price', label: t('sellingPrice'), type: 'number', hint: t('defaultForNewVariants') },
     { name: 'tags', label: t('tags'), span: 2 },
     { name: 'description_en', label: t('description'), type: 'textarea', span: 2 },
     { name: 'is_active', label: t('active'), type: 'checkbox', value: 1 },
@@ -171,6 +172,37 @@ async function productFormView(root, route) {
   ], existing || {
     is_active: 1, track_inventory: 1, unit: 'piece', tax_rate: 14, base_cost: 0, base_price: 0,
   }, { columns: 3 });
+
+  // ------------------------------------------------------------- scanning
+  // On this screen a scan is not a lookup: it fills whichever code box the
+  // user is working in, so a new product can be created by scanning its tag.
+  let scanTarget = null;
+
+  /** Marks an input as a scan box and remembers it while it has the focus. */
+  const scannable = (input) => {
+    input.dataset.scanTarget = 'true';
+    input.addEventListener('focus', () => { scanTarget = input; });
+    return input;
+  };
+
+  const skuPrefixInput = scannable(header.inputs.get('sku_prefix').input);
+
+  const unsubscribeScan = onScan((code) => {
+    // Rows come and go as the matrix is regenerated, so a remembered input is
+    // only usable while it is still on screen. With nothing focused the prefix
+    // box is the obvious target — but only while it is empty, since silently
+    // overwriting a code the user typed would be worse than doing nothing.
+    const target = scanTarget?.isConnected
+      ? scanTarget
+      : (skuPrefixInput.value ? null : skuPrefixInput);
+    if (!target) return;
+    target.value = code;
+    // Matrix rows keep their model in sync through 'input', not assignment.
+    target.dispatchEvent(new Event('input', { bubbles: true }));
+    target.focus();
+    scanTarget = target;
+    toast(t('scannedIntoField'));
+  });
 
   const attributePicker = h('div', { class: 'attr-picker' });
   const matrixHost = h('div');
@@ -183,6 +215,7 @@ async function productFormView(root, route) {
         if (selectedAttributeIds.has(attribute.id)) selectedAttributeIds.delete(attribute.id);
         else selectedAttributeIds.add(attribute.id);
         renderAttributePicker();
+        renderMatrix();
       },
     }, `${pick(attribute, 'name')} (${attribute.values.length})`)),
     h('span', { class: 'spacer' }),
@@ -231,7 +264,7 @@ async function productFormView(root, route) {
   function addSingleVariant() {
     const base = header.values();
     variants.push({
-      id: null, sku: '', barcode: '', label: 'Default',
+      id: null, sku: '', barcode: '', label: t('defaultVariant'),
       cost_price: Number(base.base_cost || 0),
       selling_price: Number(base.base_price || 0),
       wholesale_price: Number(base.base_price || 0),
@@ -245,7 +278,10 @@ async function productFormView(root, route) {
 
   function renderMatrix() {
     if (!variants.length) {
-      mount(matrixHost, h('div', { class: 'empty' }, t('noVariantsYet')));
+      // Without attributes there is nothing to generate: the product is saved
+      // with its single code, and the server gives it its one variant.
+      mount(matrixHost, h('div', { class: 'empty' },
+        selectedAttributeIds.size ? t('noVariantsYet') : t('singleVariantNote')));
       return;
     }
     const numeric = (variant, key, step = '0.01') => numberInput({
@@ -263,16 +299,16 @@ async function productFormView(root, route) {
             h('div', { class: 'strong small' },
               v.options?.length
                 ? v.options.map((o) => valueLabel(o.attribute_id, o.attribute_value_id)).join(' / ')
-                : (v.label || 'Default')),
+                : (v.label || t('defaultVariant'))),
             v.id ? h('small', { class: 'muted mono' }, v.sku) : null),
         },
         {
           key: 'sku',
           label: t('sku'),
-          render: (v) => textInput({
-            value: v.sku, placeholder: 'auto', style: { width: '150px' },
+          render: (v) => scannable(textInput({
+            value: v.sku, placeholder: t('scanOrType'), style: { width: '150px' },
             oninput: (e) => { v.sku = e.target.value; },
-          }),
+          })),
         },
         { key: 'cost_price', label: t('costPrice'), align: 'end', render: (v) => numeric(v, 'cost_price') },
         { key: 'selling_price', label: t('sellingPrice'), align: 'end', render: (v) => numeric(v, 'selling_price') },
@@ -294,7 +330,6 @@ async function productFormView(root, route) {
 
   async function save() {
     if (!header.validate()) return;
-    if (!variants.length) { toast(t('noVariantsYet'), 'warn'); return; }
     const values = header.values();
     const payload = {
       ...values,
@@ -351,12 +386,15 @@ async function productFormView(root, route) {
         h('h3', {}, t('variantMatrix')),
         h('span', { class: 'spacer' }),
         h('span', { class: 'muted small' }, t('productAttributes'))),
-      h('div', { class: 'card-body' }, attributePicker),
+      h('div', { class: 'card-body' },
+        attributePicker,
+        h('div', { class: 'muted small', style: { marginTop: '8px' } }, t('noAttributesNeeded'))),
       matrixHost));
 
   renderAttributePicker();
   renderMatrix();
-  return undefined;
+  // A leaked subscription would swallow scans on every other screen.
+  return () => unsubscribeScan();
 }
 
 // -------------------------------------------------------- bulk price update
@@ -409,9 +447,9 @@ async function openBulkPrice(refresh) {
       type: 'select',
       required: true,
       options: [
-        { value: 'percent', label: '% change' },
-        { value: 'amount', label: 'Add / subtract amount' },
-        { value: 'set', label: 'Set to value' },
+        { value: 'percent', label: t('percentChange') },
+        { value: 'amount', label: t('addSubtractAmount') },
+        { value: 'set', label: t('setToValue') },
       ],
     },
     { name: 'value', label: t('value'), type: 'number', required: true },

@@ -25,6 +25,9 @@ const normalisePrefix = (value) => String(value || '')
   .replace(/-+/g, '-')
   .replace(/^-|-$/g, '');
 
+/** Marks the variant the service invents for an attribute-less product. */
+const GENERATED = Symbol('generated default variant');
+
 export class CatalogService {
   constructor(deps = {}) {
     this.products = deps.products || repositories.products;
@@ -156,15 +159,15 @@ export class CatalogService {
   }
 
   async #syncVariants(product, variants, attributeIds) {
-    if (!variants.length) {
-      throw new BusinessRuleError('A product needs at least one variant (add a default one if it has no options)');
-    }
-
     const existing = await this.variants.byProduct(product.id);
+    // A simple product may be saved with no attributes and no variants, but
+    // stock, sales and labels are all keyed to a variant — so it gets exactly
+    // one, carrying the product's own code and default prices.
+    const inputs = variants.length ? variants : [await this.#defaultVariant(product, existing)];
     const keptIds = new Set();
     const seenSkus = new Set();
 
-    for (const input of variants) {
+    for (const input of inputs) {
       const options = (input.options || []).map((o) => ({
         attribute_id: Number(o.attribute_id),
         attribute_value_id: Number(o.attribute_value_id),
@@ -185,11 +188,17 @@ export class CatalogService {
       if (seenSkus.has(sku)) throw new ConflictError(`Duplicate SKU in submission: ${sku}`);
       seenSkus.add(sku);
 
+      // The generated single variant carries no label at all: there is nothing
+      // to distinguish, and "Default" would only add noise to receipts.
+      const label = enriched.length
+        ? this.buildLabel(enriched)
+        : (input[GENERATED] ? null : (input.variant_label || 'Default'));
+
       const data = {
         product_id: product.id,
         sku,
         barcode: (input.barcode || sku).trim(),
-        variant_label: enriched.length ? this.buildLabel(enriched) : (input.variant_label || 'Default'),
+        variant_label: label,
         cost_price: round2(input.cost_price ?? product.base_cost),
         selling_price: round2(input.selling_price ?? product.base_price),
         wholesale_price: round2(input.wholesale_price ?? input.selling_price ?? product.base_price),
@@ -222,6 +231,41 @@ export class CatalogService {
         await this.variants.remove(old.id);
       }
     }
+  }
+
+  /**
+   * The single variant a product with no attributes gets.
+   * Re-saving such a product must not spawn a second one, so the variant that
+   * already carries the empty option signature is reused by id — which is also
+   * what keeps its stock, its history and its printed labels valid.
+   */
+  async #defaultVariant(product, existing) {
+    const current = await this.#findVariantWithoutOptions(existing);
+    return {
+      [GENERATED]: true,
+      id: current?.id || null,
+      sku: product.sku_prefix,
+      barcode: product.sku_prefix,
+      variant_label: null,
+      cost_price: product.base_cost,
+      selling_price: product.base_price,
+      wholesale_price: product.base_price,
+      reorder_level: current?.reorder_level ?? 0,
+      reorder_quantity: current?.reorder_quantity ?? 0,
+      is_active: true,
+      options: [],
+    };
+  }
+
+  /** The existing variant whose attribute-option signature is empty, if any. */
+  async #findVariantWithoutOptions(existing) {
+    for (const variant of existing) {
+      const option = await this.variants.db
+        .prepare('SELECT 1 FROM variant_attribute_values WHERE variant_id = ? LIMIT 1')
+        .get(variant.id);
+      if (!option) return variant;
+    }
+    return null;
   }
 
   async remove(productId, context = {}) {

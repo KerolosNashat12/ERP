@@ -6,7 +6,7 @@ import {
 } from '../core/ui.js';
 import { t, pick } from '../core/i18n.js';
 import { number, dateTime } from '../core/format.js';
-import { session, can, loadSession } from '../core/store.js';
+import { session, can, loadSession, setBadge } from '../core/store.js';
 import { devicesPanel } from './devices.js';
 
 // ------------------------------------------------------------ users & roles
@@ -14,6 +14,8 @@ import { devicesPanel } from './devices.js';
 export async function usersView(root) {
   const listHost = h('div', { class: 'card-body tight' }, spinner());
   const rolesHost = h('div', { class: 'card-body tight' });
+  const resetsHost = h('div', { class: 'card-body tight' }, spinner());
+  const resetsCount = h('span', { class: 'row' });
   let roleData = { rows: [], permissions: [] };
 
   async function load() {
@@ -84,16 +86,175 @@ export async function usersView(root) {
     }));
   }
 
+  /**
+   * The pending queue, loaded separately from the users table: approving has to
+   * refresh both (the account gets unlocked) but rejecting only touches this one.
+   */
+  async function loadResets() {
+    const { rows } = await api.get('/api/users/reset-requests', { status: 'pending' });
+    setBadge('pendingResets', rows.length);
+    mount(resetsCount, rows.length ? tag(`${t('pendingResets')} · ${number(rows.length)}`, 'warn') : null);
+
+    mount(resetsHost, dataTable({
+      emptyMessage: t('noResetRequests'),
+      columns: [
+        {
+          key: 'user',
+          label: t('user'),
+          render: (r) => h('div', { class: 'row', style: { gap: '9px' } },
+            h('div', { class: 'avatar' }, initials(r.full_name)),
+            h('div', {},
+              h('div', { class: 'strong small' }, r.full_name),
+              h('small', { class: 'muted mono' }, r.username))),
+        },
+        {
+          key: 'requested_at',
+          label: t('requestedAt'),
+          render: (r) => h('span', { class: 'small muted' }, dateTime(r.requested_at)),
+        },
+        {
+          key: 'note',
+          label: t('notes'),
+          render: (r) => h('span', { class: 'small' }, r.note || '—'),
+        },
+        {
+          key: 'status',
+          label: t('status'),
+          render: (r) => {
+            if (!r.is_active) return tag(t('inactive'));
+            if (r.locked_until && new Date(r.locked_until) > new Date()) return tag(t('locked'), 'danger');
+            return tag(t('active'), 'ok');
+          },
+        },
+        {
+          key: '__a',
+          label: '',
+          width: '1%',
+          render: (r) => (can('users.reset_password')
+            ? h('div', { class: 'row nowrap', style: { gap: '4px', justifyContent: 'flex-end' } },
+              h('button', {
+                class: 'btn sm primary',
+                onclick: (event) => approveReset(r, event.currentTarget),
+              }, t('approveReset')),
+              h('button', {
+                class: 'btn sm',
+                onclick: (event) => rejectReset(r, event.currentTarget),
+              }, t('rejectReset')))
+            : ''),
+        },
+      ],
+      rows,
+    }));
+  }
+
+  async function approveReset(row, button) {
+    button.disabled = true;
+    try {
+      const result = await api.post(`/api/users/reset-requests/${row.id}/approve`, {});
+      // Shown before anything else can fail: this password is never readable again.
+      showOneTimePassword(result);
+      await Promise.all([loadResets(), load()]);
+    } catch (error) {
+      button.disabled = false;
+      toastError(error);
+    }
+  }
+
+  async function rejectReset(row, button) {
+    button.disabled = true;
+    try {
+      await api.post(`/api/users/reset-requests/${row.id}/reject`, {});
+      toast(t('resetRejected'));
+      await loadResets();
+    } catch (error) {
+      button.disabled = false;
+      toastError(error);
+    }
+  }
+
   mount(root,
     h('div', { class: 'page-head' },
       h('div', {}, h('h2', {}, t('users')), h('p', {}, t('usersSubtitle'))),
       h('span', { class: 'spacer' }),
       can('users.create') ? h('button', { class: 'btn primary', onclick: () => openUserForm(null, load) }, '＋ ' + t('newUser')) : null),
-    h('div', { class: 'card' }, h('div', { class: 'card-head' }, h('h3', {}, t('users'))), listHost),
+    h('div', { class: 'card' },
+      h('div', { class: 'card-head' },
+        h('h3', {}, t('resetRequests')),
+        h('span', { class: 'spacer' }),
+        resetsCount),
+      resetsHost),
+    h('div', { class: 'card', style: { marginTop: '14px' } },
+      h('div', { class: 'card-head' }, h('h3', {}, t('users'))), listHost),
     h('div', { class: 'card', style: { marginTop: '14px' } },
       h('div', { class: 'card-head' }, h('h3', {}, t('rolePermissions'))), rolesHost));
 
-  await load();
+  await Promise.all([load(), loadResets()]);
+}
+
+/**
+ * The hand-over dialog. The server hashed the password before replying, so this
+ * modal is the only place it will ever exist: it refuses to close on a stray
+ * backdrop click, and copying is one tap.
+ */
+function showOneTimePassword({ username, oneTimePassword }) {
+  const code = h('div', { class: 'otp-code', dir: 'ltr' }, oneTimePassword);
+
+  const dialog = modal({
+    title: t('oneTimePassword'),
+    size: 'narrow',
+    closeOnBackdrop: false,
+    body: h('div', { class: 'otp-panel' },
+      h('p', { class: 'muted small', style: { margin: 0 } }, t('resetApproved')),
+      h('div', { class: 'row', style: { gap: '9px' } },
+        h('div', { class: 'avatar' }, initials(username)),
+        h('span', { class: 'strong mono' }, username)),
+      code,
+      h('div', { class: 'otp-warn' },
+        h('span', { class: 'ico' }, '⚠'),
+        h('span', {}, t('oneTimePasswordHint')))),
+    footer: [
+      h('button', {
+        class: 'btn',
+        onclick: async () => {
+          if (await copyText(oneTimePassword)) { toast(t('copied')); return; }
+          selectContents(code);
+          toast(t('copyManually'), 'warn', 6000);
+        },
+      }, t('copyToClipboard')),
+      h('span', { class: 'spacer' }),
+      h('button', { class: 'btn primary', onclick: () => dialog.close() }, t('close')),
+    ],
+  });
+}
+
+/**
+ * navigator.clipboard only exists on a secure origin, and the shop server runs
+ * over plain HTTP on the LAN — so fall back to the old copy command, and then to
+ * simply selecting the text so the user can copy it by hand.
+ */
+async function copyText(value) {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(value);
+      return true;
+    }
+  } catch { /* denied or insecure context — try the fallback below */ }
+
+  const helper = h('textarea', { class: 'copy-helper', readonly: true, value });
+  document.body.append(helper);
+  helper.select();
+  let copied = false;
+  try { copied = document.execCommand('copy'); } catch { copied = false; }
+  helper.remove();
+  return copied;
+}
+
+function selectContents(node) {
+  const range = document.createRange();
+  range.selectNodeContents(node);
+  const selection = window.getSelection();
+  selection.removeAllRanges();
+  selection.addRange(range);
 }
 
 const initials = (name) => String(name || '?').split(' ').map((p) => p[0]).slice(0, 2).join('').toUpperCase();
@@ -210,7 +371,7 @@ export async function auditView(root) {
           key: 'user',
           label: t('user'),
           render: (r) => h('div', {},
-            h('div', { class: 'small strong' }, r.user_full_name || r.username || 'system'),
+            h('div', { class: 'small strong' }, r.user_full_name || r.username || t('systemUser')),
             h('small', { class: 'muted mono' }, r.username || '—')),
         },
         { key: 'module', label: t('module'), render: (r) => tag(t(r.module, r.module)) },
@@ -290,7 +451,7 @@ function showChanges(entry) {
       keys.length
         ? dataTable({
           columns: [
-            { key: 'k', label: 'Field' },
+            { key: 'k', label: t('fieldName') },
             { key: 'b', label: t('before'), render: (r) => h('span', { class: 'small mono' }, format(r.b)) },
             { key: 'a', label: t('after'), render: (r) => h('span', { class: 'small mono strong' }, format(r.a)) },
           ],
@@ -321,8 +482,8 @@ export async function settingsView(root, route) {
     { name: 'company.email', label: t('email'), disabled: !editable },
     { name: 'company.tax_number', label: t('taxNumber'), disabled: !editable },
     { name: 'company.currency', label: t('currency'), disabled: !editable },
-    { name: 'company.currency_symbol_en', label: 'Symbol (EN)', disabled: !editable },
-    { name: 'company.currency_symbol_ar', label: 'Symbol (AR)', disabled: !editable },
+    { name: 'company.currency_symbol_en', label: t('currencySymbolEn'), disabled: !editable },
+    { name: 'company.currency_symbol_ar', label: t('currencySymbolAr'), disabled: !editable },
     { name: 'company.default_tax_rate', label: t('taxRate'), type: 'number', disabled: !editable },
     { name: 'company.address', label: t('address'), type: 'textarea', span: 3, disabled: !editable },
   ], settings, { columns: 3 });
@@ -379,9 +540,9 @@ export async function settingsView(root, route) {
     const { rows } = await api.get('/api/settings/backups');
     mount(backupsHost, dataTable({
       columns: [
-        { key: 'file', label: 'File', class: 'mono small' },
+        { key: 'file', label: t('fileName'), class: 'mono small' },
         { key: 'createdAt', label: t('date'), render: (r) => dateTime(r.createdAt) },
-        { key: 'size', label: 'Size', type: 'number', render: (r) => `${(r.size / 1024 / 1024).toFixed(2)} MB` },
+        { key: 'size', label: t('fileSize'), type: 'number', render: (r) => `${(r.size / 1024 / 1024).toFixed(2)} MB` },
         {
           key: '__a',
           label: '',

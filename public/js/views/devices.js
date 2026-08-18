@@ -167,9 +167,9 @@ export function devicesPanel() {
             value: String(draft['printer.receipt_width'] || '80'),
             disabled: !editable,
             options: [
-              { value: '58', label: '58 mm (thermal)' },
-              { value: '80', label: '80 mm (thermal)' },
-              { value: 'a4', label: 'A4 (office printer)' },
+              { value: '58', label: t('thermal58mm') },
+              { value: '80', label: t('thermal80mm') },
+              { value: 'a4', label: t('a4OfficePrinter') },
             ],
             onchange: (e) => { set('printer.receipt_width', e.target.value); renderReceiptPreview(); },
           }),

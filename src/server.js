@@ -8,7 +8,7 @@ import config from './config/index.js';
 import {
   initDb, applySchema, getDb, closeDb, driverName,
 } from './infrastructure/database/connection.js';
-import { seedBaseline } from './infrastructure/database/seed.js';
+import { seedBaseline, hardenDefaultCredentials } from './infrastructure/database/seed.js';
 import apiRouter from './api/routes/index.js';
 import { attachRequestContext, errorHandler, notFoundHandler } from './api/middleware/index.js';
 
@@ -93,14 +93,30 @@ async function bootstrapHostedDatabase() {
   console.log('Hosted database is empty — applying the schema and seeding the administrator…');
   await applySchema();
   await seedBaseline();
-  console.log('✔ Hosted database ready. Sign in as admin / admin123 and change that password.');
+  console.log('✔ Hosted database ready. Sign in as admin / admin123 — you will be asked to change it.');
+}
+
+/**
+ * Runs on every start, not just the first: a database seeded before this check
+ * existed can still be sitting on a published default password.
+ */
+async function hardenCredentials() {
+  try {
+    const flagged = await hardenDefaultCredentials();
+    if (flagged.length) {
+      console.warn(`⚠  Default password still in use for: ${flagged.join(', ')} — a change is now forced at next sign-in.`);
+    }
+  } catch (error) {
+    // Never let a hardening check stop the shop from opening.
+    console.warn(`Could not check default credentials: ${error.message}`);
+  }
 }
 
 /** Idempotent, cheap after the first call. Awaited by the request middleware. */
 export async function ensureDatabaseReady() {
   await initDb();
   if (!isHostedDb()) return;
-  bootstrap = bootstrap || bootstrapHostedDatabase().catch((error) => {
+  bootstrap = bootstrap || bootstrapHostedDatabase().then(hardenCredentials).catch((error) => {
     // Do not cache a failure: the next request should be able to try again.
     bootstrap = null;
     throw error;
@@ -124,7 +140,9 @@ async function prepareDatabase() {
 
   if ((await countUsers()) === 0) {
     console.warn('\n⚠  No users found. Run `npm run db:seed` before signing in.\n');
+    return;
   }
+  await hardenCredentials();
 }
 
 /**

@@ -27,6 +27,27 @@ export function clearSession() {
   session.settings = {};
   session.location = null;
   session.lookups = {};
+  badges.pendingResets = 0;
+}
+
+/**
+ * Counters the shell paints onto navigation items. They live here so a view can
+ * update one after acting without reaching into the shell module.
+ */
+export const badges = { pendingResets: 0 };
+
+export function setBadge(name, value) {
+  badges[name] = Number(value) || 0;
+  window.dispatchEvent(new CustomEvent('badges:changed'));
+}
+
+/** Best-effort: a badge is a hint, so a failed fetch must not break the shell. */
+export async function refreshBadges() {
+  if (!can('users.view')) return setBadge('pendingResets', 0);
+  try {
+    const { pending } = await api.get('/api/users/reset-requests/count');
+    setBadge('pendingResets', pending);
+  } catch { /* the counter simply stays as it was */ }
 }
 
 /** Typed accessors over the flat settings map. */

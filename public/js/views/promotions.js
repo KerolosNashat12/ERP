@@ -19,7 +19,7 @@ const promotionState = (row) => {
 
 export const promotionsView = resourceView({
   title: t('promotions'),
-  subtitle: 'Discount codes, campaign rules and gift vouchers',
+  subtitle: t('promotionsSubtitle'),
   endpoint: '/api/promotions',
   module: 'promotions',
   createLabel: t('newPromotion'),
@@ -49,7 +49,7 @@ export const promotionsView = resourceView({
     h('button', { class: 'btn', onclick: () => openVoucherBatch(refresh) }, t('generateVouchers')),
   ] : []),
   fields: async () => [
-    { name: 'code', label: t('promotionCode'), required: true, hint: 'What the cashier types at checkout' },
+    { name: 'code', label: t('promotionCode'), required: true, hint: t('promoCodeHint') },
     { name: 'name_en', label: t('nameEn'), required: true },
     { name: 'name_ar', label: t('nameAr') },
     {
@@ -96,7 +96,7 @@ export const promotionsView = resourceView({
         { value: 'vip', label: t('vip') },
       ],
     },
-    { name: 'voucher_balance', label: t('voucherBalance'), type: 'number', hint: 'Vouchers only' },
+    { name: 'voucher_balance', label: t('voucherBalance'), type: 'number', hint: t('vouchersOnly') },
     { name: 'is_active', label: t('active'), type: 'checkbox', value: 1 },
   ],
   defaults: {
@@ -185,7 +185,7 @@ export const promotionsView = resourceView({
 
 function openVoucherBatch(refresh) {
   const form = buildForm([
-    { name: 'prefix', label: 'Prefix', required: true, value: 'MMV' },
+    { name: 'prefix', label: t('codePrefix'), required: true, value: 'MMV' },
     { name: 'count', label: t('voucherCount'), type: 'number', required: true, value: 10 },
     { name: 'value', label: t('voucherValue'), type: 'number', required: true, value: 100 },
     { name: 'expiresAt', label: t('endsAt'), type: 'date' },

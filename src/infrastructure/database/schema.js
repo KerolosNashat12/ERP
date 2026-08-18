@@ -583,6 +583,29 @@ CREATE INDEX IF NOT EXISTS idx_redemptions_promo ON promotion_redemptions(promot
 --  8. REPORTING VIEWS
 -- =============================================================================
 
+-- ---------------------------------------------------------------- access recovery
+-- There is no mail server here on purpose: the system has to work with the
+-- internet down. So a locked-out user raises a request and an administrator
+-- approves it in person, which is also the only identity check a shop can
+-- actually perform. Requests are kept after they are handled so the audit
+-- trail shows who let whom back in.
+CREATE TABLE IF NOT EXISTS password_reset_requests (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  username     TEXT    NOT NULL,
+  status       TEXT    NOT NULL DEFAULT 'pending'
+                 CHECK (status IN ('pending','approved','rejected','cancelled')),
+  note         TEXT,
+  requested_at TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  requested_ip TEXT,
+  handled_by   INTEGER REFERENCES users(id),
+  handled_at   TEXT,
+  created_at   TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_at   TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+CREATE INDEX IF NOT EXISTS idx_reset_status ON password_reset_requests(status, requested_at DESC);
+CREATE INDEX IF NOT EXISTS idx_reset_user   ON password_reset_requests(user_id);
+
 DROP VIEW IF EXISTS v_variant_details;
 CREATE VIEW v_variant_details AS
 SELECT

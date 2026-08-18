@@ -25,22 +25,22 @@ export const suppliersView = resourceView({
     { key: 'name', label: t('name'), render: (r) => h('div', {}, h('div', { class: 'strong' }, pick(r, 'name')), r.contact_person ? h('small', { class: 'muted' }, r.contact_person) : null) },
     { key: 'phone', label: t('phone'), class: 'mono small' },
     { key: 'city', label: t('city') },
-    { key: 'payment_terms_days', label: 'Terms', type: 'number', render: (r) => `${r.payment_terms_days} d` },
-    { key: 'lead_time_days', label: 'Lead', type: 'number', render: (r) => `${r.lead_time_days} d` },
+    { key: 'payment_terms_days', label: t('paymentTerms'), type: 'number', render: (r) => `${r.payment_terms_days} ${t('dayShort')}` },
+    { key: 'lead_time_days', label: t('leadTime'), type: 'number', render: (r) => `${r.lead_time_days} ${t('dayShort')}` },
     { key: 'is_active', label: t('status'), render: activeTag },
   ],
   fields: async () => [
     { name: 'name_en', label: t('nameEn'), required: true },
     { name: 'name_ar', label: t('nameAr') },
-    { name: 'code', label: t('code'), hint: 'Leave blank to auto-generate' },
-    { name: 'contact_person', label: 'Contact person' },
+    { name: 'code', label: t('code'), hint: t('autoIfBlank') },
+    { name: 'contact_person', label: t('contactPerson') },
     { name: 'phone', label: t('phone') },
     { name: 'email', label: t('email') },
     { name: 'city', label: t('city') },
     { name: 'country', label: t('country') },
-    { name: 'tax_number', label: 'Tax number' },
-    { name: 'payment_terms_days', label: 'Payment terms (days)', type: 'number' },
-    { name: 'lead_time_days', label: 'Lead time (days)', type: 'number' },
+    { name: 'tax_number', label: t('taxNumber') },
+    { name: 'payment_terms_days', label: t('paymentTermsDays'), type: 'number' },
+    { name: 'lead_time_days', label: t('leadTimeDays'), type: 'number' },
     { name: 'credit_limit', label: t('creditLimit'), type: 'number' },
     { name: 'address', label: t('address'), type: 'textarea', span: 2 },
     { name: 'notes', label: t('notes'), type: 'textarea', span: 2 },
@@ -94,7 +94,7 @@ export const brandsView = resourceView({
     return [
       { name: 'name_en', label: t('nameEn'), required: true },
       { name: 'name_ar', label: t('nameAr') },
-      { name: 'code', label: t('code'), hint: 'Auto if blank' },
+      { name: 'code', label: t('code'), hint: t('autoIfBlank') },
       { name: 'country', label: t('country') },
       { name: 'supplier_id', label: t('supplier'), type: 'select', options: toOptions(suppliers, (s) => pick(s, 'name')) },
       { name: 'is_active', label: t('active'), type: 'checkbox', value: 1 },
@@ -115,7 +115,7 @@ export const categoriesView = resourceView({
   columns: () => [
     { key: 'code', label: t('code'), class: 'mono small' },
     { key: 'name', label: t('name'), render: (r) => h('span', { class: 'strong' }, pick(r, 'name')) },
-    { key: 'parent', label: 'Parent', render: (r) => r.parent_name || '—' },
+    { key: 'parent', label: t('parent'), render: (r) => r.parent_name || '—' },
     { key: 'is_active', label: t('status'), render: activeTag },
   ],
   fields: async () => {
@@ -123,8 +123,8 @@ export const categoriesView = resourceView({
     return [
       { name: 'name_en', label: t('nameEn'), required: true },
       { name: 'name_ar', label: t('nameAr') },
-      { name: 'code', label: t('code'), hint: 'Auto if blank' },
-      { name: 'parent_id', label: 'Parent category', type: 'select', options: toOptions(categories, (c) => pick(c, 'name')) },
+      { name: 'code', label: t('code'), hint: t('autoIfBlank') },
+      { name: 'parent_id', label: t('parentCategory'), type: 'select', options: toOptions(categories, (c) => pick(c, 'name')) },
       { name: 'description', label: t('description'), type: 'textarea', span: 2 },
       { name: 'is_active', label: t('active'), type: 'checkbox', value: 1 },
     ];
@@ -152,7 +152,7 @@ export const customersView = resourceView({
   ],
   fields: async () => [
     { name: 'name', label: t('name'), required: true, span: 2 },
-    { name: 'code', label: t('code'), hint: 'Auto if blank' },
+    { name: 'code', label: t('code'), hint: t('autoIfBlank') },
     { name: 'phone', label: t('phone') },
     { name: 'email', label: t('email') },
     {
@@ -167,8 +167,8 @@ export const customersView = resourceView({
       ],
     },
     { name: 'city', label: t('city') },
-    { name: 'tax_number', label: 'Tax number' },
-    { name: 'credit_limit', label: t('creditLimit'), type: 'number', hint: '0 = cash only' },
+    { name: 'tax_number', label: t('taxNumber') },
+    { name: 'credit_limit', label: t('creditLimit'), type: 'number', hint: t('creditLimitHint') },
     { name: 'address', label: t('address'), type: 'textarea', span: 2 },
     { name: 'notes', label: t('notes'), type: 'textarea', span: 2 },
     { name: 'is_active', label: t('active'), type: 'checkbox', value: 1 },
@@ -309,15 +309,15 @@ export async function attributesView(root) {
     const form = buildForm([
       { name: 'name_en', label: t('nameEn'), required: true },
       { name: 'name_ar', label: t('nameAr') },
-      { name: 'code', label: t('code'), hint: 'Auto if blank' },
+      { name: 'code', label: t('code'), hint: t('autoIfBlank') },
       {
         name: 'input_type',
         label: t('type'),
         type: 'select',
         required: true,
-        options: [{ value: 'select', label: 'List of values' }, { value: 'color', label: 'Colour swatches' }],
+        options: [{ value: 'select', label: t('listOfValues') }, { value: 'color', label: t('colourSwatches') }],
       },
-      { name: 'display_order', label: 'Order', type: 'number' },
+      { name: 'display_order', label: t('displayOrder'), type: 'number' },
       { name: 'is_active', label: t('active'), type: 'checkbox', value: 1 },
     ], attribute || { is_active: 1, input_type: 'select', display_order: 0 });
 
@@ -348,11 +348,11 @@ export async function attributesView(root) {
 
   async function openValueForm(attribute, value = null) {
     const form = buildForm([
-      { name: 'code', label: t('code'), required: true, hint: 'Used in the SKU, e.g. L or RED' },
+      { name: 'code', label: t('code'), required: true, hint: t('attributeCodeHint') },
       { name: 'value_en', label: t('nameEn'), required: true },
       { name: 'value_ar', label: t('nameAr') },
-      ...(attribute.input_type === 'color' ? [{ name: 'color_hex', label: 'Colour', type: 'color' }] : []),
-      { name: 'display_order', label: 'Order', type: 'number' },
+      ...(attribute.input_type === 'color' ? [{ name: 'color_hex', label: t('colour'), type: 'color' }] : []),
+      { name: 'display_order', label: t('displayOrder'), type: 'number' },
       { name: 'is_active', label: t('active'), type: 'checkbox', value: 1 },
     ], value || { is_active: 1, display_order: 0, color_hex: '#000000' });
 
@@ -396,7 +396,7 @@ export async function attributesView(root) {
     h('div', { class: 'page-head' },
       h('div', {},
         h('h2', {}, t('attributes')),
-        h('p', {}, 'Size, colour and material options that build your product variants')),
+        h('p', {}, t('attributesSubtitle'))),
       h('span', { class: 'spacer' }),
       can('attributes.create')
         ? h('button', { class: 'btn primary', onclick: () => openAttributeForm(null) }, '＋ ' + t('attributes'))

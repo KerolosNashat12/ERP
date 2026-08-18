@@ -395,3 +395,37 @@ export async function seedExample() {
 }
 
 export default { seedBaseline, seedExample, hasExampleData };
+
+/**
+ * Force a password change on any account still using a seeded default.
+ *
+ * The sign-in screen used to advertise these credentials, and the system is now
+ * reachable on a public URL — so an account still on `admin123` is an open door,
+ * not a convenience. This does not lock anybody out: it flips
+ * `must_change_password`, so the next sign-in works and immediately demands a
+ * new password. Idempotent, and silent once every default is gone.
+ */
+export async function hardenDefaultCredentials() {
+  const bcryptModule = await import('bcryptjs');
+  const bcrypt = bcryptModule.default || bcryptModule;
+  const db = getDb();
+
+  const defaults = [
+    ['admin', 'admin123'],
+    ['manager', 'manager123'],
+    ['cashier', 'cashier123'],
+  ];
+
+  const flagged = [];
+  for (const [username, weakPassword] of defaults) {
+    const user = await db
+      .prepare('SELECT id, username, password_hash, must_change_password FROM users WHERE username = ?')
+      .get(username);
+    if (!user || user.must_change_password) continue;
+    if (!bcrypt.compareSync(weakPassword, user.password_hash)) continue;
+
+    await db.prepare('UPDATE users SET must_change_password = 1 WHERE id = ?').run(user.id);
+    flagged.push(user.username);
+  }
+  return flagged;
+}

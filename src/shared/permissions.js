@@ -18,7 +18,7 @@ export const MODULES = {
   sales: ['view', 'create', 'void', 'return', 'return_no_receipt', 'discount'],
   promotions: ['view', 'create', 'update', 'delete'],
   reports: ['view', 'export'],
-  users: ['view', 'create', 'update', 'delete'],
+  users: ['view', 'create', 'update', 'delete', 'reset_password'],
   audit: ['view', 'export'],
   settings: ['view', 'update', 'backup'],
   labels: ['view', 'print'],
