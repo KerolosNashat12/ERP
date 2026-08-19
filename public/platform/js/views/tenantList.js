@@ -22,6 +22,7 @@ import {
 import { t, pickName, getLanguage } from '../core/i18n.js';
 import { navigate } from '../core/router.js';
 import { buildTenantFields } from './tenantForm.js';
+import { platformEnvironment } from '../core/environment.js';
 import { showOneTimePassword, showAdoptionSummary } from './otp.js';
 import {
   pageHead, card, statusCell, moduleChips, limitCell, linkRow, iconButton,
@@ -31,16 +32,14 @@ import { date, int } from '../ui/format.js';
 
 export async function tenantsView(root) {
   /**
-   * Whether this console is talking to a hosted control plane. Fetched once
-   * here rather than inside the dialog, so opening "new shop" never waits on
-   * the network. A failed probe assumes "not hosted", which is the shop-PC
-   * default and the safe one: it offers a file rather than demanding a URL the
-   * owner may not have.
+   * Whether this console is talking to a hosted control plane. Asked once here
+   * rather than inside the dialog, so opening "new shop" never waits on the
+   * network — and asked through the shared probe, so this screen and the form
+   * read one answer, and connecting Turso invalidates both at once. A failed
+   * probe assumes "not hosted", which is the shop-PC default and the safe one:
+   * it offers a file rather than demanding a URL the owner may not have.
    */
-  let hostedControlPlane = false;
-  try {
-    ({ hostedControlPlane } = await api.get('/environment'));
-  } catch { hostedControlPlane = false; }
+  const { hostedControlPlane } = await platformEnvironment();
 
   let rows = [];
   let facts = new Map();

@@ -9,6 +9,7 @@ import { overviewView } from './views/overview.js';
 import { tenantsView } from './views/tenantList.js';
 import { tenantDetailView } from './views/tenantDetail.js';
 import { migrateView } from './views/migrate.js';
+import { integrationsView } from './views/integrations.js';
 import { state } from './ui/states.js';
 
 const appRoot = document.getElementById('app');
@@ -18,6 +19,11 @@ const TABS = [
   { path: 'overview', label: 'overview' },
   { path: 'tenants', label: 'shops' },
   { path: 'migrate', label: 'migrations' },
+  // Findable by looking, rather than only reachable from the create-shop form
+  // at the moment it is needed — an owner who connected Turso once should be
+  // able to see that it is still connected without opening a dialog about
+  // something else.
+  { path: 'integrations', label: 'integrations' },
 ];
 
 // A slug is arbitrary text, so it can't live in the static route map the way
@@ -28,6 +34,7 @@ defineRoutes({
   overview: overviewView,
   tenants: (host, route) => (route.segments[1] ? tenantDetailView(host, route) : tenantsView(host, route)),
   migrate: migrateView,
+  integrations: integrationsView,
 }, {
   notFound: (host) => mount(host, state({
     icon: 'search',

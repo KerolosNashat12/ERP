@@ -18,6 +18,7 @@ import platformAuth from '../../platform/auth.js';
 import tenantService from '../../platform/TenantService.js';
 import fleetService from '../../platform/FleetService.js';
 import turso from '../../platform/turso.js';
+import integrations from '../../platform/integrations.js';
 import { publicBaseUrl, tenantLinks } from '../../platform/links.js';
 import { migrateAllTenants } from '../../platform/migrateAll.js';
 import { asyncHandler } from '../middleware/index.js';
@@ -140,8 +141,41 @@ const tenantUpdateSchema = z.object({
 router.get('/environment', asyncHandler(async (_req, res) => {
   res.json({
     hostedControlPlane: config.platform.driver === 'libsql',
-    canProvision: turso.canProvision(),
+    canProvision: await turso.canProvision(),
   });
+}));
+
+/* --------------------------------------------------------- integrations
+ *
+ * Turso, connected from the console rather than from a deploy setting.
+ *
+ * The rule for all three routes is the same and is worth stating once: the
+ * platform API token goes in on the PUT and never comes out. Not from the GET,
+ * not masked, not in an error message, not in the audit row the PUT writes.
+ * There is nothing useful to show an owner about a token he cannot read back —
+ * changing it means pasting a new one, which these routes verify exactly as
+ * they verified the first.
+ */
+
+const tursoConnectSchema = z.object({
+  apiToken: z.string().min(1, 'Paste the API token'),
+  // Both optional on purpose: an owner should not have to know what an
+  // organisation slug is. The server adopts the only one the token can see,
+  // and asks — with the list — only when there is genuinely a choice.
+  org: z.string().optional(),
+  group: z.string().optional(),
+});
+
+router.get('/integrations/turso', asyncHandler(async (_req, res) => {
+  res.json(await integrations.status());
+}));
+
+router.put('/integrations/turso', validateBody(tursoConnectSchema), asyncHandler(async (req, res) => {
+  res.json(await integrations.connectTurso(req.body, req.platformUser));
+}));
+
+router.delete('/integrations/turso', asyncHandler(async (req, res) => {
+  res.json(await integrations.disconnectTurso(req.platformUser));
 }));
 
 /**

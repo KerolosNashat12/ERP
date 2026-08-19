@@ -11,11 +11,12 @@
  * draws the Settings tab with the fold opened out, because there the modules
  * and the limits *are* the screen.
  */
-import api from '../core/api.js';
 import {
   h, field, textInput, numberInput, checkboxInput, passwordInput, selectInput,
 } from '../core/dom.js';
 import { t } from '../core/i18n.js';
+import { platformEnvironment } from '../core/environment.js';
+import { openTursoDialog } from './integrations.js';
 
 // Exactly `Object.keys(MODULES)` from `src/shared/permissions.js` — the only
 // module names the server will ever accept.
@@ -54,34 +55,13 @@ export function slugify(name) {
 }
 
 /**
- * What this deployment can do, asked once per session.
- *
- * Deliberately not fetched when this module loads: the console imports every
- * view at boot, including before anyone has signed in, and a 401 from a
- * speculative probe would drop the app back to the sign-in screen. It is asked
- * the first time a form that needs the answer is built, and a probe that fails
- * assumes the conservative answer — no automatic database — so the owner is
- * offered the path that always works rather than one that may not.
+ * What this deployment can do — the probe itself lives in `core/environment.js`
+ * because this form is no longer the only screen that cares: connecting Turso
+ * from the dialog below changes the answer, and the Integrations screen changes
+ * it too. Re-exported here so the views that already import it from this file
+ * keep working.
  */
-let environmentPromise = null;
-export function platformEnvironment() {
-  if (!environmentPromise) {
-    environmentPromise = api.get('/environment')
-      .catch(() => ({ hostedControlPlane: false, canProvision: false }));
-  }
-  return environmentPromise;
-}
-
-/**
- * The one word in a sentence that is a thing to be typed, set in the console's
- * monospace so it can be picked out of a line of Arabic prose and copied
- * correctly — a variable name half-remembered is a variable name misspelt.
- */
-function withMono(sentence, token) {
-  const [before, ...rest] = String(sentence).split(token);
-  if (!rest.length) return sentence;
-  return [before, h('span', { class: 'mono strong', dir: 'ltr' }, token), rest.join(token)];
-}
+export { platformEnvironment };
 
 /**
  * A folded block. `<details>` is the only honest "there is more here" control
@@ -235,8 +215,14 @@ export function buildTenantFields(initial = {}, {
  * owner opening their fourth shop should type a name and press Create.
  *
  * When it says it cannot, the automatic option is still listed — disabled, with
- * one plain line naming `TURSO_API_TOKEN`, because "the option I remember is
- * gone" is a worse thing to hand somebody than "here is why it is greyed out".
+ * one plain line under it, because "the option I remember is gone" is a worse
+ * thing to hand somebody than "here is why it is greyed out". Beside that line
+ * is the fix itself: **Connect Turso**, which takes the token here rather than
+ * naming an environment variable on a host the owner cannot reach. It opens a
+ * dialog on top of this form, so nothing typed so far is lost, and on success
+ * the automatic option becomes enabled and selected under his cursor — the
+ * shop name he already typed still in the box behind it.
+ *
  * The manual path stays exactly where it was, one choice away.
  *
  * The token field is `type="password"` because it is one — a bearer credential
@@ -271,9 +257,21 @@ function buildDatabaseChooser(hostedControlPlane) {
    * the hint so that it stays on the page when they switch to the manual path
    * and get on with their day.
    */
+  const connectButton = h('button', {
+    class: 'btn sm',
+    type: 'button',
+    onclick: () => openTursoDialog({
+      // The dialog has already refreshed the cached answer by the time this
+      // runs, so this is a read, not a second round trip.
+      onConnected: async () => { applyEnvironment(await platformEnvironment(), true); },
+    }),
+  }, t('tursoConnect'));
+
   const provisionNote = h('div', {
-    class: 'small muted', style: { display: 'none', marginTop: 'var(--s1)' },
-  }, withMono(t('dataLocationAutoOff'), 'TURSO_API_TOKEN'));
+    class: 'panel small', style: { display: 'none', marginTop: 'var(--s2)' },
+  }, h('div', { class: 'row between' },
+    h('span', { class: 'muted', style: { maxWidth: '46ch' } }, t('dataLocationAutoOff')),
+    connectButton));
 
   const node = h('div', { class: 'field' },
     h('label', {}, t('dataLocation')),
@@ -315,7 +313,19 @@ function buildDatabaseChooser(hostedControlPlane) {
   urlInput.addEventListener('input', clearError);
   sync();
 
-  platformEnvironment().then((environment) => {
+  /**
+   * Drawn from what the server says it can do — on first open, and again the
+   * moment Turso is connected from the dialog.
+   *
+   * `adopt` is the difference between the two. On first open the form must not
+   * touch a choice the owner may already have made, so it only steps in when
+   * the automatic option is impossible. After a connect it steps forward: he
+   * pressed Connect Turso *because* he wanted the database made for him, so the
+   * option he was reaching for is selected for him, and everything else on the
+   * form — the shop name, the slug, the modules — is exactly as he left it,
+   * because this function changes one select and nothing else.
+   */
+  function applyEnvironment(environment, adopt = false) {
     canProvision = Boolean(environment.canProvision);
     hosted = Boolean(environment.hostedControlPlane);
     // A file on a host with no disk of its own is not a worse choice, it is a
@@ -324,8 +334,11 @@ function buildDatabaseChooser(hostedControlPlane) {
     optionFor('auto').disabled = !canProvision;
     provisionNote.style.display = canProvision ? 'none' : '';
     if (!canProvision) modeSelect.value = hosted ? 'libsql' : 'file';
+    else if (adopt) modeSelect.value = 'auto';
     sync();
-  });
+  }
+
+  platformEnvironment().then((environment) => applyEnvironment(environment));
 
   return {
     node,

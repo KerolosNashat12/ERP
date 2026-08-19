@@ -69,6 +69,7 @@ export const api = {
   get: (path, query) => request(path, { query }),
   post: (path, body, opts) => request(path, { method: 'POST', body, ...opts }),
   put: (path, body) => request(path, { method: 'PUT', body }),
+  del: (path) => request(path, { method: 'DELETE' }),
 };
 
 export { ApiError };

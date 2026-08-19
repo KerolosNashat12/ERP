@@ -144,7 +144,7 @@ async function connectDatabase({ mode, url, authToken }) {
  * token do not exist until Turso has been asked, which is a step `create()`
  * runs itself so that it can also undo it.
  */
-function resolveDatabaseTarget(slug, database) {
+async function resolveDatabaseTarget(slug, database) {
   const mode = database?.mode || 'file';
 
   if (mode === 'file') {
@@ -157,10 +157,17 @@ function resolveDatabaseTarget(slug, database) {
   }
 
   if (mode === 'auto') {
-    if (!turso.canProvision()) {
+    if (!await turso.canProvision()) {
+      /**
+       * Both ways out, in the order an owner can actually take them. Connecting
+       * from the console is one dialog and no redeploy; TURSO_API_TOKEN and
+       * TURSO_ORG stay named because a scripted install still sets them, and a
+       * deployment configured that way should recognise itself in the refusal.
+       */
       throw new ValidationError(
-        'This deployment cannot create a database by itself yet — add TURSO_API_TOKEN and TURSO_ORG '
-        + 'to it, or choose an existing database and paste its URL instead',
+        'This deployment cannot create a database by itself yet — connect Turso from the console '
+        + '(or add TURSO_API_TOKEN and TURSO_ORG to this deployment), or choose an existing '
+        + 'database and paste its URL instead',
       );
     }
     return {
@@ -290,7 +297,7 @@ export async function create(input, actor = null) {
 
   if (await findRow(slug)) throw new ConflictError(`Tenant "${slug}" already exists`);
 
-  const target = resolveDatabaseTarget(slug, database);
+  const target = await resolveDatabaseTarget(slug, database);
   if (target.mode === 'libsql') await assertDatabaseNotShared(target.url);
 
   const db = platformDb();

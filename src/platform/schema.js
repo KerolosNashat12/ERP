@@ -53,6 +53,22 @@ CREATE TABLE IF NOT EXISTS platform_users (
   last_login_at  TEXT
 );
 
+-- Settings that belong to this deployment rather than to any one shop, and
+-- that an owner must be able to set from the console rather than from a host's
+-- environment screen. Today that is one thing: the Turso platform credentials
+-- (turso.api_token, turso.org, turso.group), so that "create a database
+-- for me" can be switched on by pasting a token into the console.
+--
+-- turso.api_token is the most dangerous secret in the deployment — it can
+-- create and destroy every database in the organisation. It is written here,
+-- read only to put in an Authorization header, and never returned by an
+-- endpoint, written to a log line, or recorded in a platform_audit row.
+CREATE TABLE IF NOT EXISTS platform_settings (
+  key        TEXT PRIMARY KEY,
+  value      TEXT,
+  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+
 -- Append-only, same convention as the ERP's own audit_logs.
 CREATE TABLE IF NOT EXISTS platform_audit (
   id                INTEGER PRIMARY KEY AUTOINCREMENT,
