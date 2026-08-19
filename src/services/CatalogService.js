@@ -6,7 +6,7 @@
  * transaction, which keeps SKUs, attribute options and prices consistent.
  */
 import repositories from '../infrastructure/repositories/index.js';
-import { transaction } from '../infrastructure/database/connection.js';
+import { transaction, currentTenant } from '../infrastructure/database/connection.js';
 import { BusinessRuleError, ConflictError, NotFoundError, ValidationError } from '../shared/errors.js';
 import { round2, round3 } from '../shared/money.js';
 import auditService from './AuditService.js';
@@ -94,12 +94,33 @@ export class CatalogService {
   }
 
   /**
+   * `max_products` (0 = unlimited) counts every row in the tenant's own
+   * `products` table — this limit is about how many products the shop is
+   * allowed to hold, not how many are currently visible, so an unpublished
+   * or inactive product still counts. Only a brand-new product can trip it;
+   * editing an existing one must not.
+   */
+  async #assertProductSlotAvailable() {
+    const tenant = currentTenant();
+    const maxProducts = tenant?.limits?.maxProducts;
+    if (!tenant || !maxProducts) return;
+    const { n: count } = await this.products.db.prepare('SELECT COUNT(*) AS n FROM products').get();
+    if (count >= maxProducts) {
+      throw new BusinessRuleError(
+        `This shop is limited to ${maxProducts} product(s) and already has ${count}`,
+        { limit: 'max_products', max: maxProducts, count },
+      );
+    }
+  }
+
+  /**
    * Create or replace a product together with its variants.
    * @param {object} payload product fields + { attribute_ids, variants }
    */
   async save(payload, context = {}, productId = null) {
     return transaction(async () => {
       const isUpdate = Boolean(productId);
+      if (!isUpdate) await this.#assertProductSlotAvailable();
       const before = isUpdate ? await this.products.findAggregate(productId) : null;
       if (isUpdate && !before) throw new NotFoundError('Product', productId);
 

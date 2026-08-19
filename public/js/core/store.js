@@ -4,10 +4,25 @@ import api from './api.js';
 export const session = {
   user: null,
   settings: {},
+  /**
+   * The plan this shop is on, or null on a single-shop install. Set once at
+   * boot from `/api/session`. Only ever used to avoid asking the server for
+   * things this shop has not bought — never to decide what is allowed, which
+   * is the server's job and the server's alone.
+   */
+  tenant: null,
   /** The single shop location. Kept as a record so documents still reference it. */
   location: null,
   lookups: {},
 };
+
+export function setTenant(tenant) {
+  session.tenant = tenant || null;
+}
+
+/** False only when a tenant is known and the module is not in its plan. */
+export const moduleEnabled = (permission) => !session.tenant
+  || session.tenant.modules.includes(String(permission).split('.')[0]);
 
 export function can(...codes) {
   if (!session.user) return false;
@@ -51,7 +66,9 @@ export async function refreshBadges() {
 }
 
 async function refreshBadge(name, permission, path) {
-  if (!can(permission)) return setBadge(name, 0);
+  // A module this shop does not have would answer 403 — a counter is not worth
+  // a failed request on every page change, nor the console noise.
+  if (!can(permission) || !moduleEnabled(permission)) return setBadge(name, 0);
   try {
     const { pending } = await api.get(path);
     return setBadge(name, pending);

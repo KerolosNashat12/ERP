@@ -6,7 +6,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import repositories from '../infrastructure/repositories/index.js';
 import {
-  getDb, transaction, backupTo, supportsFileBackup, driverName,
+  getDb, transaction, backupTo, supportsFileBackup, driverName, currentTenant,
 } from '../infrastructure/database/connection.js';
 import config from '../config/index.js';
 import { BusinessRuleError, ConflictError, NotFoundError, ValidationError } from '../shared/errors.js';
@@ -32,8 +32,30 @@ export class UserService {
     return { ...safe, permissions: await this.users.permissionsFor(id) };
   }
 
+  /**
+   * `max_users` (0 = unlimited) counts every row in the tenant's own `users`
+   * table, active or not — a deactivated account still occupies a seat the
+   * owner is paying for, so it stays in the count. Checked here rather than
+   * at the repository layer because only a *new* user should ever trip it;
+   * editing or reactivating an existing one must not.
+   */
+  async #assertUserSeatAvailable() {
+    const tenant = currentTenant();
+    const maxUsers = tenant?.limits?.maxUsers;
+    if (!tenant || !maxUsers) return;
+    const { n: count } = await getDb().prepare('SELECT COUNT(*) AS n FROM users').get();
+    if (count >= maxUsers) {
+      throw new BusinessRuleError(
+        `This shop is limited to ${maxUsers} user(s) and already has ${count} `
+        + '(inactive accounts still count — they still occupy a seat)',
+        { limit: 'max_users', max: maxUsers, count },
+      );
+    }
+  }
+
   async create(data, context = {}) {
     return transaction(async () => {
+      await this.#assertUserSeatAvailable();
       const username = String(data.username || '').trim().toLowerCase();
       if (!username) throw new ValidationError('Username is required');
       if (await this.users.findByUsername(username)) throw new ConflictError(`Username "${username}" already exists`);

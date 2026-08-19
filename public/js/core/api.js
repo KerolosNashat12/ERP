@@ -1,5 +1,18 @@
 /** Thin fetch wrapper. Every network call in the UI goes through here. */
 
+/**
+ * The browser learns its tenant prefix from the URL, not from anything
+ * server-rendered: `''` for the single-shop build and the platform's own
+ * `/platform` shell, `/t/<slug>` whenever the page was loaded under a
+ * tenant path. Every request and every asset/download URL this module
+ * builds is routed through this, so the SPA works unmodified whether it is
+ * serving `/` or `/t/mm/`.
+ */
+export function apiBase() {
+  const match = window.location.pathname.match(/^\/t\/([a-z0-9][a-z0-9-]{0,30})(?:\/|$)/);
+  return match ? `/t/${match[1]}` : '';
+}
+
 class ApiError extends Error {
   constructor(message, status, code, details) {
     super(message);
@@ -13,7 +26,7 @@ const listeners = new Set();
 export const onUnauthorized = (fn) => listeners.add(fn);
 
 async function request(path, { method = 'GET', body, query, raw = false } = {}) {
-  const url = new URL(path, window.location.origin);
+  const url = new URL(apiBase() + path, window.location.origin);
   if (query) {
     for (const [key, value] of Object.entries(query)) {
       if (value === undefined || value === null || value === '') continue;
@@ -52,7 +65,7 @@ export const api = {
   put: (path, body) => request(path, { method: 'PUT', body }),
   del: (path) => request(path, { method: 'DELETE' }),
   download(path, query, filename) {
-    const url = new URL(path, window.location.origin);
+    const url = new URL(apiBase() + path, window.location.origin);
     if (query) {
       for (const [k, val] of Object.entries(query)) {
         if (val !== undefined && val !== null && val !== '') url.searchParams.set(k, val);

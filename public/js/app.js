@@ -2,7 +2,7 @@
 import api, { onUnauthorized } from './core/api.js';
 import { h, mount, toast, toastError, modal } from './core/ui.js';
 import { t, setLanguage, getLanguage, pick } from './core/i18n.js';
-import { session, can, loadSession, clearSession, badges, refreshBadges } from './core/store.js';
+import { session, can, loadSession, clearSession, badges, refreshBadges, setTenant } from './core/store.js';
 import { defineRoutes, startRouter, navigate } from './core/router.js';
 import { startScanner, onScan, triggerScan } from './core/scanner.js';
 
@@ -38,6 +38,9 @@ const NAV = [
         icon: '⛟',
         permission: 'weborders.view',
         badge: 'pendingWebOrders',
+        // Nothing to confirm without a storefront to place an order on —
+        // the one nav entry tied to the website switch, not just a module.
+        requiresWebsite: true,
       },
       { path: 'customers', label: 'customers', icon: '☺', permission: 'customers.view' },
     ],
@@ -83,6 +86,30 @@ const NAV = [
     ],
   },
 ];
+
+/**
+ * `null` in single-shop mode — every module and the website are effectively
+ * on then, since there is no plan restricting them. This is UI politeness
+ * only: the server enforces the same rule inside `requirePermission` and the
+ * `/api/shop/*` gate, so hiding a nav entry here can never be the only thing
+ * standing between a tenant and a module it does not have.
+ */
+let tenantInfo = null;
+
+async function loadTenantInfo() {
+  try {
+    const { tenant } = await api.get('/api/session');
+    tenantInfo = tenant;
+    setTenant(tenant);
+  } catch {
+    tenantInfo = null;
+  }
+}
+
+const moduleEnabled = (permission) => !tenantInfo || tenantInfo.modules.includes(permission.split('.')[0]);
+const websiteOn = () => !tenantInfo || tenantInfo.websiteEnabled !== false;
+const navItemVisible = (item) => can(item.permission) && moduleEnabled(item.permission)
+  && (!item.requiresWebsite || websiteOn());
 
 const ROUTE_PERMISSIONS = {
   dashboard: 'dashboard.view', pos: 'sales.create', sales: 'sales.view', returns: 'sales.view',
@@ -191,7 +218,7 @@ function renderNav() {
   if (!nav) return;
   const current = window.location.hash.replace(/^#\/?/, '').split('/')[0].split('?')[0] || 'dashboard';
   mount(nav, ...NAV.flatMap((section) => {
-    const items = section.items.filter((item) => can(item.permission));
+    const items = section.items.filter(navItemVisible);
     if (!items.length) return [];
     return [
       h('div', { class: 'nav-group' }, t(section.group)),
@@ -213,6 +240,9 @@ function renderNav() {
 // ------------------------------------------------------------------- boot
 
 async function boot() {
+  // Unauthenticated and cheap — needed before the very first render of the
+  // sidebar, on both the login path and the already-signed-in path below.
+  await loadTenantInfo();
   try {
     await loadSession();
   } catch {
@@ -258,7 +288,9 @@ async function startApp() {
     notFound: (host) => mount(host, h('div', { class: 'empty' }, t('noResults'))),
     beforeEach: (route) => {
       const required = ROUTE_PERMISSIONS[route.path];
-      if (required && !can(required)) {
+      const navItem = NAV.flatMap((s) => s.items).find((i) => i.path === route.path);
+      const allowed = !required || (navItem ? navItemVisible(navItem) : can(required));
+      if (!allowed) {
         toast(t('somethingWrong'), 'error');
         navigate(firstAllowedRoute(), true);
         return false;
@@ -307,7 +339,7 @@ async function startApp() {
 
 function firstAllowedRoute() {
   for (const section of NAV) {
-    for (const item of section.items) if (can(item.permission)) return item.path;
+    for (const item of section.items) if (navItemVisible(item)) return item.path;
   }
   return 'dashboard';
 }

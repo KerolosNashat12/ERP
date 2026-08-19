@@ -28,11 +28,32 @@ import {
   customerService, attributeService,
 } from '../../services/masterDataServices.js';
 import repositories from '../../infrastructure/repositories/index.js';
+import { currentTenant } from '../../infrastructure/database/connection.js';
 import { NotFoundError } from '../../shared/errors.js';
 
 const router = Router();
 
 // ----------------------------------------------------------------- session
+
+/**
+ * Tenant metadata for the shell — which modules are enabled, whether the
+ * website is on, the tenant's own display name. Deliberately unauthenticated
+ * (like `/api/shop/config`): none of this is secret, and the sidebar needs it
+ * before it knows whether a session even exists. `null` in single-shop mode,
+ * where there is nothing to report and nothing changes.
+ */
+router.get('/session', (req, res) => {
+  const tenant = currentTenant();
+  res.json({
+    tenant: tenant ? {
+      slug: tenant.slug,
+      name: tenant.name,
+      modules: [...tenant.modules],
+      websiteEnabled: tenant.websiteEnabled,
+    } : null,
+  });
+});
+
 const cookieOptions = {
   httpOnly: true,
   sameSite: 'lax',

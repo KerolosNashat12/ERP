@@ -2,6 +2,7 @@
 import config from '../../config/index.js';
 import authService from '../../services/AuthService.js';
 import repositories from '../../infrastructure/repositories/index.js';
+import { currentTenant } from '../../infrastructure/database/connection.js';
 import { AppError, ForbiddenError, UnauthorizedError, ValidationError } from '../../shared/errors.js';
 
 /** Extracts the JWT from the httpOnly cookie or an Authorization header. */
@@ -44,15 +45,57 @@ export async function authenticate(req, _res, next) {
   }
 }
 
-/** Route guard. `requirePermission('sales.create')` */
-export const requirePermission = (...codes) => (req, _res, next) => {
+/**
+ * Route guard. `requirePermission('sales.create')`
+ *
+ * A route requiring `sales.create` belongs to the `sales` module by
+ * construction, so this one check is also where module entitlements are
+ * enforced — every present and future route is covered without a
+ * hand-written URL-to-module table. The check runs against the *matched*
+ * code, never `codes[0]`: a route that accepts several permissions (e.g.
+ * `requirePermission('reports.view', 'sales.view')`) must not let an
+ * enabled module's permission smuggle through access that was really
+ * granted by a disabled one — that is exactly the bypass a naive
+ * "check the first code's module" implementation would open.
+ *
+ * With no tenant resolved (the single-shop build), `currentTenant()` is
+ * null and nothing about this changes at all.
+ */
+export const requirePermission = (...codes) => guard(codes, { enforceModule: true });
+
+/**
+ * The same guard with the module gate lifted, for the short reference lists
+ * (`GET /brands/options`, `/categories/options`, …) that other modules are
+ * built out of: a product form has to name a brand whether or not this shop
+ * bought the brands screen, and a shop on a products-only plan that cannot
+ * open the product form has not been sold a smaller ERP, it has been sold a
+ * broken one. The RBAC check is untouched — only the entitlement is — and
+ * these routes are read-only lists of the tenant's own data.
+ */
+export const requireLookup = (...codes) => guard(codes, { enforceModule: false });
+
+function guard(codes, { enforceModule }) {
+  return (req, _res, next) => {
   if (!req.permissions) return next(new UnauthorizedError());
-  const granted = codes.some((code) => req.permissions.includes(code));
-  if (!granted) {
+  const granted = codes.filter((code) => req.permissions.includes(code));
+  if (!granted.length) {
     return next(new ForbiddenError(`Missing permission: ${codes.join(' or ')}`));
   }
+
+  const tenant = enforceModule ? currentTenant() : null;
+  if (tenant) {
+    const withEnabledModule = granted.find((code) => tenant.modules.has(code.split('.')[0]));
+    if (!withEnabledModule) {
+      const module = granted[0].split('.')[0];
+      return next(new AppError(`This shop's plan does not include the "${module}" module`, {
+        status: 403, code: 'MODULE_NOT_ENABLED', details: { module },
+      }));
+    }
+  }
+
   return next();
-};
+  };
+}
 
 /** Zod-backed body validation. */
 export const validate = (schema, source = 'body') => (req, _res, next) => {
@@ -121,11 +164,18 @@ export function errorHandler(error, req, res, _next) {
     console.error(`[error] ${req.method} ${req.originalUrl}`, error);
   }
 
-  res.status(status).json({
+  const payload = {
     error: {
       code: isApp ? error.code : 'INTERNAL_ERROR',
       message: isApp ? error.message : 'Something went wrong on the server',
       details: isApp ? error.details : undefined,
     },
-  });
+  };
+  // The contract shape for this one code is `{ error: { code, module } }` —
+  // `module` sits next to `code`, not buried in `details`, so the sidebar
+  // can read it without knowing the general error envelope.
+  if (isApp && error.code === 'MODULE_NOT_ENABLED' && error.details?.module) {
+    payload.error.module = error.details.module;
+  }
+  res.status(status).json(payload);
 }

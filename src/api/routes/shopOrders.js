@@ -10,8 +10,23 @@ import { Router } from 'express';
 import { asyncHandler, validate } from '../middleware/index.js';
 import * as v from '../validators.js';
 import webOrders from '../../services/WebOrderService.js';
+import { currentTenant } from '../../infrastructure/database/connection.js';
 
 const router = Router();
+
+/**
+ * Same gate as `shop.js`, kept here too rather than relied on solely from the
+ * sibling router: both are mounted at the same `/api/shop` prefix in
+ * `server.js`, but a route here must still 404 on its own if this file is
+ * ever mounted independently of `shop.js`.
+ */
+router.use((req, res, next) => {
+  const tenant = currentTenant();
+  if (tenant && !tenant.websiteEnabled) {
+    return res.status(404).json({ error: { code: 'NOT_FOUND', message: `No route for ${req.method} ${req.path}` } });
+  }
+  return next();
+});
 
 /** Place an order. Reserves stock; does not sell anything. */
 router.post('/orders', validate(v.webOrderSchema), asyncHandler(async (req, res) => {

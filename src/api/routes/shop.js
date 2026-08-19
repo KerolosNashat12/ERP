@@ -12,9 +12,26 @@ import { asyncHandler, sendImage } from '../middleware/index.js';
 import storefront from '../../services/StorefrontService.js';
 import images from '../../services/ImageService.js';
 import webAssets from '../../services/WebAssetService.js';
+import { currentTenant } from '../../infrastructure/database/connection.js';
 import { NotFoundError } from '../../shared/errors.js';
 
 const router = Router();
+
+/**
+ * A tenant that has switched its website off must not leak that a shop even
+ * exists there — so this is a plain 404, the same shape `notFoundHandler`
+ * would produce, not a 403 that would confirm something is behind the door.
+ * Registered first, ahead of every route below, so nothing here is ever
+ * reachable while the switch is off. With no tenant resolved (the
+ * single-shop build), `currentTenant()` is null and nothing changes.
+ */
+router.use((req, res, next) => {
+  const tenant = currentTenant();
+  if (tenant && !tenant.websiteEnabled) {
+    return res.status(404).json({ error: { code: 'NOT_FOUND', message: `No route for ${req.method} ${req.path}` } });
+  }
+  return next();
+});
 
 /** Shop-wide settings, categories and brands the pages need on first paint. */
 router.get('/config', asyncHandler(async (_req, res) => {

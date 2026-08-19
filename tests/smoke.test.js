@@ -709,3 +709,12 @@ test('a locked-out user is let back in by an administrator, never by email', asy
 
   cookie = adminCookie;
 });
+
+test('a single shop reports no tenant — the platform is not merely disabled, it is absent', async () => {
+  // The same endpoint the ERP boots from. On a shop PC it must say "no tenant"
+  // rather than fail or invent one, because the front end uses this to decide
+  // whether any module is hidden — and a shop with modules missing from its own
+  // sidebar would be a very quiet way to break someone's till.
+  const session = await api('/api/session');
+  assert.equal(session.tenant, null);
+});

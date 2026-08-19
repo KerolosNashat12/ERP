@@ -3,7 +3,7 @@
  * GET /  GET /options  GET /:id  POST /  PUT /:id  DELETE /:id
  */
 import { Router } from 'express';
-import { asyncHandler, requirePermission, validate } from '../middleware/index.js';
+import { asyncHandler, requireLookup, requirePermission, validate } from '../middleware/index.js';
 
 export function crudRouter({ service, module, schema, updateSchema, extend }) {
   const router = Router();
@@ -21,7 +21,8 @@ export function crudRouter({ service, module, schema, updateSchema, extend }) {
     }));
   }));
 
-  router.get('/options', perm('view'), asyncHandler(async (_req, res) => {
+  // Reference data, not the module itself — see `requireLookup`.
+  router.get('/options', requireLookup(`${module}.view`), asyncHandler(async (_req, res) => {
     res.json({ rows: await service.options() });
   }));
 

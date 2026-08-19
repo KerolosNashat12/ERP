@@ -84,6 +84,20 @@ export const config = Object.freeze({
     database: process.env.MM_DB_FILE || path.join(DATA_DIR, 'mm-accessories.db'),
     public: path.join(ROOT_DIR, 'public'),
   },
+  /**
+   * The multi-tenant platform, off by default. With `enabled` false, nothing
+   * in `src/platform/*` is ever imported from a request path that matters —
+   * the single-shop build is exactly what it was before this existed.
+   *
+   * Hosting is out of scope this round: every tenant is a local SQLite file
+   * under `tenantsDir`, and the control-plane database itself is always the
+   * local file at `databaseFile`, regardless of MM_DB_DRIVER.
+   */
+  platform: {
+    enabled: process.env.MM_PLATFORM === '1',
+    databaseFile: process.env.MM_PLATFORM_DB || path.join(DATA_DIR, 'platform.db'),
+    tenantsDir: process.env.MM_TENANTS_DIR || path.join(DATA_DIR, 'tenants'),
+  },
   auth: {
     secret: resolveSecret(),
     tokenTtl: process.env.MM_TOKEN_TTL || '12h',

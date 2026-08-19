@@ -7,6 +7,17 @@
  * something to show a friendly card about.
  */
 
+/**
+ * The browser learns its tenant prefix from the URL: `''` for the
+ * single-shop build, `/t/<slug>` whenever the storefront was loaded under
+ * `/t/<slug>/shop`. Every request and every image URL this module builds
+ * goes through this, so the same bundle serves both.
+ */
+export function apiBase() {
+  const match = window.location.pathname.match(/^\/t\/([a-z0-9][a-z0-9-]{0,30})(?:\/|$)/);
+  return match ? `/t/${match[1]}` : '';
+}
+
 export class ShopError extends Error {
   constructor(message, status, code, details) {
     super(message);
@@ -19,7 +30,7 @@ export class ShopError extends Error {
 }
 
 async function request(path, { method = 'GET', body, query } = {}) {
-  const url = new URL(path, window.location.origin);
+  const url = new URL(apiBase() + path, window.location.origin);
   for (const [key, value] of Object.entries(query || {})) {
     if (value === undefined || value === null || value === '') continue;
     url.searchParams.set(key, value);
@@ -61,4 +72,4 @@ export const api = {
 };
 
 /** Photo bytes come straight off the API — no CDN, no build step, no bundling. */
-export const imageUrl = (id) => (id ? `/api/shop/images/${id}` : null);
+export const imageUrl = (id) => (id ? `${apiBase()}/api/shop/images/${id}` : null);

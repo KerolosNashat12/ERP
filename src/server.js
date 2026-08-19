@@ -14,6 +14,9 @@ import apiRouter from './api/routes/index.js';
 import shopRouter from './api/routes/shop.js';
 import shopOrdersRouter from './api/routes/shopOrders.js';
 import { attachRequestContext, errorHandler, notFoundHandler } from './api/middleware/index.js';
+import platformApiRouter from './api/routes/platform.js';
+import { resolveTenant } from './api/middleware/tenant.js';
+import { initPlatformDb } from './platform/db.js';
 
 const isHostedDb = () => config.database.driver === 'libsql';
 
@@ -48,6 +51,91 @@ export function createApp() {
       time: new Date().toISOString(),
     });
   });
+
+  /**
+   * The platform is entirely additive: with `config.platform.enabled` false,
+   * not one of these routes exists and everything below is the single-shop
+   * build, untouched — `server.js` behaves byte-for-byte as it did before
+   * multi-tenancy, which is rule 1 of the platform contract.
+   *
+   * `/api/platform` and `/t/:slug/api/*` are registered here, ahead of the
+   * single-tenant `/api/shop` and `/api` mounts below, for the exact reason
+   * those two are ordered relative to each other: Express matches `app.use`
+   * by path prefix in registration order, so a more specific mount must come
+   * first or the broader one swallows it — here that would mean an
+   * unauthenticated `/api/platform/auth/login` hitting the ERP's own
+   * `authenticate` middleware inside `apiRouter` and dying there as a plain
+   * 401, never reaching the platform router at all.
+   */
+  if (config.platform.enabled) {
+    app.use('/api/platform', platformApiRouter);
+    // The owner's own dashboard: its own cookie, its own router, never a
+    // tenant's data. Mounted before the ERP's own '/' catch-all below, so it
+    // wins on that one path — everywhere else is unchanged.
+    app.get('/', (_req, res) => {
+      res.sendFile(path.join(config.paths.public, 'platform', 'index.html'));
+    });
+    app.use('/platform', express.static(path.join(config.paths.public, 'platform'), {
+      index: false, redirect: false, maxAge: '1h',
+    }));
+    app.get('/platform*', (_req, res) => {
+      res.sendFile(path.join(config.paths.public, 'platform', 'index.html'));
+    });
+
+    // Tenant traffic. The shop API is mounted before the general API for the
+    // same reason as its single-tenant counterpart below: so nothing about a
+    // public storefront request can inherit the ERP's own routing by accident.
+    app.use('/t/:slug/api/shop', resolveTenant, shopRouter, shopOrdersRouter);
+    app.use('/t/:slug/api', resolveTenant, apiRouter);
+    app.use('/t/:slug/api', notFoundHandler);
+
+    // A tenant with the website switched off must not leak that a shop is
+    // there in any way — not the API (see shop.js/shopOrders.js), and not
+    // the storefront's own HTML or static assets either. Registered ahead
+    // of the static mount below, so a direct request for
+    // `/t/<slug>/shop/index.html` cannot bypass the check that guards the
+    // bare `/t/<slug>/shop` route by reaching the file through the static
+    // server instead.
+    app.use('/t/:slug/shop', resolveTenant, (req, res, next) => {
+      if (!req.tenant.websiteEnabled) return res.status(404).end();
+      return next();
+    });
+
+    // Static assets and the two SPAs, under the tenant's own prefix — so
+    // `/t/mm/js/app.js` resolves before falling through to a page shell.
+    app.use('/t/:slug', resolveTenant, express.static(config.paths.public, {
+      index: false, redirect: false, maxAge: '1h',
+    }));
+    app.get('/t/:slug/shop*', resolveTenant, (_req, res) => {
+      res.sendFile(path.join(config.paths.public, 'shop', 'index.html'));
+    });
+    app.get('/t/:slug*', resolveTenant, (_req, res) => {
+      res.sendFile(path.join(config.paths.public, 'index.html'));
+    });
+
+    /**
+     * In platform mode there is no "the shop". Every shop is a tenant addressed
+     * by slug, and the un-prefixed ERP below would serve the process default
+     * database — which belongs to nobody here. Left reachable it is not a
+     * cross-tenant leak so much as a way to key a sale into a database no shop
+     * is looking at, so it is closed rather than merely discouraged.
+     *
+     * `/api/health` is mounted above this and stays up: a deployment has to be
+     * able to say it is alive without naming a tenant.
+     */
+    app.use('/api/shop', notFoundHandler);
+    app.use('/api', notFoundHandler);
+
+    // Only page requests are answered with the owner's console. A request that
+    // names a file — `/js/app.js`, `/css/app.css` — must fall through to the
+    // static mount below, because both SPAs reference their assets from the
+    // root: swallowing those here serves HTML where the browser asked for a
+    // module and the page dies with a MIME type error and an empty screen.
+    app.get('*', (req, res, next) => {
+      if (path.extname(req.path)) return next();
+      return res.sendFile(path.join(config.paths.public, 'platform', 'index.html'));
+    });
+  }
 
   // Public storefront API. Mounted before the ERP router so nothing about the
   // shop can accidentally inherit its authentication middleware — and equally,
@@ -159,6 +247,11 @@ async function hardenCredentials() {
 /** Idempotent, cheap after the first call. Awaited by the request middleware. */
 export async function ensureDatabaseReady() {
   await initDb();
+  // The control plane is its own database, opened independently of the ERP's
+  // default connection — see src/platform/db.js. Idempotent, so paying this
+  // on every request (serverless has no other hook) costs one settled promise
+  // after the first call.
+  if (config.platform.enabled) await initPlatformDb();
   if (!isHostedDb()) return;
   bootstrap = bootstrap || bootstrapHostedDatabase().then(syncPermissions).then(hardenCredentials).catch((error) => {
     // Do not cache a failure: the next request should be able to try again.
@@ -171,6 +264,7 @@ export async function ensureDatabaseReady() {
 /** Startup path for a local run, where a real `listen()` happens. */
 async function prepareDatabase() {
   await initDb();
+  if (config.platform.enabled) await initPlatformDb();
 
   if (isHostedDb()) {
     await ensureDatabaseReady();
