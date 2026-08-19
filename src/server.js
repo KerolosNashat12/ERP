@@ -15,7 +15,7 @@ import shopRouter from './api/routes/shop.js';
 import shopOrdersRouter from './api/routes/shopOrders.js';
 import { attachRequestContext, errorHandler, notFoundHandler } from './api/middleware/index.js';
 import platformApiRouter from './api/routes/platform.js';
-import { resolveTenant } from './api/middleware/tenant.js';
+import { resolveTenant, resolveDefaultTenant } from './api/middleware/tenant.js';
 import { initPlatformDb } from './platform/db.js';
 import { ensureDefaultTenant } from './platform/bootstrapDefaultTenant.js';
 
@@ -126,14 +126,29 @@ export function createApp() {
     });
 
     /**
-     * In platform mode there is no "the shop". Every shop is a tenant addressed
-     * by slug, and the un-prefixed ERP below would serve the process default
-     * database — which belongs to nobody here. Left reachable it is not a
-     * cross-tenant leak so much as a way to key a sale into a database no shop
-     * is looking at, so it is closed rather than merely discouraged.
+     * The old addresses, still answering.
      *
-     * `/api/health` is mounted above this and stays up: a deployment has to be
-     * able to say it is alive without naming a tenant.
+     * With a default tenant named, an un-prefixed request is that shop's:
+     * `/api/shop/products` is its storefront's, `/api/sales` is its till's. This
+     * is not politeness, it is necessary — a host that serves `public/` as
+     * static files answers `/shop` and `/` from its CDN before this application
+     * sees them, so those pages load at the old addresses and call the old API
+     * paths no matter what routes exist here. Closing those paths would have
+     * broken a live storefront in front of its customers.
+     *
+     * Without a default tenant there is no "the shop", and the un-prefixed API
+     * would otherwise serve the process default database, which on a platform
+     * belongs to nobody — so there it stays closed.
+     */
+    if (config.platform.defaultTenant) {
+      const asDefault = resolveDefaultTenant(config.platform.defaultTenant);
+      app.use('/api/shop', asDefault, shopRouter, shopOrdersRouter);
+      app.use('/api', asDefault, apiRouter);
+    }
+
+    /**
+     * `/api/health` is mounted above all of this and stays up either way: a
+     * deployment has to be able to say it is alive without naming a tenant.
      */
     app.use('/api/shop', notFoundHandler);
     app.use('/api', notFoundHandler);
@@ -145,6 +160,11 @@ export function createApp() {
     // module and the page dies with a MIME type error and an empty screen.
     app.get('*', (req, res, next) => {
       if (path.extname(req.path)) return next();
+      // An unknown page belongs to whoever owns the root: the default shop if
+      // there is one, the console otherwise.
+      if (config.platform.defaultTenant) {
+        return res.sendFile(path.join(config.paths.public, 'index.html'));
+      }
       return res.sendFile(path.join(config.paths.public, 'platform', 'index.html'));
     });
   }

@@ -85,3 +85,24 @@ test('a shop that is not the default is unaffected', async () => {
   assert.equal(res.status, 200);
   assert.equal(body.tenant.slug, 'mainshop');
 });
+
+test('the old un-prefixed API answers as the default shop', async () => {
+  // The reason this exists: a host that serves `public/` statically hands
+  // `/shop` to the browser from its CDN, so the storefront loads at the old
+  // address and calls `/api/shop/...` with no prefix. Before this, those calls
+  // 404'd and a live storefront showed an error page to its customers.
+  const config_ = await fetch(`${base}/api/shop/config`);
+  assert.equal(config_.status, 200);
+  const body = await config_.json();
+  assert.equal(typeof body.shopEnabled, 'boolean');
+
+  const session = await (await fetch(`${base}/api/session`)).json();
+  assert.equal(session.tenant.slug, 'mainshop', 'and it is the default shop, not the process database');
+});
+
+test('an un-prefixed ERP call is that shop too, not an open door to a nameless database', async () => {
+  const res = await fetch(`${base}/api/products`);
+  // No session, so 401 — the point is that it reached the tenant's router at
+  // all rather than the platform's "no shop here" 404.
+  assert.equal(res.status, 401);
+});

@@ -310,7 +310,7 @@ test('an auth token is never echoed back by the API', async () => {
 
   // What the create form asks before it picks a default, and all it is told.
   const environment = await api('/api/platform/environment', { cookie: login.cookie });
-  assert.deepEqual(environment.data, { hostedControlPlane: true },
+  assert.deepEqual(environment.data, { hostedControlPlane: true, canProvision: false },
     'the dashboard learns the shape of the deployment and nothing about its credentials');
 
   // It really was stored — the control plane needs it to open the database.

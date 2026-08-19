@@ -14,6 +14,7 @@ import crypto from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import config from '../config/index.js';
 import { platformDb } from './db.js';
+import turso from './turso.js';
 import { openConnection, runWithTenant } from '../infrastructure/database/connection.js';
 import { connectionFor } from '../infrastructure/database/connections.js';
 import { runMigrations } from '../infrastructure/database/migrations/index.js';
@@ -102,11 +103,15 @@ function redactToken(message, authToken) {
 }
 
 /**
- * Open an already-existing database and prove it answers, so a wrong URL or a
- * rejected token surfaces as one sentence a shop owner can act on rather than
- * as a driver stack trace thrown from the middle of a DDL batch.
+ * Open a libSQL database and prove it answers, so a wrong URL or a rejected
+ * token surfaces as one sentence a shop owner can act on rather than as a
+ * driver stack trace thrown from the middle of a DDL batch.
+ *
+ * The sentence differs by mode because the owner's next move does: one of them
+ * typed a URL and can check it, the other typed a shop name and can only try
+ * again.
  */
-async function connectAttached({ url, authToken }) {
+async function connectDatabase({ mode, url, authToken }) {
   let connection = null;
   try {
     connection = await openConnection({ driver: 'libsql', url, authToken });
@@ -116,22 +121,28 @@ async function connectAttached({ url, authToken }) {
     if (connection) {
       try { await connection.close(); } catch { /* it never opened; nothing to salvage */ }
     }
+    const detail = redactToken(error.message, authToken);
     throw new ValidationError(
-      'Could not connect to that database — check the URL and the auth token. '
-      + `(${redactToken(error.message, authToken)})`,
+      mode === 'auto'
+        ? `The new database could not be opened yet — nothing was kept, please try again. (${detail})`
+        : 'Could not connect to that database — check the URL and the auth token. '
+          + `(${detail})`,
     );
   }
 }
 
 /**
- * Where this tenant's data will live. The two modes are the difference between
- * "make me a database" and "here is one already":
+ * Where this tenant's data will live. The three modes are the difference
+ * between "make me a database", "here is one already", and "put it on this PC":
  *
- *   { mode: 'file' }                    a new SQLite file under `tenantsDir`
+ *   { mode: 'auto' }                    a database Turso makes for this shop
  *   { mode: 'libsql', url, authToken }  an existing database, attached as-is
+ *   { mode: 'file' }                    a new SQLite file under `tenantsDir`
  *
  * Only the file mode touches the disk — and only to check that it is not about
- * to overwrite something.
+ * to overwrite something. `auto` cannot be resolved here at all: its URL and
+ * token do not exist until Turso has been asked, which is a step `create()`
+ * runs itself so that it can also undo it.
  */
 function resolveDatabaseTarget(slug, database) {
   const mode = database?.mode || 'file';
@@ -145,8 +156,20 @@ function resolveDatabaseTarget(slug, database) {
     return { mode, driver: 'sqlite', file, url: null, authToken: null };
   }
 
+  if (mode === 'auto') {
+    if (!turso.canProvision()) {
+      throw new ValidationError(
+        'This deployment cannot create a database by itself yet — add TURSO_API_TOKEN and TURSO_ORG '
+        + 'to it, or choose an existing database and paste its URL instead',
+      );
+    }
+    return {
+      mode, driver: 'libsql', file: null, url: null, authToken: null, name: turso.databaseName(slug),
+    };
+  }
+
   if (mode !== 'libsql') {
-    throw new ValidationError(`Unknown database mode "${mode}" — use "file" or "libsql"`);
+    throw new ValidationError(`Unknown database mode "${mode}" — use "auto", "file" or "libsql"`);
   }
 
   const url = String(database.url || '').trim();
@@ -234,7 +257,10 @@ export async function get(slug) {
  * `input.database` says where the data lives. `{ mode: 'file' }` is the default
  * and today's behaviour. `{ mode: 'libsql', url, authToken }` attaches a
  * database that already exists — which is how a shop that is already serving
- * customers joins the platform without moving a byte.
+ * customers joins the platform without moving a byte. `{ mode: 'auto' }` asks
+ * Turso for a new one, so the owner types a shop name and nothing else; it
+ * exists only to produce a URL and a token, and from the moment it has them it
+ * is the attach path, step for step.
  *
  * Whether to seed is decided by what is in the database, never by a flag the
  * caller passes. A caller who ticks the wrong box in a form should not be able
@@ -246,10 +272,12 @@ export async function get(slug) {
  *                  report back what was found so the caller can see that
  *                  nothing was lost
  *
- * Rollback differs for the same reason. A file this call created is deleted on
- * failure. An attached database is never deleted, never truncated and never
- * altered on failure — a failed attach leaves the customer's data exactly as it
- * was found, and only the control-plane row is removed.
+ * Rollback differs for the same reason, and the difference is about ownership,
+ * not about drivers. A file this call created is deleted on failure, and so is
+ * a Turso database this call created — neither has ever held anybody's data. An
+ * *attached* database is never deleted, never truncated and never altered on
+ * failure, however far provisioning got: a failed attach leaves the customer's
+ * data exactly as it was found, and only the control-plane row is removed.
  */
 export async function create(input, actor = null) {
   const {
@@ -269,8 +297,26 @@ export async function create(input, actor = null) {
   const now = new Date().toISOString();
   let tenantId = null;
   let fileCreated = false;
+  /**
+   * The name of a database *this call* asked Turso for, and nothing else. Set
+   * only once Turso confirms it exists, so the rollback can tell a database
+   * that is seconds old and has never been used from a customer's own.
+   */
+  let createdDatabase = null;
 
   try {
+    if (target.mode === 'auto') {
+      const created = await turso.createDatabase(target.name);
+      createdDatabase = created.name;
+      target.url = turso.databaseUrl(created.hostname);
+      target.authToken = await turso.createDatabaseToken(created.name);
+      // Belt and braces on the one invariant that cannot be recovered from: a
+      // name Turso says is free should never collide, but if it somehow does,
+      // failing here (and deleting what was just made) beats two shops reading
+      // one database.
+      await assertDatabaseNotShared(target.url);
+    }
+
     const inserted = await db.prepare(`
       INSERT INTO tenants (slug, name_en, name_ar, status, driver, db_file, db_url, db_auth_token,
                             website_enabled, max_users, max_products, created_at, updated_at)
@@ -287,8 +333,8 @@ export async function create(input, actor = null) {
     }
 
     let connection;
-    if (target.mode === 'libsql') {
-      connection = await connectAttached(target);
+    if (target.driver === 'libsql') {
+      connection = await connectDatabase(target);
     } else {
       connection = await openConnection({ driver: 'sqlite', file: target.file });
       fileCreated = true;
@@ -359,6 +405,23 @@ export async function create(input, actor = null) {
         const file = `${target.file}${suffix}`;
         if (fs.existsSync(file)) fs.rmSync(file, { force: true });
       }
+    }
+    /**
+     * The asymmetry, in one place. `createdDatabase` is set on exactly one
+     * path — a database this call made seconds ago, that no shop has ever been
+     * pointed at and that contains nothing but a schema. Leaving it behind
+     * would bill the owner for an empty database and block the retry, since the
+     * next attempt would find the name taken. So it goes.
+     *
+     * A customer's own database never reaches this line: `mode: 'libsql'`
+     * leaves `createdDatabase` null no matter what failed or how late, which is
+     * what makes "we never delete a customer's data" a property of the code
+     * rather than a promise.
+     */
+    if (createdDatabase) {
+      try {
+        await turso.deleteDatabase(createdDatabase);
+      } catch { /* the failure that got us here is the one worth reporting */ }
     }
     throw error;
   }

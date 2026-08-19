@@ -74,6 +74,24 @@ const PLATFORM_FILE = readPlatformFile();
 const PLATFORM_ENABLED = process.env.MM_PLATFORM === '1'
   || (process.env.MM_PLATFORM !== '0' && PLATFORM_FILE.enabled);
 
+/**
+ * The address the world reaches this deployment at.
+ *
+ * Only ever a fallback: a request knows its own host far better than an
+ * environment variable does (see `src/platform/links.js`). It matters where
+ * there is no request to ask — a script, a scheduled job — and on Vercel,
+ * which names the deployment in VERCEL_PROJECT_PRODUCTION_URL as a bare
+ * hostname, so the scheme is put back here.
+ */
+const PUBLIC_URL = (() => {
+  const explicit = (process.env.MM_PUBLIC_URL || '').trim();
+  const vercel = (process.env.VERCEL_PROJECT_PRODUCTION_URL || '').trim();
+  const chosen = explicit || vercel;
+  if (!chosen) return '';
+  const absolute = /^https?:\/\//i.test(chosen) ? chosen : `https://${chosen}`;
+  return absolute.replace(/\/+$/, '');
+})();
+
 const DATA_DIR = process.env.MM_DATA_DIR
   ? path.resolve(process.env.MM_DATA_DIR)
   : path.join(ROOT_DIR, 'data');
@@ -181,6 +199,22 @@ export const config = Object.freeze({
      */
     defaultTenant: (process.env.MM_DEFAULT_TENANT || PLATFORM_FILE.defaultTenant || '').trim(),
   },
+  /**
+   * How this deployment makes a database for a new shop by itself.
+   *
+   * `apiToken` is the Turso *Platform* API token — the one that can create and
+   * destroy databases — and not a database token. With it or the organisation
+   * unset, nothing about creating a shop changes: the console keeps offering
+   * only the two manual choices. `apiUrl` is here so the provisioning path can
+   * be pointed at a stub and exercised without a Turso account.
+   */
+  turso: {
+    apiUrl: (process.env.TURSO_API_URL || 'https://api.turso.tech').replace(/\/+$/, ''),
+    apiToken: process.env.TURSO_API_TOKEN || '',
+    org: process.env.TURSO_ORG || '',
+    group: process.env.TURSO_GROUP || 'default',
+  },
+  publicUrl: PUBLIC_URL,
   auth: {
     secret: resolveSecret(),
     tokenTtl: process.env.MM_TOKEN_TTL || '12h',

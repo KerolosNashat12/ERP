@@ -8,7 +8,7 @@
 
 const dictionary = {
   en: {
-    platformName: 'M&M Platform', platformTag: 'Fleet console — every shop, one place',
+    platformName: 'KJ Admin', platformTag: 'Fleet console — every shop, one place',
     signIn: 'Sign in', signOut: 'Sign out', username: 'Username', password: 'Password',
     signingIn: 'Signing in…', welcome: 'Owner console', signInSubtitle: 'Sign in with your platform account',
     versionTag: 'v1.0 · Fleet control',
@@ -107,7 +107,7 @@ const dictionary = {
   },
 
   ar: {
-    platformName: 'منصّة إم آند إم', platformTag: 'لوحة إدارة الأسطول — كل المتاجر في مكان واحد',
+    platformName: 'كي جيه أدمن', platformTag: 'لوحة إدارة الأسطول — كل المتاجر في مكان واحد',
     signIn: 'تسجيل الدخول', signOut: 'تسجيل الخروج', username: 'اسم المستخدم', password: 'كلمة المرور',
     signingIn: 'جارٍ تسجيل الدخول…', welcome: 'لوحة المالك', signInSubtitle: 'سجّل الدخول بحساب المنصّة',
     showPassword: 'إظهار كلمة المرور', hidePassword: 'إخفاء كلمة المرور',

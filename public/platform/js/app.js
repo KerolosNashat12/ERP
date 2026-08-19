@@ -34,7 +34,7 @@ function buildShell() {
 
   const topbar = h('header', { class: 'topbar' },
     h('div', { class: 'brand' },
-      h('span', { class: 'mark' }, 'M&M'),
+      h('span', { class: 'mark' }, 'KJ'),
       h('div', {},
         h('div', { class: 'name' }, t('platformName')),
         h('div', { class: 'sub' }, t('versionTag')))),

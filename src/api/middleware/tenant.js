@@ -70,9 +70,26 @@ export async function forgetTenant(slug) {
   await forgetConnection(slug);
 }
 
+/**
+ * The same resolution, for a slug that comes from configuration rather than the
+ * URL.
+ *
+ * A deployment that served one shop before it served a fleet keeps answering at
+ * its old addresses — `/`, `/shop`, `/api/…` with no prefix. A redirect is not
+ * enough on its own: a host that serves `public/` as static files answers
+ * `/shop` from the CDN before the application is reached, so the page loads at
+ * the old address whatever the application would have preferred, and then calls
+ * the old API paths. Those paths therefore have to keep working, and this is
+ * what makes them mean "the default shop" instead of "no shop at all".
+ */
+export const resolveDefaultTenant = (slug) => (req, res, next) => resolve(slug, req, res, next);
+
 export async function resolveTenant(req, res, next) {
+  return resolve(req.params.slug, req, res, next);
+}
+
+async function resolve(slug, req, res, next) {
   try {
-    const { slug } = req.params;
     const tenant = await loadTenant(slug);
 
     if (!tenant) {
@@ -106,4 +123,4 @@ export async function resolveTenant(req, res, next) {
   }
 }
 
-export default { resolveTenant, forgetTenant, loadTenant };
+export default { resolveTenant, resolveDefaultTenant, forgetTenant, loadTenant };
