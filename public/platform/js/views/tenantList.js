@@ -178,13 +178,17 @@ export async function tenantsView(root) {
         },
         {
           label: t('links'),
-          render: (row) => h('div', { class: 'links-cell' },
-            linkRow({ label: t('erpLink'), url: row.links?.erp || `/t/${row.slug}` }),
+          // Two words and a glyph, not two addresses: a table row is not where
+          // a URL is read, and the copy button beside each one is how it
+          // actually leaves this screen.
+          render: (row) => h('div', { class: 'links-cell compact' },
+            linkRow({ label: t('erpLink'), url: row.links?.erp || `/t/${row.slug}`, compact: true }),
             linkRow({
               label: t('storeLink'),
               url: row.links?.shop || `/t/${row.slug}/shop`,
               off: !row.websiteEnabled,
               title: row.websiteEnabled ? undefined : t('websiteOffHint'),
+              compact: true,
             })),
         },
         {

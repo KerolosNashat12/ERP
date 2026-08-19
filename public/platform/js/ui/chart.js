@@ -65,8 +65,8 @@ export function trendChart({ trend = [], currency = 'EGP' } = {}) {
   }, readoutDay, readoutRevenue, readoutOrders);
 
   const legend = h('div', { class: 'chart-legend' },
-    h('span', {}, h('i', { style: { background: 'var(--gold)' } }), t('revenue')),
-    h('span', {}, h('i', { class: 'bar', style: { background: 'var(--accent-2)' } }), t('orders')));
+    h('span', {}, h('i', { style: { background: 'var(--primary)' } }), t('revenue')),
+    h('span', {}, h('i', { class: 'bar', style: { background: 'var(--warn)' } }), t('orders')));
 
   const svg = s('svg', {
     class: 'chart-canvas',
@@ -146,8 +146,8 @@ export function trendChart({ trend = [], currency = 'EGP' } = {}) {
 
     const defs = s('defs', {},
       s('linearGradient', { id: 'kjRevFill', x1: '0', y1: '0', x2: '0', y2: '1' },
-        s('stop', { offset: '0%', 'stop-color': 'var(--gold)', 'stop-opacity': '.28' }),
-        s('stop', { offset: '100%', 'stop-color': 'var(--gold)', 'stop-opacity': '0' })));
+        s('stop', { offset: '0%', 'stop-color': 'var(--primary)', 'stop-opacity': '.22' }),
+        s('stop', { offset: '100%', 'stop-color': 'var(--primary)', 'stop-opacity': '0' })));
     svg.append(defs);
 
     // ── revenue panel: three grid lines and their labels ──────────────────

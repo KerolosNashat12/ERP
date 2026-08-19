@@ -14,6 +14,9 @@ const dictionary = {
     signIn: 'Sign in', signOut: 'Sign out', username: 'Username', password: 'Password',
     signingIn: 'Signing in…', welcome: 'Owner console', signInSubtitle: 'Sign in with your platform account',
     versionTag: 'v1.0 · Fleet control',
+    // The shell: the rail's own labels and the one role this console has.
+    ownerRole: 'Owner', menu: 'Menu', closeMenu: 'Close the menu',
+    signOutConfirm: 'You will be signed out of the owner console on this device.',
     showPassword: 'Show password', hidePassword: 'Hide password',
     invalidCredentials: 'Invalid username or password',
     firstRunTitle: 'Set up your console',
@@ -221,6 +224,8 @@ const dictionary = {
     resetAdminConfirmBody: 'يتم توليد كلمة مرور مؤقتة جديدة لحساب "admin" في هذا المتجر. كلمة المرور القديمة تتوقف عن العمل فورًا.',
     notes: 'ملاحظات', createdAt: 'تاريخ الإنشاء', updatedAt: 'آخر تحديث',
     versionTag: 'الإصدار 1.0 · إدارة الأسطول',
+    ownerRole: 'المالك', menu: 'القائمة', closeMenu: 'إغلاق القائمة',
+    signOutConfirm: 'هيتم تسجيل خروجك من لوحة المالك على الجهاز ده.',
 
     migrationsSubtitle: 'تطبيق المخطط والتحديثات على كل متجر مفعّل دفعة واحدة',
     runMigration: 'تشغيل التحديث على كل الأسطول',

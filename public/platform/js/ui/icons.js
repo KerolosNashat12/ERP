@@ -26,6 +26,10 @@ export const icons = {
   clock: svg('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.2 2"/>'),
   sliders: svg('<path d="M4 6h10"/><path d="M18 6h2"/><path d="M4 12h4"/><path d="M12 12h8"/><path d="M4 18h10"/><path d="M18 18h2"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="16" cy="18" r="2"/>'),
   arrows: svg('<path d="M7 3v14"/><path d="m3 13 4 4 4-4"/><path d="M17 21V7"/><path d="m13 11 4-4 4 4"/>'),
+  /* The rail's own three: the way out, the way in on a phone, and the way back. */
+  signout: svg('<path d="M15 17l5-5-5-5"/><path d="M20 12H9"/><path d="M12 4H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h5"/>'),
+  menu: svg('<path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h16"/>'),
+  close: svg('<path d="M6 6l12 12"/><path d="M18 6 6 18"/>'),
 };
 
 export default icons;

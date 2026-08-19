@@ -61,7 +61,7 @@ function usersTable(slug, rows, reload) {
       {
         label: t('roleColumn'),
         render: (row) => (row.role
-          ? tag(roleName(row.role), row.role === 'admin' ? 'gold' : 'quiet')
+          ? tag(roleName(row.role), row.role === 'admin' ? 'brand' : 'quiet')
           : h('span', { class: 'muted' }, '—')),
       },
       {

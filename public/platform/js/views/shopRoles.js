@@ -195,7 +195,7 @@ function rolesTable(rows, total, selected, onSelect) {
 function coverageCell(held, total) {
   return h('div', { class: 'meter-cell' },
     h('span', { class: 'meter-label' }, h('span', { dir: 'ltr' }, `${int(held)} / ${int(total)}`)),
-    meter(total ? held / total : 0, 'gold'));
+    meter(total ? held / total : 0, 'primary'));
 }
 
 function matrixCard(role, modules, actionsByModule, total, enabledModules, heldOnly, onHeldOnly) {
@@ -238,7 +238,7 @@ function modulePanel(module, permissions, held, enabledModules) {
     h('div', { class: 'row between tight' },
       h('span', { class: 'strong' }, t(module)),
       h('span', { class: 'small muted nowrap' }, summary)),
-    meter(permissions.length ? holds / permissions.length : 0, 'gold'),
+    meter(permissions.length ? holds / permissions.length : 0, 'primary'),
     // A chip, not a banner: `.stack` is a grid, so a bare span would stretch
     // to the panel's full width and read as a bar rather than as a label.
     off

@@ -53,8 +53,8 @@ export function card({
 
 /**
  * One figure, large, with a small label above it and a quiet comparison below.
- * `tone` tints it: 'accent' (gold — the figure that matters most on the
- * screen), 'ok', 'warn', 'danger'.
+ * `tone` marks it: 'accent' (the figure that matters most on the screen — it
+ * is the one that carries a sparkline), 'ok', 'warn', 'danger'.
  */
 export function kpi({
   label, value, sub, tone = '', title, spark,
@@ -68,12 +68,20 @@ export function kpi({
 
 export const kpiRow = (...tiles) => h('div', { class: 'kpis' }, tiles.flat().filter(Boolean));
 
-/** The second tier: figures worth showing, not worth a tile each. */
+/**
+ * The second tier: figures worth showing, not worth a tile each. One white
+ * card, thin dividers, the labels muted underneath — and each value in the
+ * colour of what it means (`tone`: 'primary', 'ok', 'warn', 'danger'), which
+ * is why a suspended shop is orange here and a healthy one is green. Colour by
+ * meaning; never by position in the row.
+ */
 export function metricStrip(items) {
   return h('div', { class: 'metric-strip' },
-    items.filter(Boolean).map((item, index) => h('div', { class: `metric${index ? ' sep' : ''}` },
-      h('b', {}, item.value),
-      h('span', {}, item.label))));
+    items.filter(Boolean).map((item, index) => h('div', {
+      class: `metric${index ? ' sep' : ''}${item.tone ? ` ${item.tone}` : ''}`,
+    },
+    h('b', {}, item.value),
+    h('span', {}, item.label))));
 }
 
 /**
@@ -115,12 +123,13 @@ export function amountCell(value, currency, fractionOfMax) {
   }
   return h('div', { class: 'amount-cell' },
     h('span', { class: 'amount' }, moneyBig(value, currency)),
-    fractionOfMax === undefined ? null : meter(fractionOfMax, 'gold'));
+    fractionOfMax === undefined ? null : meter(fractionOfMax, 'primary'));
 }
 
 // -------------------------------------------------------------------- chips
 
-export const statusCell = (status) => h('span', { class: 'status-cell' },
+/** A pill, not a word: green while a shop is trading, red once it is stopped. */
+export const statusCell = (status) => h('span', { class: `status-cell ${status}` },
   h('span', { class: `status-dot ${status}` }),
   status === 'active' ? t('active') : t('suspended'));
 
@@ -193,8 +202,29 @@ export function copyButton(value, label) {
  * happens.
  */
 export function linkRow({
-  label, url, off = false, title,
+  label, url, off = false, title, compact = false,
 }) {
+  const copy = copyButton(url, `${t('copyToClipboard')} — ${label}`);
+
+  /**
+   * In a table row the address itself is noise — thirty characters of scheme
+   * and host, repeated twice on every line, to say "ERP" and "the shop". The
+   * compact form says exactly that, with the external-link glyph to promise a
+   * new tab, and keeps the address on the title and on the copy button.
+   */
+  if (compact) {
+    return h('div', { class: `link-row compact${off ? ' off' : ''}` },
+      h('a', {
+        class: 'link-pill',
+        href: url,
+        target: '_blank',
+        rel: 'noopener',
+        title: title || url,
+        onclick: (event) => event.stopPropagation(),
+      }, h('span', {}, label), h('span', { class: 'ext', html: icons.external })),
+      copy);
+  }
+
   return h('div', { class: `link-row${off ? ' off' : ''}` },
     h('span', { class: 'link-label' }, label),
     h('a', {
@@ -205,7 +235,7 @@ export function linkRow({
       title: title || url,
       onclick: (event) => event.stopPropagation(),
     }, url.replace(/^https?:\/\//, '')),
-    copyButton(url, `${t('copyToClipboard')} — ${label}`));
+    copy);
 }
 
 // ------------------------------------------------------------------ choices

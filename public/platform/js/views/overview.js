@@ -17,7 +17,7 @@
  */
 import api from '../core/api.js';
 import { h, mount, frag, dataTable } from '../core/dom.js';
-import { t, pickName } from '../core/i18n.js';
+import { t, pickName, getLanguage } from '../core/i18n.js';
 import { navigate } from '../core/router.js';
 import {
   pageHead, card, kpi, kpiRow, metricStrip, amountCell, statusCell, iconButton,
@@ -57,7 +57,7 @@ export async function overviewView(root) {
     // the chart card and the table. Nothing on this page moves when it lands.
     skeleton: () => frag(
       skKpis(4),
-      h('div', { class: 'metric-strip' }, Array.from({ length: 5 }, () => h('div', { class: 'metric' },
+      h('div', { class: 'metric-strip' }, Array.from({ length: 6 }, () => h('div', { class: 'metric' },
         skBlock(19), h('span', { style: { display: 'block', height: '6px' } }), skBlock(10)))),
       skCard(skBlock(324)),
       skCard(skRows(4, 6), true),
@@ -137,12 +137,16 @@ function render(data) {
       }),
     ),
 
+    // Colour by meaning: the fleet's own counts in indigo, the shops that are
+    // trading in green, the ones that were stopped in orange, and anything the
+    // console could not read at all in red.
     metricStrip([
-      { label: t('shops'), value: int(totals.shops) },
-      { label: t('active'), value: int(totals.activeShops) },
-      { label: t('suspended'), value: int(totals.suspendedShops) },
-      { label: t('usersTotal'), value: int(totals.users) },
-      { label: t('productsTotal'), value: int(totals.products) },
+      { label: t('shops'), value: int(totals.shops), tone: 'primary' },
+      { label: t('active'), value: int(totals.activeShops), tone: 'ok' },
+      { label: t('suspended'), value: int(totals.suspendedShops), tone: totals.suspendedShops > 0 ? 'warn' : '' },
+      { label: t('unreachable'), value: int(unreadable.length), tone: unreadable.length > 0 ? 'danger' : '' },
+      { label: t('usersTotal'), value: int(totals.users), tone: 'primary' },
+      { label: t('productsTotal'), value: int(totals.products), tone: 'primary' },
     ]),
 
     unreadable.length
@@ -196,8 +200,12 @@ function shopsTable(shops, fleetCurrency) {
     columns: [
       {
         label: t('shop'),
+        // The shop's own name first and bold, then the other language's name
+        // and the slug underneath — the same three lines as the shops screen,
+        // so one shop looks like one shop on both of them.
         render: (shop) => h('div', { class: 'cell-title' },
           h('span', { class: 'name' }, (shop.tenant ? pickName(shop.tenant) : shop.name) || shop.slug),
+          shop.tenant && otherName(shop.tenant) ? h('span', { class: 'sub' }, otherName(shop.tenant)) : null,
           h('span', { class: 'sub mono' }, shop.slug)),
       },
       {
@@ -256,5 +264,8 @@ function shopsTable(shops, fleetCurrency) {
 }
 
 const dash = () => h('span', { class: 'muted' }, '—');
+
+/** The name the reader is not reading right now — Latin under Arabic, and back. */
+const otherName = (tenant) => (getLanguage() === 'ar' ? tenant.nameEn : (tenant.nameAr || '')) || '';
 
 export default overviewView;
