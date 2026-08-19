@@ -4,7 +4,7 @@ import { h, mount, modal } from './core/dom.js';
 import { t, setLanguage, getLanguage } from './core/i18n.js';
 import { defineRoutes, startRouter, navigate, parseHash } from './core/router.js';
 
-import { renderLogin } from './views/login.js';
+import { renderLogin, renderSetup } from './views/login.js';
 import { tenantsView } from './views/tenantList.js';
 import { tenantDetailView } from './views/tenantDetail.js';
 import { migrateView } from './views/migrate.js';
@@ -98,10 +98,21 @@ async function boot() {
     const { user } = await api.get('/auth/me');
     currentUser = user;
   } catch {
-    renderLogin(appRoot, async (user) => {
+    // A console with no owner yet asks for one to be made rather than for a
+    // password that does not exist — the difference between a first run that
+    // explains itself and one that looks broken.
+    let needsSetup = false;
+    try {
+      ({ needsSetup } = await api.get('/auth/state'));
+    } catch {
+      // If even that cannot be reached, the sign-in form is the safer guess.
+    }
+    const onReady = async (user) => {
       currentUser = user;
       await startApp();
-    });
+    };
+    if (needsSetup) renderSetup(appRoot, onReady);
+    else renderLogin(appRoot, onReady);
     appRoot.classList.remove('app-loading');
     return;
   }

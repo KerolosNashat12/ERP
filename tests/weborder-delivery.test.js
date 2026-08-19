@@ -8,11 +8,14 @@
  * `freeDeliveryOver` at the top level unchanged, and settings write
  * validation rejects a bad enum / an out-of-range `banner_box_width`.
  */
+import './single-shop.js'; // must be first — see that file
 import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { createApp } from '../src/server.js';
 import { initDb, closeDb } from '../src/infrastructure/database/connection.js';
 import { deliveryFor } from '../src/shared/delivery.js';
+
+
 
 let base = process.env.MM_TEST_URL || '';
 let server = null;

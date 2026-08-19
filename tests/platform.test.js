@@ -281,3 +281,4 @@ test('tenant-import copies the source database and leaves the original untouched
   assert.equal(tenant.status, 'active');
   assert.equal(tenant.modules.length > 0, true, 'every module is enabled on import');
 });
+

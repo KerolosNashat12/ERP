@@ -17,6 +17,7 @@ import { attachRequestContext, errorHandler, notFoundHandler } from './api/middl
 import platformApiRouter from './api/routes/platform.js';
 import { resolveTenant } from './api/middleware/tenant.js';
 import { initPlatformDb } from './platform/db.js';
+import { ensureDefaultTenant } from './platform/bootstrapDefaultTenant.js';
 
 const isHostedDb = () => config.database.driver === 'libsql';
 
@@ -72,9 +73,20 @@ export function createApp() {
     // The owner's own dashboard: its own cookie, its own router, never a
     // tenant's data. Mounted before the ERP's own '/' catch-all below, so it
     // wins on that one path — everywhere else is unchanged.
-    app.get('/', (_req, res) => {
-      res.sendFile(path.join(config.paths.public, 'platform', 'index.html'));
-    });
+    // With a default tenant named, the addresses this deployment already had
+    // keep working: `/` and `/shop` are that shop's, and the console moves to
+    // `/platform`. The redirect is deliberate rather than serving the same
+    // files at two addresses — one canonical URL per page, so a customer who
+    // shares the link shares the one that will still be right tomorrow.
+    if (config.platform.defaultTenant) {
+      const home = `/t/${config.platform.defaultTenant}`;
+      app.get('/', (_req, res) => res.redirect(302, home));
+      app.get('/shop*', (req, res) => res.redirect(302, `${home}/shop${req.path.slice('/shop'.length)}`));
+    } else {
+      app.get('/', (_req, res) => {
+        res.sendFile(path.join(config.paths.public, 'platform', 'index.html'));
+      });
+    }
     app.use('/platform', express.static(path.join(config.paths.public, 'platform'), {
       index: false, redirect: false, maxAge: '1h',
     }));
@@ -259,6 +271,9 @@ export async function ensureDatabaseReady() {
     throw error;
   });
   await bootstrap;
+  // Runs after the schema is up, so the shop it adopts is a shop that exists.
+  // It never throws into a request — see ensureDefaultTenant.
+  if (config.platform.enabled) await ensureDefaultTenant();
 }
 
 /** Startup path for a local run, where a real `listen()` happens. */
@@ -283,6 +298,7 @@ async function prepareDatabase() {
   }
   await syncPermissions();
   await hardenCredentials();
+  if (config.platform.enabled) await ensureDefaultTenant();
 }
 
 /**

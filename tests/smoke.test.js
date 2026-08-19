@@ -4,10 +4,13 @@
  * Exercises the full commercial cycle: catalogue -> purchase -> receive ->
  * sell (with a promotion) -> return -> report -> audit.
  */
+import './single-shop.js'; // must be first — see that file
 import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { createApp } from '../src/server.js';
 import { initDb, closeDb, supportsFileBackup } from '../src/infrastructure/database/connection.js';
+
+
 
 /**
  * By default the suite starts the app itself on an ephemeral port, so

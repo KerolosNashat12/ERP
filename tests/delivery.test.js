@@ -3,9 +3,12 @@
  * a short list of rules that must never regress silently. No server, no
  * database: this is the pure function itself.
  */
+import './single-shop.js'; // must be first — see that file
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { deliveryFor, round2 } from '../src/shared/delivery.js';
+
+
 
 const CASES = [
   {

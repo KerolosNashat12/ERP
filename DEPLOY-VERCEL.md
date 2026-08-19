@@ -66,8 +66,18 @@ section for a single-shop deployment.
 | Variable | What it does | Required |
 |---|---|---|
 | `MM_PLATFORM` | `1` turns the fleet console on. Unset = single shop, unchanged | no |
+> **The three-variable switch.** On a deployment that is already hosting one
+> shop, set `MM_PLATFORM=1`, `MM_PLATFORM_OWNER_PASSWORD` and
+> `MM_DEFAULT_TENANT` (the slug you want that shop to have) and redeploy. The
+> register goes into the shop's own Turso database, the shop is registered as
+> that tenant and **adopted** — schema and migrations applied, nothing seeded,
+> no password reset — and `/` and `/shop` redirect to it, so no saved link
+> breaks. Give the register its own database with `MM_PLATFORM_DB_URL` when you
+> want it separated, which is worth doing once the fleet is real.
+
 | `MM_PLATFORM_DB_URL` | the **control plane's** own Turso database URL | **yes, when `MM_PLATFORM=1` on Vercel** |
 | `MM_PLATFORM_DB_TOKEN` | its auth token | yes, if that database needs one |
+| `MM_DEFAULT_TENANT` | the slug of the shop that answers at `/` — set it to keep the links this deployment already had working (`/` and `/shop` redirect to `/t/<slug>`; the console stays at `/platform`) | recommended when a live shop becomes a tenant |
 | `MM_PLATFORM_OWNER_PASSWORD` | the owner console's first password. Without it one is generated and printed to the server log, which nobody reads on a hosted deployment | recommended when hosted |
 
 The control plane — the list of shops, the owner's account, the audit trail —

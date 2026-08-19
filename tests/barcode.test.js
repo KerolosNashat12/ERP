@@ -8,6 +8,7 @@
  * makes the encoder self-consistent but wrong against the published
  * symbologies would still be caught.
  */
+import './single-shop.js'; // must be first — see that file
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -15,6 +16,8 @@ import {
   CODE128_QUIET_MODULES, EAN13_QUIET_LEFT, EAN13_QUIET_RIGHT,
 } from '../src/shared/barcode.js';
 import { ValidationError } from '../src/shared/errors.js';
+
+
 
 /* ============================================================ decoders =
  * Written from scratch against the published symbol tables, independently

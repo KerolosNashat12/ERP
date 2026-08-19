@@ -5,11 +5,14 @@
  * `codeImage`, and an un-encodable payload reaching the client as a 422.
  * Encoder correctness itself is covered in tests/barcode.test.js.
  */
+import './single-shop.js'; // must be first — see that file
 import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { createApp } from '../src/server.js';
 import { initDb, closeDb } from '../src/infrastructure/database/connection.js';
 import { ean13CheckDigit } from '../src/shared/barcode.js';
+
+
 
 let base = process.env.MM_TEST_URL || '';
 let server = null;

@@ -71,7 +71,7 @@ if exist "hosted-db-setup.txt" del /f /q "hosted-db-setup.txt" >> "%LOG%" 2>&1
 echo.
 echo   Committing...
 git add -A >> "%LOG%" 2>&1
-git -c user.email="kerolosnashatestfanous@gmail.com" -c user.name="KerolosNashat12" commit -m "Hosted platform: control plane and tenants on Turso, adopt an existing shop database without reseeding it, owner password from the environment" >> "%LOG%" 2>&1
+git -c user.email="kerolosnashatestfanous@gmail.com" -c user.name="KerolosNashat12" commit -m "Owner console live with no configuration: platform.json switches the fleet on, the running shop adopts itself as a tenant, the owner password is chosen on the console at first run" >> "%LOG%" 2>&1
 if errorlevel 1 echo   Nothing new to commit - pushing whatever is outstanding.
 
 echo   Pushing (your connection to GitHub drops sometimes, so this retries)...

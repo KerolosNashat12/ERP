@@ -90,22 +90,27 @@ function generateOwnerPassword() {
   return crypto.randomBytes(15).toString('base64url');
 }
 
+/**
+ * The owner account is created by whoever opens the console first, on the
+ * console itself — see `POST /api/platform/auth/setup`. Nothing is seeded here,
+ * because the two ways of doing it automatically are both bad: a fixed default
+ * password is a published one, and a generated password printed to stdout is
+ * invisible on a host whose logs nobody is watching.
+ *
+ * `MM_PLATFORM_OWNER_PASSWORD` stays as the way to set it without a browser —
+ * useful for a scripted install, and what the tests use.
+ */
 async function seedOwnerIfEmpty() {
   const db = connection.facade;
   const existing = await db.prepare('SELECT id FROM platform_users LIMIT 1').get();
   if (existing) return;
 
-  /**
-   * On a hosted deployment nobody sees stdout, and hunting a generated password
-   * through a log viewer is a poor way to meet a new system. `MM_PLATFORM_OWNER_PASSWORD`
-   * lets the owner choose it before the first boot; without it the generated one
-   * is printed as before, which is what a shop PC wants.
-   */
   const chosen = String(process.env.MM_PLATFORM_OWNER_PASSWORD || '').trim();
-  if (chosen && chosen.length < 8) {
+  if (!chosen) return;
+  if (chosen.length < 8) {
     throw new Error('MM_PLATFORM_OWNER_PASSWORD must be at least 8 characters');
   }
-  const password = chosen || generateOwnerPassword();
+  const password = chosen;
   const hash = bcrypt.hashSync(password, config.auth.bcryptRounds);
   await db.prepare(`
     INSERT INTO platform_users (username, password_hash, full_name, is_active, created_at)
@@ -113,14 +118,8 @@ async function seedOwnerIfEmpty() {
   `).run(hash, new Date().toISOString());
 
   console.log('');
-  console.log('  Platform control panel — first run');
-  console.log('  ───────────────────────────────────────────');
-  console.log('  A platform owner account was created:');
-  console.log('    username  owner');
-  // A password the owner chose is already known to them, and printing it would
-  // only copy a secret into a log file that outlives this process.
-  console.log(chosen ? '    password  (the one you set in MM_PLATFORM_OWNER_PASSWORD)' : `    password  ${password}`);
-  if (!chosen) console.log('  This is shown once. Only its hash is stored — write it down now.');
+  console.log('  Platform owner account created as "owner", with the password');
+  console.log('  from MM_PLATFORM_OWNER_PASSWORD. Only its hash is stored.');
   console.log('');
 }
 

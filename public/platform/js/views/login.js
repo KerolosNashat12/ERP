@@ -30,6 +30,63 @@ function withPasswordToggle(input) {
   return wrapper;
 }
 
+/**
+ * First run: this console has no owner yet, so the first person to open it
+ * chooses the password rather than fishing a generated one out of a server log
+ * nobody is watching. The server closes this door the moment it is used.
+ */
+export function renderSetup(root, onSuccess) {
+  const passwordInput = h('input', {
+    class: 'input', type: 'password', name: 'password', autocomplete: 'new-password', autofocus: true,
+  });
+  const confirmInput = h('input', {
+    class: 'input', type: 'password', name: 'confirm', autocomplete: 'new-password',
+  });
+  const button = h('button', { class: 'btn primary block lg', type: 'submit' }, t('createOwner'));
+  const errorBox = h('div', { class: 'error-text', style: { minHeight: '16px' } });
+
+  const form = h('form', {
+    class: 'stack',
+    onsubmit: async (event) => {
+      event.preventDefault();
+      errorBox.textContent = '';
+      if (passwordInput.value.length < 8) {
+        errorBox.textContent = t('passwordTooShort');
+        return;
+      }
+      if (passwordInput.value !== confirmInput.value) {
+        errorBox.textContent = t('passwordsDoNotMatch');
+        return;
+      }
+      button.disabled = true;
+      try {
+        const result = await api.post('/auth/setup', { password: passwordInput.value }, { isLogin: true });
+        onSuccess(result.user);
+      } catch (error) {
+        errorBox.textContent = error.message || t('somethingWrong');
+        button.disabled = false;
+      }
+    },
+  },
+  field({ label: t('choosePassword'), input: withPasswordToggle(passwordInput), hint: t('choosePasswordHint') }),
+  field({ label: t('confirmPassword'), input: confirmInput }),
+  errorBox,
+  button);
+
+  mount(root,
+    h('div', { class: 'login-page' },
+      h('aside', { class: 'login-aside' },
+        h('div', {},
+          h('h1', {}, 'M', h('span', { class: 'gold' }, '&'), 'M', h('span', { class: 'gold' }, ' · Platform')),
+          h('p', { class: 'tag' }, t('platformTag')))),
+      h('main', { class: 'login-main' },
+        h('div', { class: 'login-card' },
+          h('h2', { style: { marginTop: '18px' } }, t('firstRunTitle')),
+          h('p', { class: 'muted' }, t('firstRunSubtitle')),
+          h('p', { class: 'muted small' }, t('firstRunUsername')),
+          form))));
+}
+
 export function renderLogin(root, onSuccess) {
   const usernameInput = textInput({ name: 'username', autocomplete: 'username', autofocus: true });
   const passwordInput = h('input', {

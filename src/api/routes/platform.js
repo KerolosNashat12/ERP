@@ -35,6 +35,26 @@ const validateBody = (schema) => (req, _res, next) => {
 
 const loginSchema = z.object({ username: z.string().min(1), password: z.string().min(1) });
 
+const setupSchema = z.object({
+  password: z.string().min(8, 'Choose a password of at least 8 characters'),
+  fullName: z.string().optional(),
+});
+
+/**
+ * Drawn by the sign-in page before anyone has signed in, so it cannot require a
+ * session. It says only whether an owner exists.
+ */
+router.get('/auth/state', asyncHandler(async (_req, res) => {
+  res.json({ needsSetup: await platformAuth.needsSetup() });
+}));
+
+/** Open exactly once, on a console that has no owner yet. */
+router.post('/auth/setup', validateBody(setupSchema), asyncHandler(async (req, res) => {
+  const result = await platformAuth.setup(req.body);
+  res.cookie(platformAuth.COOKIE_NAME, result.token, cookieOptions);
+  res.status(201).json(result);
+}));
+
 router.post('/auth/login', validateBody(loginSchema), asyncHandler(async (req, res) => {
   const result = await platformAuth.login(req.body);
   res.cookie(platformAuth.COOKIE_NAME, result.token, cookieOptions);

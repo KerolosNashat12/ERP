@@ -70,6 +70,10 @@ echo   Press Ctrl+C here to stop it.
 echo   ==========================================
 echo.
 
+rem This copy of the code also carries the fleet console's settings
+rem (platform.json). On a shop PC there is one shop, so it is switched off
+rem explicitly here — START-PLATFORM.bat is the launcher that turns it on.
+set MM_PLATFORM=0
 call npm start
 goto :end
 

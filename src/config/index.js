@@ -30,6 +30,50 @@ const IS_HOSTED_DB = DB_DRIVER === 'libsql';
  */
 const PLATFORM_DB_URL = process.env.MM_PLATFORM_DB_URL || '';
 
+/**
+ * The fallback that makes switching a live deployment on a three-variable
+ * change: no control-plane URL, no control-plane file named either, and a shop
+ * database that is already hosted — so the register goes in beside it rather
+ * than onto a disk this host does not have.
+ *
+ * Naming MM_PLATFORM_DB opts out: an explicit path means that file, and tests
+ * depend on being able to say so.
+ */
+const PLATFORM_SHARES_SHOP_DB = Boolean(
+  !PLATFORM_DB_URL && !process.env.MM_PLATFORM_DB && IS_HOSTED_DB,
+);
+
+/**
+ * Deployment settings that belong to the repository rather than to a host.
+ *
+ * Vercel has no place to keep a checkbox, and asking an owner to add
+ * environment variables to bring their own console up is a step that can be
+ * got wrong at 1am. `platform.json`, committed next to the code, says whether
+ * this deployment is a fleet and which shop owns its root address. The
+ * environment still wins where it is set — MM_PLATFORM=0 is how the shop PC's
+ * launcher keeps the single-shop build even though the same repo now carries
+ * a fleet's settings.
+ */
+function readPlatformFile() {
+  try {
+    const raw = fs.readFileSync(path.join(ROOT_DIR, 'platform.json'), 'utf8');
+    const parsed = JSON.parse(raw);
+    return {
+      enabled: parsed.enabled === true,
+      defaultTenant: typeof parsed.defaultTenant === 'string' ? parsed.defaultTenant.trim() : '',
+    };
+  } catch {
+    // Absent, unreadable or malformed all mean the same thing: a single shop.
+    return { enabled: false, defaultTenant: '' };
+  }
+}
+
+const PLATFORM_FILE = readPlatformFile();
+
+/** '1' forces the fleet on, '0' forces it off, unset defers to platform.json. */
+const PLATFORM_ENABLED = process.env.MM_PLATFORM === '1'
+  || (process.env.MM_PLATFORM !== '0' && PLATFORM_FILE.enabled);
+
 const DATA_DIR = process.env.MM_DATA_DIR
   ? path.resolve(process.env.MM_DATA_DIR)
   : path.join(ROOT_DIR, 'data');
@@ -106,12 +150,36 @@ export const config = Object.freeze({
    * shop's data.
    */
   platform: {
-    enabled: process.env.MM_PLATFORM === '1',
-    driver: PLATFORM_DB_URL ? 'libsql' : 'sqlite',
-    url: PLATFORM_DB_URL,
-    authToken: process.env.MM_PLATFORM_DB_TOKEN || '',
+    enabled: PLATFORM_ENABLED,
+    /**
+     * Where the fleet register lives.
+     *
+     * Given its own URL, it is its own database — the right answer, and the one
+     * to grow into. Given none on a host that has no disk, it falls back to the
+     * shop's own hosted database rather than failing to boot: a control plane
+     * that cannot start takes the whole deployment with it, and a deployment
+     * that is up is worth more than a tidy one that is down. The tables are
+     * distinct (`tenants`, `platform_users`, …) and no ERP query names them,
+     * but they are sharing a database with a shop's data and that is worth
+     * moving off later, so `shared` says so out loud.
+     */
+    driver: (PLATFORM_DB_URL || PLATFORM_SHARES_SHOP_DB) ? 'libsql' : 'sqlite',
+    url: PLATFORM_DB_URL || (PLATFORM_SHARES_SHOP_DB ? DB_URL : ''),
+    authToken: process.env.MM_PLATFORM_DB_TOKEN
+      || (PLATFORM_SHARES_SHOP_DB ? (process.env.MM_DB_AUTH_TOKEN || process.env.TURSO_AUTH_TOKEN || '') : ''),
+    shared: PLATFORM_SHARES_SHOP_DB,
     databaseFile: process.env.MM_PLATFORM_DB || path.join(DATA_DIR, 'platform.db'),
     tenantsDir: process.env.MM_TENANTS_DIR || path.join(DATA_DIR, 'tenants'),
+    /**
+     * The shop that answers at the root of the domain.
+     *
+     * A deployment that served one shop before it served a fleet has links in
+     * the world already — a storefront address customers have saved, a till
+     * bookmarked on a counter PC. Naming that shop here keeps `/` and `/shop`
+     * working by sending them to `/t/<slug>`, so switching the platform on
+     * costs nobody a dead link. Unset, `/` is the owner's console.
+     */
+    defaultTenant: (process.env.MM_DEFAULT_TENANT || PLATFORM_FILE.defaultTenant || '').trim(),
   },
   auth: {
     secret: resolveSecret(),

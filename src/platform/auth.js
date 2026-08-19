@@ -14,8 +14,8 @@ import crypto from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import config from '../config/index.js';
-import { platformDb } from './db.js';
-import { UnauthorizedError } from '../shared/errors.js';
+import { platformDb, platformTransaction } from './db.js';
+import { ConflictError, UnauthorizedError, ValidationError } from '../shared/errors.js';
 
 export const COOKIE_NAME = 'mm_platform';
 
@@ -61,6 +61,52 @@ export async function login({ username, password }) {
   };
 }
 
+/**
+ * Whether this console has an owner yet.
+ *
+ * Unauthenticated on purpose: the sign-in page has to know which of the two
+ * things to draw before anybody can prove anything. It leaks one bit — that a
+ * fresh deployment is fresh — and that bit is already visible in the fact that
+ * no password works.
+ */
+export async function needsSetup() {
+  const row = await platformDb().prepare('SELECT id FROM platform_users LIMIT 1').get();
+  return !row;
+}
+
+/**
+ * Create the first owner, from the console itself.
+ *
+ * Environment variables are a poor place for a password nobody has chosen yet,
+ * so the first person to open a new console sets one here. The window closes
+ * the moment it is used: with an owner on file this refuses, so it cannot be
+ * used to add a second account or to overwrite the first. The check and the
+ * insert run in one transaction, so two people racing on a cold start cannot
+ * both win.
+ */
+export async function setup({ password, fullName }) {
+  const chosen = String(password || '');
+  if (chosen.length < 8) {
+    throw new ValidationError('Choose a password of at least 8 characters');
+  }
+
+  const created = await platformTransaction(async (db) => {
+    const existing = await db.prepare('SELECT id FROM platform_users LIMIT 1').get();
+    if (existing) return null;
+    const hash = bcrypt.hashSync(chosen, config.auth.bcryptRounds);
+    const result = await db.prepare(`
+      INSERT INTO platform_users (username, password_hash, full_name, is_active, created_at)
+      VALUES ('owner', ?, ?, 1, ?)
+    `).run(hash, String(fullName || 'Platform Owner').slice(0, 80), new Date().toISOString());
+    return Number(result.lastInsertRowid);
+  });
+
+  if (!created) {
+    throw new ConflictError('This console already has an owner — sign in instead');
+  }
+  return login({ username: 'owner', password: chosen });
+}
+
 export async function authenticate(req, _res, next) {
   try {
     const token = readToken(req);
@@ -77,5 +123,5 @@ export async function authenticate(req, _res, next) {
 }
 
 export default {
-  COOKIE_NAME, login, authenticate,
+  COOKIE_NAME, login, authenticate, needsSetup, setup,
 };
