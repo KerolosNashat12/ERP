@@ -6,6 +6,8 @@
  * things.
  */
 
+import { detailStrings } from './i18n.detail.js';
+
 const dictionary = {
   en: {
     platformName: 'KJ Admin', platformTag: 'Fleet console — every shop, one place',
@@ -24,9 +26,9 @@ const dictionary = {
     passwordsDoNotMatch: 'The two passwords are not the same',
     language: 'Language', english: 'English', arabic: 'العربية',
 
-    tenants: 'Tenants', migrations: 'Migrations',
+    tenants: 'Shops', migrations: 'Migrations',
     tenantsSubtitle: 'Every shop on this server, its plan and its health',
-    newTenant: 'New tenant', search: 'Search name or slug…', status: 'Status',
+    newTenant: 'New shop', search: 'Search name or slug…', status: 'Status',
     allStatuses: 'All statuses', active: 'Active', suspended: 'Suspended',
     name: 'Name', slug: 'Slug', modules: 'Modules', created: 'Created', stats: 'Activity',
     website: 'Website', on: 'On', off: 'Off', manage: 'Manage',
@@ -37,7 +39,7 @@ const dictionary = {
     never: 'Never',
 
     // create tenant
-    createTenant: 'Create tenant', nameEn: 'Shop name (English)', nameAr: 'Shop name (Arabic)',
+    createTenant: 'Create a shop', nameEn: 'Shop name (English)', nameAr: 'Shop name (Arabic)',
     slugHint: 'Lowercase letters, digits and hyphens, 2–31 characters, starting with a letter or digit.',
     slugAuto: 'Suggested from the English name — edit freely.',
     slugReserved: '"{slug}" is a reserved word and cannot be used as a slug',
@@ -72,14 +74,14 @@ const dictionary = {
 
     // one-time password
     oneTimePassword: 'Admin password', oneTimePasswordHint: 'Shown once, right now. It is never stored in the clear and will not be shown again — write it down or copy it before closing this dialog.',
-    tenantCreated: 'Tenant created — hand this password to the shop owner',
+    tenantCreated: 'Shop created — hand this password to the shop owner',
     passwordReset: 'Password reset — hand this password to the shop owner',
     adminAccount: 'Admin account', copyToClipboard: 'Copy', copied: 'Copied',
     copyManually: 'Copying is blocked here — the password is selected, press Ctrl+C',
     openErp: 'Open ERP', openStorefront: 'Open storefront',
 
     // manage tenant
-    backToTenants: 'Back to tenants', tenantDetails: 'Tenant details',
+    backToTenants: 'Back to shops', tenantDetails: 'Shop details',
     editTenant: 'Edit details', save: 'Save', saved: 'Saved', cancel: 'Cancel',
     dangerZone: 'Danger zone', suspendTenant: 'Suspend shop', resumeTenant: 'Resume shop',
     suspendConfirmTitle: 'Suspend this shop?',
@@ -96,12 +98,46 @@ const dictionary = {
     migrationsSubtitle: 'Apply schema and migrations to every active shop in one pass',
     runMigration: 'Run migration across the fleet',
     runningMigration: 'Running…', migrationHint: 'Suspended shops are skipped — resume a shop first if it needs the update.',
-    migrationResults: 'Last run', migratedOk: 'Updated', migratedNone: 'Nothing to apply', migratedError: 'Failed',
+    migrationResults: 'Last run', migrationNotRun: 'Not run in this session', migratedOk: 'Updated', migratedNone: 'Nothing to apply', migratedError: 'Failed',
     migrationEmpty: 'Run the fleet migration to see a per-tenant report here.',
-    applied: 'Applied', error: 'Error', tenant: 'Tenant', outcome: 'Outcome',
+    applied: 'Applied', error: 'Error', tenant: 'Shop', outcome: 'Outcome',
     migrationSummary: '{ok} of {total} shop(s) updated cleanly',
     migrationSummaryWithErrors: '{ok} of {total} shop(s) updated cleanly — {failed} failed',
     noneApplied: '— nothing new —',
+
+    // ── Overview, Shops, and the states every screen owes its reader ───────
+    overview: 'Overview',
+    overviewSubtitle: 'The whole fleet — today, this month, and the last thirty days',
+    shops: 'Shops', shop: 'Shop',
+    shopsSubtitle: 'Every shop on this server: its plan, its limits, and the two links you hand out',
+    shopCount: '{shown} of {total} shown',
+    refresh: 'Refresh', asOf: 'as of {time}', searchLabel: 'Search',
+    couldNotLoad: 'This did not load', retry: 'Try again',
+    networkError: 'The server did not answer. Check that it is running, then try again.',
+    routeNotFound: 'That address does not belong to a screen in this console.',
+    noResultsBody: 'Change the search or the status filter to see more shops.',
+    day: 'Day', revenue: 'Revenue', orders: 'Sales', last30Days: 'last 30 days',
+    thisMonth: 'This month', salesToday: 'sales today',
+    fleetTrend: 'Fleet trend', noSalesWindow: 'Nothing sold in this window',
+    fleetTrendSubtitle: 'Every shop added together, day by day, in {currency}',
+    showAsTable: 'Show these thirty days as a table',
+    kpiRevenue30d: 'Revenue · 30 days',
+    kpiRevenueToday: 'Revenue · today',
+    kpiOrders30d: 'Sales · 30 days',
+    kpiPending: 'Web orders waiting',
+    kpiPendingSub: 'placed online, not delivered yet',
+    kpiPendingNone: 'nothing waiting',
+    usersTotal: 'Users', productsTotal: 'Products',
+    shopsByRevenue: 'Shops by revenue',
+    shopsByRevenueSubtitle: 'The last thirty days. The busiest shop is at the top.',
+    revenue30d: 'Revenue · 30d', orders30d: 'Sales · 30d',
+    lastActivity: 'Last activity', open: 'Open',
+    unreachable: 'Unreachable',
+    unreachableTitle: 'Some shops could not be read.',
+    unreachableHint: 'Their figures are left blank rather than shown as zero:',
+    plan: 'Plan', unlimited: 'no limit',
+    links: 'Links', erpLink: 'ERP', storeLink: 'Shop',
+    websiteOffHint: 'The storefront is switched off for this shop',
 
     required: 'Required', somethingWrong: 'Something went wrong', close: 'Close', confirm: 'Confirm', yes: 'Yes',
   },
@@ -184,17 +220,50 @@ const dictionary = {
     resetAdminConfirmTitle: 'إعادة تعيين كلمة مرور المدير؟',
     resetAdminConfirmBody: 'يتم توليد كلمة مرور مؤقتة جديدة لحساب "admin" في هذا المتجر. كلمة المرور القديمة تتوقف عن العمل فورًا.',
     notes: 'ملاحظات', createdAt: 'تاريخ الإنشاء', updatedAt: 'آخر تحديث',
-    versionTag: 'الإصدار ١.٠ · إدارة الأسطول',
+    versionTag: 'الإصدار 1.0 · إدارة الأسطول',
 
     migrationsSubtitle: 'تطبيق المخطط والتحديثات على كل متجر مفعّل دفعة واحدة',
     runMigration: 'تشغيل التحديث على كل الأسطول',
     runningMigration: 'جارٍ التشغيل…', migrationHint: 'المتاجر الموقوفة تُتخطى — استأنف المتجر أولًا إذا احتاج التحديث.',
-    migrationResults: 'آخر تشغيل', migratedOk: 'تم التحديث', migratedNone: 'لا شيء ليُطبّق', migratedError: 'فشل',
+    migrationResults: 'آخر تشغيل', migrationNotRun: 'لم يُشغَّل في هذه الجلسة', migratedOk: 'تم التحديث', migratedNone: 'لا شيء ليُطبّق', migratedError: 'فشل',
     migrationEmpty: 'شغّل تحديث الأسطول لترى تقريرًا لكل متجر هنا.',
     applied: 'تم تطبيقه', error: 'الخطأ', tenant: 'المتجر', outcome: 'النتيجة',
     migrationSummary: 'تم تحديث {ok} من {total} متجر بنجاح',
     migrationSummaryWithErrors: 'تم تحديث {ok} من {total} متجر بنجاح — وفشل {failed}',
     noneApplied: '— لا جديد —',
+
+    overview: 'نظرة عامة',
+    overviewSubtitle: 'كل المتاجر — اليوم، هذا الشهر، وآخر ثلاثين يومًا',
+    shops: 'المتاجر', shop: 'المتجر',
+    shopsSubtitle: 'كل متجر على هذا السيرفر: خطته وحدوده والرابطان اللذان تسلّمهما',
+    shopCount: 'ظاهر {shown} من {total}',
+    refresh: 'تحديث', asOf: 'حتى {time}', searchLabel: 'بحث',
+    couldNotLoad: 'تعذّر تحميل هذه الشاشة', retry: 'حاول مرة أخرى',
+    networkError: 'الخادم لم يستجب. تأكد أنه يعمل ثم حاول مرة أخرى.',
+    routeNotFound: 'هذا العنوان لا يخص أي شاشة في هذه اللوحة.',
+    noResultsBody: 'غيّر البحث أو فلتر الحالة لعرض متاجر أخرى.',
+    day: 'اليوم', revenue: 'الإيراد', orders: 'عدد المبيعات', last30Days: 'آخر 30 يومًا',
+    thisMonth: 'هذا الشهر', salesToday: 'عملية بيع اليوم',
+    fleetTrend: 'أداء الأسطول', noSalesWindow: 'لا مبيعات في هذه الفترة',
+    fleetTrendSubtitle: 'كل المتاجر مجموعة معًا، يومًا بيوم، بعملة {currency}',
+    showAsTable: 'اعرض الثلاثين يومًا في جدول',
+    kpiRevenue30d: 'الإيراد · 30 يومًا',
+    kpiRevenueToday: 'الإيراد · اليوم',
+    kpiOrders30d: 'المبيعات · 30 يومًا',
+    kpiPending: 'طلبات موقع في الانتظار',
+    kpiPendingSub: 'اتطلبت أونلاين ولسه ما اتسلّمتش',
+    kpiPendingNone: 'لا شيء في الانتظار',
+    usersTotal: 'المستخدمون', productsTotal: 'المنتجات',
+    shopsByRevenue: 'المتاجر حسب الإيراد',
+    shopsByRevenueSubtitle: 'آخر ثلاثين يومًا. الأكثر مبيعًا في الأعلى.',
+    revenue30d: 'الإيراد · 30 يوم', orders30d: 'المبيعات · 30 يوم',
+    lastActivity: 'آخر نشاط', open: 'فتح',
+    unreachable: 'غير متاح',
+    unreachableTitle: 'بعض المتاجر تعذّرت قراءتها.',
+    unreachableHint: 'أرقامها تُركت فارغة بدلًا من إظهارها أصفارًا:',
+    plan: 'الخطة', unlimited: 'بلا حد',
+    links: 'الروابط', erpLink: 'ERP', storeLink: 'المتجر',
+    websiteOffHint: 'المتجر الإلكتروني موقوف لهذا المتجر',
 
     required: 'مطلوب', somethingWrong: 'حدث خطأ ما', close: 'إغلاق', confirm: 'تأكيد', yes: 'نعم',
 
@@ -241,6 +310,20 @@ export function t(key, vars) {
 export function pickName(row) {
   if (!row) return '';
   return language === 'ar' ? (row.nameAr || row.nameEn) : (row.nameEn || row.nameAr);
+}
+
+/**
+ * Screens that live in their own file bring their own strings, so a second pair
+ * of hands can add a screen without touching this dictionary. Merged rather than
+ * assigned, and never over an existing key: whatever is written here wins, so a
+ * stray duplicate in an extension file cannot quietly change the wording of a
+ * screen somewhere else.
+ */
+for (const [lang, strings] of Object.entries(detailStrings)) {
+  if (!dictionary[lang]) continue;
+  for (const [key, value] of Object.entries(strings)) {
+    if (!(key in dictionary[lang])) dictionary[lang][key] = value;
+  }
 }
 
 setLanguage(language);

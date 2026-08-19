@@ -1,77 +1,89 @@
 /**
  * Fleet migrations: one button, one request, one report — legible even when
- * half the fleet failed. Nothing here is persisted; it shows the result of
- * the run just made, in this session.
+ * half the fleet failed. Nothing here is persisted; it shows the result of the
+ * run just made, in this session.
  */
 import api from '../core/api.js';
 import {
   h, mount, dataTable, tag, toast, toastError,
 } from '../core/dom.js';
 import { t } from '../core/i18n.js';
+import { pageHead, card } from '../ui/page.js';
+import { state, skRows } from '../ui/states.js';
+import { int } from '../ui/format.js';
+import icons from '../ui/icons.js';
 
 export async function migrateView(root) {
-  const resultsHost = h('div', {}, h('div', { class: 'empty' },
-    h('span', { class: 'ico' }, '⇅'),
-    h('div', {}, t('migrationEmpty'))));
+  const resultsHost = h('div', {}, state({
+    icon: 'arrows',
+    title: t('migrationNotRun'),
+    message: t('migrationEmpty'),
+  }));
 
-  const runBtn = h('button', { class: 'btn primary lg' }, t('runMigration'));
+  const runButton = h('button', { class: 'btn primary lg' },
+    h('span', { html: icons.arrows }), t('runMigration'));
 
   mount(root,
-    h('div', { class: 'page-head' },
-      h('div', {},
-        h('h2', {}, t('migrations')),
-        h('p', {}, t('migrationsSubtitle')))),
-    h('div', { class: 'card' },
-      h('div', { class: 'card-body row between' },
-        h('div', { class: 'muted small' }, t('migrationHint')),
-        runBtn)),
-    h('div', { class: 'card', style: { marginTop: '16px' } },
-      h('div', { class: 'card-head' }, h('h3', {}, t('migrationResults'))),
-      h('div', { class: 'card-body tight' }, resultsHost)));
+    pageHead({ title: t('migrations'), subtitle: t('migrationsSubtitle') }),
+    h('div', { class: 'stack' },
+      card({
+        body: h('div', { class: 'row between' },
+          h('div', { class: 'muted small', style: { maxWidth: '58ch' } }, t('migrationHint')),
+          runButton),
+      }),
+      card({ title: t('migrationResults'), tight: true, body: resultsHost })));
 
-  runBtn.addEventListener('click', async () => {
-    runBtn.disabled = true;
-    const originalLabel = runBtn.textContent;
-    runBtn.textContent = t('runningMigration');
+  runButton.addEventListener('click', async () => {
+    runButton.disabled = true;
+    const label = runButton.textContent;
+    runButton.textContent = t('runningMigration');
+    mount(resultsHost, skRows(4, 4));
     try {
       const { rows } = await api.post('/migrate', {});
       renderResults(resultsHost, rows);
-      const failed = rows.filter((r) => r.error).length;
-      toast(failed ? `${rows.length - failed}/${rows.length}` : t('saved'), failed ? 'warn' : 'ok');
+      const failed = rows.filter((row) => row.error).length;
+      toast(failed ? t('migrationSummaryWithErrors', { ok: rows.length - failed, total: rows.length, failed })
+        : t('migrationSummary', { ok: rows.length, total: rows.length }), failed ? 'warn' : 'ok');
     } catch (error) {
+      mount(resultsHost, state({
+        kind: 'error', icon: 'alert', title: t('couldNotLoad'), message: error?.message || t('somethingWrong'),
+      }));
       toastError(error);
     } finally {
-      runBtn.disabled = false;
-      runBtn.textContent = originalLabel;
+      runButton.disabled = false;
+      runButton.textContent = label;
     }
   });
 }
 
 function renderResults(host, rows) {
   const total = rows.length;
-  const failed = rows.filter((r) => r.error).length;
+  const failed = rows.filter((row) => row.error).length;
   const ok = total - failed;
 
-  const summary = h('div', { class: 'card-body', style: { borderBottom: '1px solid var(--line)' } },
-    h('div', { class: 'migrate-summary' },
-      h('div', {},
-        h('div', { class: 'n', style: { color: 'var(--ok)' } }, ok),
-        h('div', { class: 'small muted' }, t('migratedOk'))),
-      failed ? h('div', {},
-        h('div', { class: 'n', style: { color: 'var(--danger)' } }, failed),
-        h('div', { class: 'small muted' }, t('migratedError'))) : null,
-      h('div', {},
-        h('div', { class: 'small', style: { marginTop: '6px', color: 'var(--ink-2)' } },
-          failed
-            ? t('migrationSummaryWithErrors', { ok, total, failed })
-            : t('migrationSummary', { ok, total })))));
+  const summary = h('div', {
+    class: 'card-body',
+    style: { borderBottom: '1px solid var(--line)' },
+  },
+  h('div', { class: 'migrate-summary' },
+    h('div', {},
+      h('div', { class: 'n', style: { color: 'var(--ok)' } }, int(ok)),
+      h('div', { class: 'small muted' }, t('migratedOk'))),
+    failed ? h('div', {},
+      h('div', { class: 'n', style: { color: 'var(--danger)' } }, int(failed)),
+      h('div', { class: 'small muted' }, t('migratedError'))) : null,
+    h('div', { class: 'small', style: { color: 'var(--ink-2)', paddingBottom: '4px' } },
+      failed
+        ? t('migrationSummaryWithErrors', { ok, total, failed })
+        : t('migrationSummary', { ok, total }))));
 
   const table = dataTable({
-    // Failures sort first — a fleet migration that half-worked must be
-    // legible at a glance, not buried under the shops that succeeded.
+    // Failures sort first — a fleet migration that half-worked must be legible
+    // at a glance, not buried under the shops that succeeded.
     rows: [...rows].sort((a, b) => (b.error ? 1 : 0) - (a.error ? 1 : 0)),
+    rowClass: (row) => (row.error ? 'is-error' : ''),
     columns: [
-      { label: t('tenant'), render: (row) => h('span', { class: 'tenant-slug strong' }, row.slug) },
+      { label: t('tenant'), render: (row) => h('span', { class: 'mono strong' }, row.slug) },
       {
         label: t('outcome'),
         render: (row) => (row.error ? tag(t('migratedError'), 'danger') : tag(t('migratedOk'), 'ok')),
@@ -84,10 +96,14 @@ function renderResults(host, rows) {
       },
       {
         label: t('error'),
-        render: (row) => (row.error ? h('span', { class: 'small', style: { color: 'var(--danger)' } }, row.error) : '—'),
+        render: (row) => (row.error
+          ? h('span', { class: 'small', style: { color: 'var(--danger)' } }, row.error)
+          : h('span', { class: 'muted' }, '—')),
       },
     ],
   });
 
   mount(host, summary, table);
 }
+
+export default migrateView;

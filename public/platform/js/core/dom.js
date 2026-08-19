@@ -182,32 +182,50 @@ export function checkboxInput({ label, checked, ...props } = {}) {
 
 // ------------------------------------------------------------------ tables
 
-/** columns: [{ key, label, render(row), align, width, class }] */
+/**
+ * The console's one table.
+ *
+ * `columns: [{ key, label, render(row), align, width, class }]`
+ *
+ * Two details carry the design rather than the markup:
+ *   - every cell is written with `data-label`, which is what the phone layout
+ *     in platform.css turns back into a label when the table becomes a stack
+ *     of cards. A table built by hand somewhere else must do the same.
+ *   - the first column is marked `data-primary`, so on a phone it becomes the
+ *     card's title instead of a labelled row.
+ *
+ * `class: 'col-lo'` marks a column that is dropped first when the window is
+ * too narrow to hold every one of them.
+ */
 export function dataTable({
-  columns, rows, onRowClick, emptyIcon, emptyTitle, emptyMessage,
+  columns, rows, onRowClick, rowClass, emptyIcon, emptyTitle, emptyMessage, emptyAction,
 }) {
   if (!rows?.length) {
-    return h('div', { class: 'empty' },
-      h('span', { class: 'ico' }, emptyIcon || '◎'),
+    return h('div', { class: 'state' },
+      h('span', { class: 'ico' }, emptyIcon || '\u25CE'),
       emptyTitle ? h('div', { class: 'lead' }, emptyTitle) : null,
-      h('div', {}, emptyMessage || t('noResults')));
+      h('p', {}, emptyMessage || t('noResults')),
+      emptyAction || null);
   }
 
+  const cellClass = (c) => `${c.align === 'end' ? 'num' : ''} ${c.class || ''}`.trim();
+
   const head = h('tr', {}, columns.map((c) => h('th', {
-    class: `${c.align === 'end' ? 'num' : ''} ${c.class || ''}`,
+    class: cellClass(c),
     style: c.width ? { width: c.width } : undefined,
   }, c.label)));
 
   const body = rows.map((row, index) => h('tr', {
-    class: onRowClick ? 'clickable' : '',
+    class: `${onRowClick ? 'clickable' : ''} ${rowClass ? (rowClass(row) || '') : ''}`.trim(),
     onclick: onRowClick ? (event) => {
       if (event.target.closest('button, a, input, select')) return;
       onRowClick(row, index);
     } : undefined,
-  }, columns.map((c) => {
+  }, columns.map((c, column) => {
     const content = c.render ? c.render(row, index) : row[c.key];
-    return h('td', { class: `${c.align === 'end' ? 'num' : ''} ${c.class || ''}` },
-      content instanceof Node ? content : (content ?? '—'));
+    const dataset = column === 0 ? { label: c.label || '', primary: '1' } : { label: c.label || '' };
+    return h('td', { class: cellClass(c), dataset },
+      content instanceof Node ? content : (content ?? '\u2014'));
   })));
 
   return h('div', { class: 'table-wrap' },

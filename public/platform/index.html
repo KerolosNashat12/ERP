@@ -2,16 +2,28 @@
 <html lang="en" dir="ltr">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="color-scheme" content="dark" />
+  <meta name="theme-color" content="#0a0d13" />
   <title>KJ Admin — Owner Console</title>
+  <!-- The language is known before a single module loads, so an Arabic console
+       never paints left-to-right for a frame first. i18n.js sets the same two
+       attributes again from the same key; this only wins the race. -->
+  <script>
+    try {
+      var lang = localStorage.getItem('mm.platform.lang') === 'ar' ? 'ar' : 'en';
+      document.documentElement.lang = lang;
+      document.documentElement.dir = lang === 'ar' ? 'rtl' : 'ltr';
+    } catch (e) { /* private mode: English left-to-right is the right guess */ }
+  </script>
   <link rel="stylesheet" href="/platform/css/platform.css" />
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%230a0d14'/><text x='16' y='22' font-size='15' font-family='Georgia,serif' fill='%23c8a23f' text-anchor='middle'>M</text></svg>" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%23d4a747'/><text x='16' y='22' font-size='14' font-weight='700' font-family='Georgia,serif' fill='%231c1503' text-anchor='middle'>KJ</text></svg>" />
 </head>
 <body>
   <div id="app" class="app-loading">
     <div class="boot">
-      <div class="boot-mark">M&amp;M · Platform</div>
-      <p>Loading…</p>
+      <div class="boot-mark">KJ Admin</div>
+      <p>…</p>
     </div>
   </div>
   <div id="modal-root"></div>

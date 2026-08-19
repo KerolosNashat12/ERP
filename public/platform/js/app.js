@@ -1,19 +1,22 @@
-/** Platform dashboard shell: session bootstrap, top nav, routing. */
+/** KJ Admin shell: session bootstrap, top nav, routing. */
 import api, { onUnauthorized } from './core/api.js';
 import { h, mount, modal } from './core/dom.js';
 import { t, setLanguage, getLanguage } from './core/i18n.js';
 import { defineRoutes, startRouter, navigate, parseHash } from './core/router.js';
 
 import { renderLogin, renderSetup } from './views/login.js';
+import { overviewView } from './views/overview.js';
 import { tenantsView } from './views/tenantList.js';
 import { tenantDetailView } from './views/tenantDetail.js';
 import { migrateView } from './views/migrate.js';
+import { state } from './ui/states.js';
 
 const appRoot = document.getElementById('app');
 let currentUser = null;
 
 const TABS = [
-  { path: 'tenants', label: 'tenants' },
+  { path: 'overview', label: 'overview' },
+  { path: 'tenants', label: 'shops' },
   { path: 'migrate', label: 'migrations' },
 ];
 
@@ -22,10 +25,16 @@ const TABS = [
 // segment (`tenants/mm`) means the detail view. Same one-router-call
 // pattern as the ERP's own `products/:id` dispatch.
 defineRoutes({
+  overview: overviewView,
   tenants: (host, route) => (route.segments[1] ? tenantDetailView(host, route) : tenantsView(host, route)),
   migrate: migrateView,
 }, {
-  notFound: (host) => mount(host, h('div', { class: 'empty' }, t('noResults'))),
+  notFound: (host) => mount(host, state({
+    icon: 'search',
+    title: t('noResults'),
+    message: t('routeNotFound'),
+    action: h('a', { class: 'btn', href: '#/overview' }, t('overview')),
+  })),
 });
 
 function buildShell() {
@@ -33,7 +42,7 @@ function buildShell() {
   const tabsHost = h('nav', { class: 'topbar-tabs', id: 'platform-tabs' });
 
   const topbar = h('header', { class: 'topbar' },
-    h('div', { class: 'brand' },
+    h('a', { class: 'brand', href: '#/overview' },
       h('span', { class: 'mark' }, 'KJ'),
       h('div', {},
         h('div', { class: 'name' }, t('platformName')),
@@ -43,11 +52,12 @@ function buildShell() {
     h('button', {
       class: 'btn ghost sm',
       title: t('language'),
+      'aria-label': t('language'),
       onclick: () => {
         setLanguage(getLanguage() === 'en' ? 'ar' : 'en');
         window.location.reload();
       },
-    }, getLanguage() === 'en' ? 'ع' : 'EN'),
+    }, getLanguage() === 'en' ? 'العربية' : 'English'),
     userChip());
 
   mount(appRoot, h('div', { class: 'shell' }, topbar, h('main', {}, content)));
@@ -122,7 +132,7 @@ async function boot() {
 async function startApp() {
   const content = buildShell();
   window.addEventListener('route:changed', renderTabs);
-  if (!window.location.hash || window.location.hash === '#/') navigate('tenants', true);
+  if (!window.location.hash || window.location.hash === '#/') navigate('overview', true);
   await startRouter(content);
 }
 

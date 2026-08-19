@@ -11,13 +11,24 @@
  *                             `runWithTenant`, exactly like every other
  *                             tenant-scoped request in the codebase.
  *
- * Tenant rows are cached in memory — the control plane is a database on
- * disk, and no route should pay that lookup on every single request. The
- * cache has no TTL by itself; it is only ever invalidated by `forgetTenant`,
- * which `TenantService` calls after every write (suspend, resume, limits and
- * module changes, driver changes). Forgetting also drops the tenant's open
- * connection from `connections.js`'s cache, so a tenant whose credentials or
- * driver just changed does not keep talking to its old database.
+ * Tenant rows are cached in memory — the control plane is a database, and no
+ * route should pay that lookup on every single request. `forgetTenant` drops a
+ * row the moment `TenantService` writes to it (suspend, resume, limits, module
+ * changes, the website switch), and also drops that tenant's open connection so
+ * a changed credential or driver is never talked to with the old one.
+ *
+ * That invalidation is not enough on its own, and the reason cost a live shop
+ * its storefront: a serverless deployment runs many instances of this process,
+ * each with its own copy of this Map. Switching a shop's website off in the
+ * console reaches exactly one of them. Every other instance keeps serving the
+ * old answer — and because the cache had no expiry, "old" meant *forever*, so
+ * the storefront came back 404 or 200 depending on which instance answered.
+ * Switching it back on left the same coin-flip in place.
+ *
+ * So entries also expire. The TTL is the longest a change can take to reach an
+ * instance that did not handle it: short enough that toggling something in the
+ * console visibly takes effect, long enough that the control plane is not read
+ * on every request of a busy shop.
  */
 import { platformDb } from '../../platform/db.js';
 import { connectionFor, forget as forgetConnection } from '../../infrastructure/database/connections.js';
@@ -25,6 +36,9 @@ import { openConnection, runWithTenant } from '../../infrastructure/database/con
 import { MODULES } from '../../shared/permissions.js';
 
 const cache = new Map();
+
+/** Milliseconds an entry may be served before it is read again. */
+const TTL_MS = Number(process.env.MM_TENANT_CACHE_MS || 15_000);
 
 async function fetchTenant(slug) {
   const db = platformDb();
@@ -53,9 +67,11 @@ async function fetchTenant(slug) {
 
 /** Cached lookup — the only place that reads the `tenants` table per-request. */
 export async function loadTenant(slug) {
-  if (cache.has(slug)) return cache.get(slug);
+  const hit = cache.get(slug);
+  if (hit && hit.expires > Date.now()) return hit.tenant;
+
   const tenant = await fetchTenant(slug);
-  cache.set(slug, tenant);
+  cache.set(slug, { tenant, expires: Date.now() + TTL_MS });
   return tenant;
 }
 

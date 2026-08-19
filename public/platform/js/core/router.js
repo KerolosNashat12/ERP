@@ -16,7 +16,7 @@ export function parseHash() {
   const segments = pathPart.split('/').filter(Boolean);
   const query = Object.fromEntries(new URLSearchParams(queryPart || ''));
   return {
-    path: segments[0] || 'tenants', segments, query, raw,
+    path: segments[0] || 'overview', segments, query, raw,
   };
 }
 
@@ -41,11 +41,22 @@ export async function render() {
     const result = await handler(container, route);
     if (typeof result === 'function') currentCleanup = result;
   } catch (error) {
+    // A screen that throws while opening still owes the reader an explanation
+    // and a way out — never a blank panel where a page should be.
     container.innerHTML = '';
-    container.append(Object.assign(document.createElement('div'), {
-      className: 'empty',
-      textContent: error?.message || 'Failed to open this screen',
-    }));
+    const box = document.createElement('div');
+    box.className = 'state error';
+    const lead = document.createElement('div');
+    lead.className = 'lead';
+    lead.textContent = 'This screen did not open';
+    const message = document.createElement('p');
+    message.textContent = error?.message || 'Failed to open this screen';
+    const retry = document.createElement('button');
+    retry.className = 'btn';
+    retry.textContent = 'Try again';
+    retry.addEventListener('click', () => render());
+    box.append(lead, message, retry);
+    container.append(box);
     // eslint-disable-next-line no-console
     console.error(error);
   }

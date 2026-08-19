@@ -4,6 +4,8 @@
  * tenant cookie), and never touches `/api/...` or `/t/:slug/api/...`.
  */
 
+import { t } from './i18n.js';
+
 class ApiError extends Error {
   constructor(message, status, code, details) {
     super(message);
@@ -32,12 +34,23 @@ async function request(path, {
     }
   }
 
-  const response = await fetch(url, {
-    method,
-    credentials: 'same-origin',
-    headers: body ? { 'Content-Type': 'application/json' } : {},
-    body: body ? JSON.stringify(body) : undefined,
-  });
+  let response;
+  try {
+    response = await fetch(url, {
+      method,
+      credentials: 'same-origin',
+      headers: body ? { 'Content-Type': 'application/json' } : {},
+      body: body ? JSON.stringify(body) : undefined,
+    });
+  } catch {
+    /**
+     * A dropped connection arrives as `TypeError: Failed to fetch`, which is
+     * the browser talking to a developer. What the owner needs on screen is
+     * what to do about it, in their own language — the retry button beside
+     * this message is the rest of the answer.
+     */
+    throw new ApiError(t('networkError'), 0, 'network');
+  }
 
   const text = await response.text();
   let payload;
