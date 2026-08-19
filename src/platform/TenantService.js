@@ -473,9 +473,52 @@ export async function update(slug, patch = {}, actor = null) {
     }
   }
 
+  // A shop's name is *its* name, not a label in the console. The tenant row
+  // carries it so the fleet list has something to show, but everything a
+  // customer or a cashier sees — the storefront header, the ERP sidebar, the
+  // receipt — reads `company.name` out of the shop's own database. Renaming in
+  // one place and not the other is how "I changed the name and nothing
+  // changed" happens, so the rename is written through.
+  if (patch.nameEn !== undefined || patch.nameAr !== undefined) {
+    await renameInsideShop(row, {
+      en: patch.nameEn ?? row.name_en,
+      ar: patch.nameAr ?? row.name_ar,
+    });
+  }
+
   await recordAudit('UPDATE', { tenantId: row.id, actor, detail: patch });
   await forgetTenant(slug);
   return get(slug);
+}
+
+/**
+ * Write the new name into the shop's own settings.
+ *
+ * Deliberately not fatal: the control plane has already accepted the rename, and
+ * a shop whose database is briefly unreachable should not make the console
+ * refuse an edit it has effectively made. It is reported so the caller can say
+ * so, and the next rename will carry it through.
+ */
+async function renameInsideShop(row, names) {
+  try {
+    const connection = await connectionFor(row.slug, () => openConnection({
+      driver: row.driver || 'sqlite', file: row.db_file, url: row.db_url, authToken: row.db_auth_token,
+    }));
+    await runWithTenant({ slug: row.slug }, connection, async () => {
+      const now = new Date().toISOString();
+      const write = (key, value) => connection.facade.prepare(`
+        INSERT INTO settings (key, value, value_type, group_name, updated_at)
+        VALUES (?, ?, 'string', 'company', ?)
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+      `).run(key, String(value || ''), now);
+      await write('company.name', names.en);
+      await write('company.name_ar', names.ar || names.en);
+    });
+    return true;
+  } catch (error) {
+    console.warn(`Renamed "${row.slug}" in the fleet register, but its own database could not be updated: ${error.message}`);
+    return false;
+  }
 }
 
 async function setStatus(slug, status, action, actor) {

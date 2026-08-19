@@ -1,7 +1,8 @@
 /** The landing page: one request, four shelves. */
 import { el, fill, chevron } from '../core/dom.js';
-import { api } from '../core/api.js';
-import { t, pick, getLanguage } from '../core/i18n.js';
+import { api, assetUrl } from '../core/api.js';
+import { t, pick } from '../core/i18n.js';
+import { shopName, tagline, bilingual } from '../core/branding.js';
 import { href } from '../core/router.js';
 import { setPageMeta } from '../core/seo.js';
 import { shop } from '../core/store.js';
@@ -9,16 +10,11 @@ import { productGrid, taxonomyTile, sectionHead } from '../ui/cards.js';
 import { skeletonGrid, errorState, emptyState } from '../ui/states.js';
 
 /**
- * Pick the language side of a `{ en, ar }` config record. Falls back to the
- * other language rather than blanking, same rule `pick()` applies to a row —
- * a shop owner who only wrote the Arabic banner copy still gets a banner.
+ * Pick the language side of a `{ en, ar }` config record — the banner's copy
+ * here, the shop's own tagline and About paragraph in core/branding.js, which
+ * is where the one implementation now lives.
  */
-const bt = (record) => {
-  if (!record) return '';
-  const wanted = getLanguage() === 'ar' ? record.ar : record.en;
-  const other = getLanguage() === 'ar' ? record.en : record.ar;
-  return (wanted && String(wanted).trim()) || (other && String(other).trim()) || '';
-};
+const bt = bilingual;
 
 // `config.banner.align` is physical ('right' means the text sits on the
 // right-hand side of the photo in BOTH languages), so it maps straight onto
@@ -54,13 +50,18 @@ const TEXT_COLOR = {
  */
 function hero() {
   const banner = shop.config?.banner || {};
-  const heading = bt(banner.heading) || t('heroTagline');
+  // What a shop that has uploaded no banner says on its own front page: its
+  // banner heading, then its tagline, then a neutral line. Never a sentence
+  // naming a product category — see `heroTagline` in core/i18n.js.
+  const heading = bt(banner.heading) || tagline() || t('heroTagline');
   const body = bt(banner.text) || t('heroBody');
   const cta = banner.cta && bt(banner.cta.label) && banner.cta.link
     ? { label: bt(banner.cta.label), href: href(banner.cta.link) }
     : null;
   const overlay = Number.isFinite(Number(banner.overlay)) ? Number(banner.overlay) : 35;
-  const image = banner.image || null;
+  // Prefixed with this tenant's own path: `/api/shop/banner` from the server
+  // is prefix-agnostic, and unprefixed it would fetch the default shop's.
+  const image = assetUrl(banner.image);
 
   const align = ALIGN[banner.align] || ALIGN.right;
   const valign = VALIGN[banner.valign] || VALIGN.middle;
@@ -100,18 +101,19 @@ function hero() {
     image && el('div.hero-overlay', { style: `--hero-overlay: ${overlay / 100}` }),
     el('div.hero-frame',
       el('div.hero-inner',
-        !image && el('p.hero-eyebrow', getLanguage() === 'ar' ? 'من القاهرة' : 'From Cairo'),
+        // The shop's own name, above its own heading — the eyebrow used to
+        // read "From Cairo", which is a claim only one shop had made.
+        !image && el('p.hero-eyebrow', shopName()),
         el('h1.hero-title', heading),
         el('p.hero-body', body),
         cta && el('a.btn.btn-primary.hero-cta', { href: cta.href }, cta.label, chevron(16)))));
 }
 
 export default async function homeView(root) {
-  setPageMeta({
-    description: getLanguage() === 'ar'
-      ? 'شنط وعطور ومجوهرات مختارة — الدفع عند الاستلام والتوصيل لكل محافظات مصر.'
-      : 'Handbags, perfume and jewellery, chosen piece by piece. Cash on delivery across Egypt.',
-  });
+  // No description of its own: the home page IS the shop, so the shop's own
+  // meta description (`config.branding`, resolved server-side) is the right
+  // one, and `setPageMeta` falls back to it.
+  setPageMeta({});
 
   const shelves = el('div.wrap.stack');
   root.append(hero(), shelves);

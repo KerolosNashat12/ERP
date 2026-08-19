@@ -387,7 +387,7 @@ export function purchaseDocument(order) {
   return h('div', { class: 'doc' },
     h('div', { class: 'doc-head' },
       h('div', {},
-        h('div', { class: 'doc-title' }, session.settings['company.name'] || 'M&M Accessories'),
+        h('div', { class: 'doc-title' }, session.settings['company.name'] || t('appName')),
         h('div', { class: 'doc-meta' }, session.settings['company.address'] || ''),
         h('div', { class: 'doc-meta' }, session.settings['company.phone'] || '')),
       h('div', { class: 'right' },

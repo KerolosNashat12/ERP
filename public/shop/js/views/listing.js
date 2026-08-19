@@ -10,6 +10,7 @@ import { api } from '../core/api.js';
 import { t, pick, getLanguage } from '../core/i18n.js';
 import { href, navigate } from '../core/router.js';
 import { setPageMeta } from '../core/seo.js';
+import { shopName } from '../core/branding.js';
 import { shop } from '../core/store.js';
 import { productGrid } from '../ui/cards.js';
 import { skeletonGrid, errorState, emptyState } from '../ui/states.js';
@@ -98,11 +99,14 @@ export function listingView(kind) {
     const state = readRoute(route, kind);
     const title = headingFor(state);
 
+    // The shop's name comes from its own config, never from a literal here:
+    // this same sentence used to name the first tenant on every other shop's
+    // category pages.
     setPageMeta({
       title,
       description: getLanguage() === 'ar'
-        ? `تصفّح ${title} في إم آند إم للإكسسوارات — الدفع عند الاستلام في كل مصر.`
-        : `Browse ${title} at M&M Accessories — cash on delivery across Egypt.`,
+        ? `تصفّح ${title} في ${shopName()} — الدفع عند الاستلام في كل مصر.`
+        : `Browse ${title} at ${shopName()} — cash on delivery across Egypt.`,
     });
 
     const head = el('div.listing-head',

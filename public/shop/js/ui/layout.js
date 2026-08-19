@@ -8,14 +8,11 @@ import { el, icon, ICONS } from '../core/dom.js';
 import { t, pick, getLanguage, setLanguage } from '../core/i18n.js';
 import { shop, isOpen } from '../core/store.js';
 import { href, navigate, parseHash } from '../core/router.js';
+import { brandMark, shopName, tagline, about, searchPlaceholder } from '../core/branding.js';
 import * as cart from '../core/cart.js';
 
 let cartCountNode = null;
 let searchInput = null;
-
-const shopName = () => (getLanguage() === 'ar'
-  ? (shop.config?.companyName?.ar || 'إم آند إم للإكسسوارات')
-  : (shop.config?.companyName?.en || 'M&M Accessories'));
 
 const whatsappHref = () => {
   const digits = String(shop.config?.whatsapp || '').replace(/[^\d]/g, '');
@@ -65,7 +62,10 @@ function searchForm() {
     type: 'search',
     name: 'q',
     'aria-label': t('search'),
-    placeholder: t('searchPlaceholder'),
+    // The shop's own words ("Search dresses…") when it wrote any; the server
+    // has already fallen this back to something true of any shop, and
+    // `t('searchPlaceholder')` is only reached if the config never arrived.
+    placeholder: searchPlaceholder() || t('searchPlaceholder'),
     autocomplete: 'off',
     value: parseHash().query.q || '',
   });
@@ -129,8 +129,13 @@ export function buildHeader() {
     announcementBar(),
     el('div.head-main', el('div.wrap.head-inner',
       el('a.brand', { href: href(''), 'aria-label': shopName() },
-        el('span.brand-mark', 'M&M'),
-        el('span.brand-word', getLanguage() === 'ar' ? 'للإكسسوارات' : 'Accessories')),
+        brandMark(),
+        el('span.brand-text',
+          el('span.brand-name', shopName()),
+          // A tagline is the one branding field the server may answer null
+          // for: an invented one would be a claim the shop never made, and
+          // the header reads correctly as the name alone.
+          tagline() && el('span.brand-word', tagline()))),
       isOpen() && searchForm(),
       el('div.head-actions',
         languageToggle(),
@@ -146,11 +151,16 @@ export function buildHeader() {
 export function buildFooter() {
   const wa = whatsappHref();
   const year = new Date().getFullYear();
+  // The server resolves an empty About to the shop's own name, which is
+  // already the line directly above it here. A shop that has written nothing
+  // gets its tagline if it has one and no repeated line if it has not —
+  // printing a name twice is what "unconfigured" should never look like.
+  const blurb = about() !== shopName() ? about() : tagline();
   return el('footer.site-foot',
     el('div.wrap.foot-inner',
       el('div.foot-brand',
-        el('span.brand-mark', 'M&M'),
-        el('p.foot-about', t('footerAbout')),
+        el('div.foot-mark', brandMark(), el('span.foot-name', shopName())),
+        blurb && el('p.foot-about', blurb),
         wa && el('a.wa-link', { href: wa, target: '_blank', rel: 'noopener noreferrer' },
           icon(ICONS.whatsapp, { size: 18 }), t('whatsappUs')),
         socialLinks()),
@@ -203,4 +213,6 @@ export function syncNav(root) {
   });
 }
 
+// `shopName` is re-exported for the same reason it is imported: one answer to
+// "what is this shop called", and it is not this file's to give.
 export { shopName, whatsappHref };

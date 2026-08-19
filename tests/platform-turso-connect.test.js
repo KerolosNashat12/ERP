@@ -92,7 +92,7 @@ function startTursoStub() {
     if (!TOKEN_ORGS.has(bearer)) return send(401, { error: 'could not authenticate api token' });
 
     if (req.method === 'GET' && req.url === '/v1/locations') {
-      return send(200, { locations: { fra: 'Frankfurt' }, closest: 'fra' });
+      return send(200, { locations: control.locations ?? { fra: 'Frankfurt' } });
     }
 
     if (req.method === 'GET' && req.url === '/v1/organizations') {
@@ -121,8 +121,14 @@ function startTursoStub() {
     }
     if (req.method === 'POST' && route === '/groups') {
       const name = body?.name || 'default';
+      // Turso refuses a region code the account cannot use — the exact
+      // failure a live owner hit: "invalid location fra".
+      const allowed = Object.keys(control.locations ?? { fra: 'Frankfurt' });
+      if (body?.location && !allowed.includes(body.location)) {
+        return send(400, { error: `invalid location ${body.location}: invalid location: ${body.location}` });
+      }
       control.groups = [...(control.groups ?? []), name];
-      return send(200, { group: { name, primary: body?.location || 'fra' } });
+      return send(200, { group: { name, primary: body?.location || allowed[0] || 'unknown' } });
     }
 
     if (req.method === 'GET' && route === '/databases') {
@@ -619,6 +625,41 @@ test('an account whose group is called something else is used as it is', async (
       assert.deepEqual(turso.control.groups, ['production'], 'and nothing was created that did not need to be');
     } finally {
       turso.control.groups = previous;
+    }
+  });
+});
+
+test('a region code this account cannot use is not a dead end', async () => {
+  // "Turso refused: invalid location fra" — the second thing that stopped a
+  // real shop being created. The set of region codes differs between accounts
+  // and plans, so the platform asks which ones exist and tries them in turn
+  // rather than believing any one of them.
+  await withNothingInTheEnvironment(async () => {
+    const groups = turso.control.groups;
+    const locations = turso.control.locations;
+    turso.control.groups = [];
+    turso.control.locations = { 'aws-eu-west-1': 'Ireland' };
+    try {
+      await api('/api/platform/integrations/turso', owner({
+        method: 'PUT', body: { apiToken: CONSOLE_TOKEN },
+      }));
+
+      const created = await api('/api/platform/tenants', owner({
+        method: 'POST',
+        body: {
+          slug: 'odd-region-shop',
+          nameEn: 'Odd Region Shop',
+          modules: ['dashboard'],
+          database: { mode: 'auto' },
+        },
+      }));
+
+      assert.equal(created.status, 201, created.data?.error?.message);
+      assert.ok(turso.control.groups.includes('default'),
+        'the group landed in a region the account really has');
+    } finally {
+      turso.control.groups = groups;
+      turso.control.locations = locations;
     }
   });
 });

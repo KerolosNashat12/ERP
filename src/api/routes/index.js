@@ -29,6 +29,7 @@ import {
 } from '../../services/masterDataServices.js';
 import repositories from '../../infrastructure/repositories/index.js';
 import { currentTenant } from '../../infrastructure/database/connection.js';
+import { buildBranding, companyNameFrom } from '../../shared/branding.js';
 import { NotFoundError } from '../../shared/errors.js';
 
 const router = Router();
@@ -42,7 +43,7 @@ const router = Router();
  * before it knows whether a session even exists. `null` in single-shop mode,
  * where there is nothing to report and nothing changes.
  */
-router.get('/session', (req, res) => {
+router.get('/session', asyncHandler(async (req, res) => {
   const tenant = currentTenant();
   res.json({
     tenant: tenant ? {
@@ -51,8 +52,50 @@ router.get('/session', (req, res) => {
       modules: [...tenant.modules],
       websiteEnabled: tenant.websiteEnabled,
     } : null,
+    // The shop's own identity, so the ERP sidebar shows the shop the staff
+    // work for rather than the first tenant's monogram. Same block and the
+    // same rules as `/api/shop/config` — built by shared/branding.js from the
+    // same settings — so the two screens can never disagree about a shop's
+    // name, mark or accent.
+    branding: await erpBranding(),
   });
-});
+}));
+
+/**
+ * `branding` for the ERP shell.
+ *
+ * Read through the settings repository rather than the storefront's query,
+ * because this is the ERP side of the house and the storefront's hand-written
+ * SQL is its own by doctrine; the block itself is assembled by the same shared
+ * builder, so the values are identical.
+ *
+ * Never throws. This runs on an unauthenticated route that the shell calls
+ * before it knows whether a session exists, and it is the one endpoint that
+ * must answer during first-run and while a database is being provisioned —
+ * a sidebar without a logo is a cosmetic loss, a 500 here is a blank screen.
+ *
+ * `logo` points at the public storefront URL, which is the only place the
+ * bytes are served without a permission a cashier does not have. A tenant that
+ * has switched its website off closes that route with everything else public,
+ * and the sidebar falls back to the monogram — which is exactly what a shop
+ * with no logo shows anyway.
+ */
+async function erpBranding() {
+  try {
+    const [settings, logo] = await Promise.all([
+      settingsService.all(),
+      webAssetService.get('logo'),
+    ]);
+    const get = (key) => settings[key];
+    return buildBranding({
+      get,
+      companyName: companyNameFrom(get, currentTenant()),
+      hasLogo: logo.hasImage,
+    });
+  } catch {
+    return null;
+  }
+}
 
 const cookieOptions = {
   httpOnly: true,
@@ -586,6 +629,29 @@ router.put('/settings/website/banner', requirePermission('settings.update'), val
   }));
 router.delete('/settings/website/banner', requirePermission('settings.update'), asyncHandler(async (req, res) => {
   res.json(await webAssetService.clear(req.context, 'banner'));
+}));
+
+// The shop's logo, in the `logo` slot of the same table, through the same
+// service, with the same four endpoints. It is a second row, not a second
+// mechanism — and there is deliberately no `favicon` slot: the browser tab is
+// drawn from this one image, so an owner cannot end up with a site whose tab
+// belongs to a logo they replaced a year ago.
+router.get('/settings/website/logo', requirePermission('settings.view'), asyncHandler(async (_req, res) => {
+  res.json(await webAssetService.get('logo'));
+}));
+router.get('/settings/website/logo/raw', requirePermission('settings.view'), asyncHandler(async (req, res) => {
+  const image = await webAssetService.bytes('logo');
+  if (!image) throw new NotFoundError('Website logo image', 'logo');
+  // Same reasoning as the banner's raw route: one URL that outlives the bytes
+  // behind it, so `no-cache` with an ETag rather than anything `immutable`.
+  sendImage(req, res, { ...image, created_at: image.updated_at }, { cacheControl: 'private, no-cache' });
+}));
+router.put('/settings/website/logo', requirePermission('settings.update'), validate(v.websiteLogoSchema),
+  asyncHandler(async (req, res) => {
+    res.json(await webAssetService.set(req.body.dataUrl, req.context, 'logo'));
+  }));
+router.delete('/settings/website/logo', requirePermission('settings.update'), asyncHandler(async (req, res) => {
+  res.json(await webAssetService.clear(req.context, 'logo'));
 }));
 
 export default router;

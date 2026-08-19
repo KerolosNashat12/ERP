@@ -73,3 +73,15 @@ export const api = {
 
 /** Photo bytes come straight off the API — no CDN, no build step, no bundling. */
 export const imageUrl = (id) => (id ? `${apiBase()}/api/shop/images/${id}` : null);
+
+/**
+ * A root-relative asset path from `/api/shop/config` (`branding.logo`,
+ * `banner.image`), moved into this tenant's own space.
+ *
+ * The server answers with `/api/shop/logo` because it does not know — and must
+ * not have to know — which prefix the browser reached it through. Without this
+ * a shop hosted at `/t/<slug>/shop` would fetch the DEFAULT tenant's logo and
+ * banner: the one bug this whole round exists to make impossible, arriving
+ * through the back door of a URL nobody prefixed.
+ */
+export const assetUrl = (path) => (path ? `${apiBase()}${path}` : null);

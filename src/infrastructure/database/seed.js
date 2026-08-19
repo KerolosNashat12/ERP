@@ -147,10 +147,14 @@ export async function seedBaseline() {
 
       // --- website: banner, kept in step with migrations/005-website-settings.js
       // so a fresh install and a migrated one end up with identical rows.
-      ['web.banner_heading_en', 'Accessories that finish the look', 'string', 'website'],
-      ['web.banner_heading_ar', 'إكسسوارات تكمل إطلالتك', 'string', 'website'],
-      ['web.banner_text_en', 'Bags, perfume and jewellery — chosen piece by piece.', 'string', 'website'],
-      ['web.banner_text_ar', 'شنط وعطور ومجوهرات — مختارة قطعة قطعة.', 'string', 'website'],
+      // Empty, not "Accessories that finish the look". A default that reads
+      // well is a default that names a product category, and every shop that
+      // never edits it opens its website wearing another shop's words. The
+      // storefront falls back to the shop's own name instead.
+      ['web.banner_heading_en', '', 'string', 'website'],
+      ['web.banner_heading_ar', '', 'string', 'website'],
+      ['web.banner_text_en', '', 'string', 'website'],
+      ['web.banner_text_ar', '', 'string', 'website'],
       ['web.banner_cta_label_en', '', 'string', 'website'],
       ['web.banner_cta_label_ar', '', 'string', 'website'],
       ['web.banner_cta_link', '', 'string', 'website'],
@@ -194,6 +198,20 @@ export async function seedBaseline() {
       ['shop.delivery_percent', '0', 'number', 'shop'],
       ['shop.delivery_min', '0', 'number', 'shop'],
       ['shop.delivery_max', '0', 'number', 'shop'],
+
+      // --- website: branding, kept in step with
+      // migrations/008-shop-branding.js. The words are empty on purpose (see
+      // that file); the colours are the shop's starting palette.
+      ['web.tagline_en', '', 'string', 'website'],
+      ['web.tagline_ar', '', 'string', 'website'],
+      ['web.about_en', '', 'string', 'website'],
+      ['web.about_ar', '', 'string', 'website'],
+      ['web.search_placeholder_en', '', 'string', 'website'],
+      ['web.search_placeholder_ar', '', 'string', 'website'],
+      ['web.meta_description_en', '', 'string', 'website'],
+      ['web.meta_description_ar', '', 'string', 'website'],
+      ['web.theme_accent', '#c8a24a', 'string', 'website'],
+      ['web.theme_dark', '1', 'boolean', 'website'],
     ];
     for (const [key, value, type, group] of settings) await insertSetting.run(key, value, type, group);
 

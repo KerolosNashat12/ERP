@@ -11,6 +11,7 @@ import { applyDocumentLanguage, onLanguageChange, t } from './core/i18n.js';
 import { setConfig, shop, isOpen } from './core/store.js';
 import { defineRoutes, start, render, href } from './core/router.js';
 import { setPageMeta } from './core/seo.js';
+import { applyBranding, applyFavicon } from './core/branding.js';
 import * as cart from './core/cart.js';
 import { buildHeader, buildFooter, refreshCartCount, syncSearchInput, syncNav } from './ui/layout.js';
 import { errorState, closedState, emptyState } from './ui/states.js';
@@ -75,6 +76,10 @@ async function boot() {
     setConfig(config);
     shop.categories = categories.rows || [];
     shop.brands = brands.rows || [];
+    // Before the first paint of anything but the boot screen: the accent, the
+    // mode, the monogram and the tab icon are all one shop's, and they are all
+    // set once here rather than component by component.
+    applyBranding();
   } catch (error) {
     document.body.classList.remove('is-booting');
     fill(main, el('div.wrap.stack', errorState(error, () => window.location.reload())));
@@ -112,6 +117,10 @@ async function boot() {
   // different column.
   onLanguageChange(() => {
     paintShell();
+    // A monogram is script-dependent — `ح ب` in Arabic, two Latin initials in
+    // English — so the mark in the tab changes with the language, exactly as
+    // the one in the header does.
+    applyFavicon();
     render();
   });
 

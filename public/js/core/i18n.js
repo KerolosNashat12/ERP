@@ -6,7 +6,10 @@
 
 const dictionary = {
   en: {
-    appName: 'M&M Accessories', appTag: 'Offline ERP for accessories retail',
+    // Neutral, and only ever a fallback: the shop's own name comes from its
+    // `company.name` setting. A product category named here would greet the
+    // staff of every shop on the platform.
+    appName: 'Shop', appTag: 'Offline-first ERP for retail shops',
     login: 'Sign in', logout: 'Sign out', username: 'Username', password: 'Password',
     signingIn: 'Signing in…', welcomeBack: 'Welcome back', loginSubtitle: 'Sign in to continue to the ERP',
     demoAccounts: 'Demo accounts', language: 'Language', english: 'English', arabic: 'العربية',
@@ -409,6 +412,45 @@ const dictionary = {
     removeBannerPhoto: 'Remove photo',
     noBannerPhoto: 'No banner photo uploaded yet',
     bannerRemoveConfirm: 'Remove the banner photo from the website?',
+    // --- website settings: the shop's own identity (round 4)
+    //
+    // Nothing in this group has a default that names a product category. A
+    // shop that leaves every field below empty gets its own name, neutral
+    // copy and the default gold — never another shop's words.
+    logoCard: 'Logo',
+    logoHint: 'Shown in your website header and footer, in the browser tab, on shared links, and in this ERP. A PNG with a transparent background works best — it is kept exactly as uploaded, so it sits correctly on both light and dark.',
+    uploadLogo: 'Upload logo',
+    removeLogo: 'Remove logo',
+    logoRemoveConfirm: 'Remove the logo? Your shop will show its initials instead.',
+    logoTooLarge: 'This image is too large even after resizing. Try a simpler logo file.',
+    noLogoHint: 'No logo uploaded — your website shows these initials, taken from your shop name.',
+    onDarkBackground: 'On a dark background',
+    onLightBackground: 'On a light background',
+
+    brandWordsCard: 'Words',
+    brandWordsHint: 'Leave any of these empty and the website falls back to something true of any shop — your own name, “Search products…”. Nothing here is required.',
+    webTaglineEn: 'Tagline (English)',
+    webTaglineAr: 'Tagline (Arabic)',
+    webTaglinePlaceholder: 'The short line beside your name',
+    webSearchPlaceholderEn: 'Search box text (English)',
+    webSearchPlaceholderAr: 'Search box text (Arabic)',
+    webAboutEn: 'About your shop (English)',
+    webAboutAr: 'About your shop (Arabic)',
+    webAboutHint: 'The paragraph in your website footer.',
+    webMetaEn: 'Link description (English)',
+    webMetaAr: 'Link description (Arabic)',
+    webMetaHint: 'What WhatsApp, Facebook and Google show under your shop’s name when someone shares a link.',
+
+    themeCard: 'Colour',
+    themeAccent: 'Accent colour',
+    themeAccentHint: 'One colour: buttons, links, prices and active tabs all follow it. Shades that stay readable are worked out for you.',
+    themeDark: 'Dark bands (announcement, footer, buttons)',
+    themePreviewLabel: 'Live preview',
+    themePreviewBand: 'Free delivery on orders over 1000',
+    themePreviewButton: 'Add to cart',
+    themePreviewLink: 'View all',
+    themePreviewChip: 'New arrivals',
+
     socialCard: 'Social media',
     socialHint: 'Untick a network to hide it from the storefront footer.',
     socialFacebook: 'Facebook',
@@ -470,7 +512,7 @@ const dictionary = {
   },
 
   ar: {
-    appName: 'إم آند إم للإكسسوارات', appTag: 'نظام ERP يعمل بدون إنترنت لمتاجر الإكسسوارات',
+    appName: 'المتجر', appTag: 'نظام ERP للمحلات يشتغل من غير إنترنت',
     login: 'تسجيل الدخول', logout: 'تسجيل الخروج', username: 'اسم المستخدم', password: 'كلمة المرور',
     signingIn: 'جارٍ تسجيل الدخول…', welcomeBack: 'مرحبًا بعودتك', loginSubtitle: 'سجّل الدخول للمتابعة',
     demoAccounts: 'حسابات تجريبية', language: 'اللغة', english: 'English', arabic: 'العربية',
@@ -859,6 +901,41 @@ const dictionary = {
     removeBannerPhoto: 'إزالة الصورة',
     noBannerPhoto: 'لسه مفيش صورة مرفوعة للبانر',
     bannerRemoveConfirm: 'تشيل صورة البانر من الموقع؟',
+    // --- إعدادات الموقع: هوية المحل نفسه (الجولة الرابعة)
+    logoCard: 'الشعار',
+    logoHint: 'بيظهر في هيدر وفوتر موقعك، وفي تبويب المتصفح، وفي معاينة الروابط، وجوه نظام الـ ERP نفسه. أفضل حاجة صورة PNG بخلفية شفافة — بنحتفظ بالملف زي ما هو بالظبط، علشان يظهر صح على الخلفية الفاتحة والغامقة.',
+    uploadLogo: 'رفع الشعار',
+    removeLogo: 'إزالة الشعار',
+    logoRemoveConfirm: 'تشيل الشعار؟ الموقع هيعرض أول حرفين من اسم المحل بدله.',
+    logoTooLarge: 'الصورة كبيرة أوي حتى بعد التصغير. جرّب ملف شعار أبسط.',
+    noLogoHint: 'مفيش شعار مرفوع — الموقع بيعرض الحرفين دول، مأخوذين من اسم محلك.',
+    onDarkBackground: 'على خلفية غامقة',
+    onLightBackground: 'على خلفية فاتحة',
+
+    brandWordsCard: 'الكلمات',
+    brandWordsHint: 'سيب أي خانة فاضية والموقع هيستخدم حاجة تنفع أي محل — اسمك أنت، و«ابحث عن المنتجات…». مفيش خانة هنا إجبارية.',
+    webTaglineEn: 'الجملة التعريفية (إنجليزي)',
+    webTaglineAr: 'الجملة التعريفية (عربي)',
+    webTaglinePlaceholder: 'السطر القصير اللي جنب الاسم',
+    webSearchPlaceholderEn: 'نص خانة البحث (إنجليزي)',
+    webSearchPlaceholderAr: 'نص خانة البحث (عربي)',
+    webAboutEn: 'نبذة عن المحل (إنجليزي)',
+    webAboutAr: 'نبذة عن المحل (عربي)',
+    webAboutHint: 'الفقرة اللي بتظهر في فوتر الموقع.',
+    webMetaEn: 'وصف الرابط (إنجليزي)',
+    webMetaAr: 'وصف الرابط (عربي)',
+    webMetaHint: 'اللي بيظهر تحت اسم محلك في واتساب وفيسبوك وجوجل لما حد يبعت لينك.',
+
+    themeCard: 'اللون',
+    themeAccent: 'اللون الأساسي',
+    themeAccentHint: 'لون واحد: الأزرار والروابط والأسعار والتبويبات النشطة كلها بتمشي وراه. الدرجات اللي تفضل مقروءة بنحسبها لك.',
+    themeDark: 'شرائط غامقة (الإعلان والفوتر والأزرار)',
+    themePreviewLabel: 'معاينة مباشرة',
+    themePreviewBand: 'شحن مجاني للطلبات فوق 1000',
+    themePreviewButton: 'أضف إلى السلة',
+    themePreviewLink: 'عرض الكل',
+    themePreviewChip: 'وصل حديثًا',
+
     socialCard: 'وسائل التواصل الاجتماعي',
     socialHint: 'شيل علامة الصح من أي شبكة علشان تختفي من فوتر المتجر.',
     socialFacebook: 'فيسبوك',

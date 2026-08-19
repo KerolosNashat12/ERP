@@ -155,7 +155,7 @@ function printableReport(report) {
   return h('div', { class: 'doc' },
     h('div', { class: 'doc-head' },
       h('div', {},
-        h('div', { class: 'doc-title' }, session.settings['company.name'] || 'M&M Accessories'),
+        h('div', { class: 'doc-title' }, session.settings['company.name'] || t('appName')),
         h('div', { class: 'doc-meta' }, ar ? report.titleAr : report.titleEn)),
       h('div', { class: 'right doc-meta' },
         h('div', {}, `${t('generatedAt')}: ${byType(report.generatedAt, 'datetime')}`),

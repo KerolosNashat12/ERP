@@ -333,6 +333,16 @@ export const websiteBannerSchema = z.object({
 });
 
 /**
+ * The shop's logo. Same shape, its own message: an owner told "a photo is
+ * required" while looking at a Logo card is being answered by somebody else's
+ * screen. The bytes themselves — type, size and the PNG that must stay a PNG —
+ * are checked in WebAssetService against what was actually decoded.
+ */
+export const websiteLogoSchema = z.object({
+  dataUrl: z.string().min(1, 'A logo image is required'),
+});
+
+/**
  * A basket from the public internet.
  *
  * The only thing believed here is the SHAPE. Prices are absent from the schema

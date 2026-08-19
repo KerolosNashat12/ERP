@@ -1,5 +1,5 @@
 /* =============================================================================
-   M&M Accessories ERP — single stylesheet.
+   The ERP — single stylesheet, one shop per deployment.
    Logical properties (inline-start/end) are used throughout so the whole
    interface mirrors correctly when dir="rtl" is set for Arabic.
    ========================================================================== */
@@ -55,9 +55,11 @@ button, input, select, textarea { font: inherit; color: inherit; }
 /* ------------------------------------------------------------------ boot */
 .app-loading { display: grid; place-items: center; height: 100vh; }
 .boot { text-align: center; color: var(--ink-3); }
+/* No letters: which shop this is arrives with the first response, and until
+   then the ERP belongs to nobody. */
 .boot-mark {
-  font-family: Georgia, "Times New Roman", serif;
-  font-size: 42px; color: var(--gold); letter-spacing: .04em;
+  width: 34px; height: 34px; margin: 0 auto 10px;
+  border-radius: 50%; background: var(--gold-soft); border: 2px solid var(--gold);
 }
 
 /* ----------------------------------------------------------------- login */
@@ -71,8 +73,12 @@ button, input, select, textarea { font: inherit; color: inherit; }
   background: linear-gradient(160deg, #10151f 0%, #1c2436 55%, #2a3348 100%);
   color: #fff; padding: 56px; display: flex; flex-direction: column; justify-content: space-between;
 }
-.login-aside h1 { font-family: Georgia, serif; font-size: 40px; letter-spacing: .02em; }
-.login-aside .gold { color: var(--gold); }
+.login-mark { display: flex; align-items: center; min-height: 48px; }
+.login-mark .mark {
+  font-family: Georgia, "Noto Naskh Arabic", serif; font-size: 40px;
+  letter-spacing: .02em; color: var(--gold); line-height: 1;
+}
+.login-mark .mark-logo { height: 48px; width: auto; max-width: 220px; object-fit: contain; }
 .login-aside ul { list-style: none; padding: 0; margin: 28px 0 0; display: grid; gap: 12px; }
 .login-aside li { color: #c9d2e2; display: flex; gap: 10px; align-items: flex-start; }
 .login-aside li::before { content: "—"; color: var(--gold); }
@@ -99,10 +105,21 @@ button, input, select, textarea { font: inherit; color: inherit; }
   padding: 18px 20px; display: flex; align-items: center; gap: 10px;
   border-bottom: 1px solid rgba(255,255,255,.08);
 }
+/* The shop's own mark: its logo where it uploaded one, the monogram the server
+   derived from its name where it did not. Fixed height, free width, so a
+   wordmark stays a wordmark and a square badge stays square — and no
+   background, because a logo with transparency is exactly what belongs on this
+   dark band. */
 .sidebar-brand .mark {
-  font-family: Georgia, serif; font-size: 22px; color: var(--gold); line-height: 1;
+  font-family: Georgia, "Noto Naskh Arabic", serif; font-size: 22px;
+  color: var(--gold); line-height: 1; white-space: nowrap; flex: none;
 }
-.sidebar-brand .name { color: #fff; font-weight: 600; font-size: 14.5px; }
+.sidebar-brand .mark-logo { height: 30px; width: auto; max-width: 96px; object-fit: contain; flex: none; }
+.sidebar-brand-text { min-width: 0; }
+.sidebar-brand .name {
+  color: #fff; font-weight: 600; font-size: 14.5px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 .sidebar-brand .sub { font-size: 11px; color: #8493ab; }
 .nav { padding: 10px 10px 24px; display: grid; gap: 1px; }
 .nav-group { margin-top: 14px; padding: 0 10px 6px; font-size: 10.5px; letter-spacing: .09em;
@@ -207,6 +224,8 @@ html[dir="rtl"] .nav-group { letter-spacing: 0; }
 .field { display: grid; gap: 5px; }
 .field > label { font-size: 12.5px; font-weight: 500; color: var(--ink-2); }
 .field .hint { font-size: 11.5px; color: var(--ink-3); }
+/* A colour well, not a text field: it is one swatch wide. */
+.field input[type="color"] { width: 96px; cursor: pointer; }
 .input, .select, .textarea {
   width: 100%; padding: 7px 10px; border: 1px solid var(--line);
   border-radius: var(--radius-sm); background: var(--surface); outline: none;
@@ -496,6 +515,63 @@ html[dir="rtl"] .kpi .label { letter-spacing: 0; }
 /* ------------------------------------------------------- website settings */
 /* 16:5 matches the storefront hero exactly, so what the owner sees here is
    what a shopper sees, not an approximation. */
+/* ------------------------------------------------- website: the shop's brand */
+/*
+ * The logo, at the size the site actually draws it, on both backgrounds it has
+ * to live on. Never scaled UP and never given a background of its own: the
+ * whole reason the upload path refuses to re-encode a PNG is that the mark has
+ * to sit on the dark strip without a white box around it, and that is only
+ * visible if the preview shows it there.
+ */
+.logo-strips { display: grid; gap: 12px; grid-template-columns: 1fr 1fr; }
+.logo-strip-wrap { display: grid; gap: 5px; justify-items: center; }
+.logo-strip {
+  width: 100%; min-height: 92px; padding: 14px;
+  display: grid; place-items: center;
+  border-radius: var(--radius-sm); border: 1px solid var(--line);
+}
+.logo-strip.dark { background: var(--brand); border-color: var(--brand); }
+.logo-strip.light { background: #ffffff; }
+.logo-strip img { max-height: 56px; max-width: 100%; width: auto; object-fit: contain; }
+.logo-strip .mono {
+  font-family: Georgia, "Noto Naskh Arabic", serif; font-size: 30px; line-height: 1;
+}
+.logo-strip.dark .mono { color: var(--gold); }
+.logo-strip.light .mono { color: var(--brand); }
+.logo-facts { margin: 0; }
+
+/*
+ * The colour preview: a band, a button, a price, a link and a chip — the five
+ * things one accent decides on the storefront. `applyTheme()` (the storefront's
+ * own function, from public/shared/brandTheme.js) sets --accent* on this node,
+ * so the shades here are the shades the site will paint, not an approximation.
+ */
+.theme-preview { border: 1px solid var(--line); border-radius: var(--radius-sm); overflow: hidden; }
+.theme-preview .tp-band { padding: 9px 14px; font-size: 12.5px; text-align: center; }
+.theme-preview .tp-page {
+  padding: 16px 14px; display: flex; gap: 16px; align-items: center; flex-wrap: wrap;
+}
+.theme-preview .tp-btn { border-radius: 999px; padding: 9px 18px; font-size: 13.5px; font-weight: 600; }
+.theme-preview .tp-price { font-size: 18px; font-weight: 700; color: var(--accent-strong); }
+.theme-preview .tp-link { font-size: 13.5px; color: var(--accent-strong); text-decoration: underline; }
+.theme-preview .tp-chip { border-radius: 999px; padding: 5px 13px; font-size: 12.5px; border: 1px solid; }
+
+.theme-preview[data-theme="dark"] .tp-band { background: #111827; color: var(--accent-bright); }
+.theme-preview[data-theme="dark"] .tp-page { background: #faf8f4; color: #111827; }
+.theme-preview[data-theme="dark"] .tp-btn { background: #111827; color: #fff; }
+.theme-preview[data-theme="dark"] .tp-chip { background: #111827; border-color: #111827; color: #fff; }
+
+.theme-preview[data-theme="light"] .tp-band { background: #f4f5f7; color: var(--accent-strong); }
+.theme-preview[data-theme="light"] .tp-page { background: #fbfbfc; color: #111827; }
+.theme-preview[data-theme="light"] .tp-btn { background: var(--accent); color: var(--accent-ink); }
+.theme-preview[data-theme="light"] .tp-chip {
+  background: var(--accent); border-color: var(--accent); color: var(--accent-ink);
+}
+
+@media (max-width: 700px) {
+  .logo-strips { grid-template-columns: 1fr; }
+}
+
 .banner-preview-frame {
   position: relative; width: 100%; aspect-ratio: 16 / 5; overflow: hidden;
   border-radius: var(--radius-sm); background: var(--line-2) center / cover no-repeat;

@@ -10,6 +10,7 @@ import { t, pick, getLanguage, isRtl } from '../core/i18n.js';
 import { money, number, priceRange } from '../core/format.js';
 import { href } from '../core/router.js';
 import { setPageMeta } from '../core/seo.js';
+import { shopName } from '../core/branding.js';
 import { deliveryFee, freeDeliveryOver, deliverySettings } from '../core/store.js';
 import * as cart from '../core/cart.js';
 import { availabilityBadge, productPhoto } from '../ui/cards.js';
@@ -282,7 +283,7 @@ export default async function productView(root, route) {
   setPageMeta({
     title: name,
     description: (description || '').slice(0, 180)
-      || (getLanguage() === 'ar' ? `${name} — متاح الآن في إم آند إم للإكسسوارات.` : `${name} — available now at M&M Accessories.`),
+      || (getLanguage() === 'ar' ? `${name} — متاح الآن في ${shopName()}.` : `${name} — available now at ${shopName()}.`),
     image: product.image_id ? imageUrl(product.image_id) : null,
   });
 

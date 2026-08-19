@@ -1,5 +1,5 @@
 /** Users & roles, audit log, settings, locations and backups. */
-import api from '../core/api.js';
+import api, { apiBase } from '../core/api.js';
 import {
   h, mount, dataTable, pager, spinner, toast, toastError, textInput, selectInput,
   field, modal, debounce, tag, buildForm, confirmDialog, checkboxInput,
@@ -8,6 +8,8 @@ import { t, pick, getLanguage } from '../core/i18n.js';
 import { number, dateTime, money } from '../core/format.js';
 import { session, can, loadSession, setBadge } from '../core/store.js';
 import { devicesPanel } from './devices.js';
+import { applyTheme, normalizeHex, DEFAULT_ACCENT } from '../../shared/brandTheme.js';
+import { refreshShopMark, shopMonogram } from '../core/brand.js';
 
 // ------------------------------------------------------------ users & roles
 
@@ -481,6 +483,111 @@ const BANNER_CROP_RATIO = BANNER_CROP_W / BANNER_CROP_H;
 const BANNER_JPEG_QUALITY = 0.85;
 
 /**
+ * The logo, and why it is not compressed the way every other picture here is.
+ *
+ * A product photo and a banner are photographs: they are re-drawn into a
+ * canvas and re-encoded as JPEG, because a 5 MB phone picture has no business
+ * in a database. A logo is not a photograph. It is usually a PNG with an alpha
+ * channel, drawn at 32 px in a browser tab and 40 px in a footer, and JPEG has
+ * no transparency at all — re-encoding one would put a white rectangle around
+ * the shop's mark on every dark band on its own website. The server keeps
+ * whatever type arrives (see WebAssetService), so the rule here is simply not
+ * to undo that:
+ *
+ *   - a file that already fits is sent BYTE FOR BYTE, never through a canvas;
+ *   - a file that does not fit is scaled down and re-encoded as PNG when it
+ *     has any transparent pixel, and only as JPEG when it provably has none.
+ *
+ * 512 px on the longest edge is roughly four times the largest size any screen
+ * draws this at, which leaves room for a retina display and none for a 4000 px
+ * export nobody will ever see the detail of. The ceiling is the server's own
+ * (400 KB decoded) with a little headroom, so the refusal happens here, where
+ * the owner is looking at the file they picked.
+ */
+const LOGO_MAX_EDGE = 512;
+const LOGO_MAX_BYTES = 380 * 1024;
+const LOGO_JPEG_QUALITY = 0.9;
+/** Smaller retries, in order, for a logo that will not fit at full size. */
+const LOGO_FALLBACK_EDGES = [384, 256, 160];
+
+/** `file` -> `data:…;base64,…`, unread and unaltered. */
+function readAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(new Error(t('photoUnreadable')));
+    reader.readAsDataURL(file);
+  });
+}
+
+/** The decoded image, or a message a shop owner can act on. */
+function loadImage(file) {
+  return new Promise((resolve, reject) => {
+    const objectUrl = URL.createObjectURL(file);
+    const image = new Image();
+    image.onload = () => { URL.revokeObjectURL(objectUrl); resolve(image); };
+    image.onerror = () => { URL.revokeObjectURL(objectUrl); reject(new Error(t('photoUnreadable'))); };
+    image.src = objectUrl;
+  });
+}
+
+/**
+ * Does this drawing actually use its alpha channel?
+ *
+ * Asked of the pixels rather than of the file extension, because a PNG saved
+ * without transparency is a JPEG's worth of bytes for nothing, and a JPEG that
+ * somebody renamed .png is not transparent however it is labelled. Sampled
+ * every fourth pixel: a cut-out logo has thousands of transparent pixels, not
+ * three, so a sample cannot miss one that matters.
+ */
+function hasTransparency(canvas) {
+  const { data } = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height);
+  for (let i = 3; i < data.length; i += 16) if (data[i] < 250) return true;
+  return false;
+}
+
+/** The image drawn into a canvas whose longest edge is `edge` — never upscaled. */
+function drawScaled(image, edge) {
+  const longest = Math.max(image.naturalWidth, image.naturalHeight) || 1;
+  const scale = Math.min(1, edge / longest);
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+  canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+  canvas.getContext('2d').drawImage(image, 0, 0, canvas.width, canvas.height);
+  return canvas;
+}
+
+/** Decoded byte length of a data URL — what the server measures its limit in. */
+const dataUrlBytes = (dataUrl) => Math.floor((dataUrl.split(',')[1] || '').length * 3 / 4);
+
+/**
+ * A logo, ready to PUT: the original bytes wherever they already fit, and a
+ * scaled-down re-encode that keeps transparency wherever they do not.
+ */
+async function prepareLogo(file) {
+  const image = await loadImage(file);
+  const longest = Math.max(image.naturalWidth, image.naturalHeight);
+  const original = await readAsDataUrl(file);
+
+  const typeIsKept = ['image/png', 'image/jpeg', 'image/webp'].includes(file.type);
+  if (typeIsKept && longest <= LOGO_MAX_EDGE && dataUrlBytes(original) <= LOGO_MAX_BYTES) {
+    return original;
+  }
+
+  for (const edge of [LOGO_MAX_EDGE, ...LOGO_FALLBACK_EDGES]) {
+    const canvas = drawScaled(image, edge);
+    const transparent = hasTransparency(canvas);
+    const dataUrl = transparent
+      ? canvas.toDataURL('image/png')
+      : canvas.toDataURL('image/jpeg', LOGO_JPEG_QUALITY);
+    if (dataUrlBytes(dataUrl) <= LOGO_MAX_BYTES) return dataUrl;
+    // A transparent logo that will not fit is retried smaller rather than
+    // flattened: losing the alpha is a worse answer than losing pixels.
+  }
+  throw new Error(t('logoTooLarge'));
+}
+
+/**
  * Positions the heading/text box physically (left/right/top/bottom, never
  * inline-start/end): the contract requires the owner's chosen position to
  * render identically in Arabic and English, and logical properties would
@@ -688,7 +795,11 @@ export async function settingsView(root, route) {
     mount(bannerPreview,
       ...bannerOverlayNodes(spec),
       !bannerMeta.hasImage ? h('div', { class: 'banner-preview-empty' }, t('noBannerPhoto')) : null);
-    bannerPreview.style.backgroundImage = bannerMeta.hasImage ? `url(/api/settings/website/banner/raw?_=${Date.now()})` : 'none';
+    // Prefixed: under `/t/<slug>` an unprefixed asset URL is the DEFAULT
+    // shop's banner, quietly previewed inside somebody else's settings screen.
+    bannerPreview.style.backgroundImage = bannerMeta.hasImage
+      ? `url(${apiBase()}/api/settings/website/banner/raw?_=${Date.now()})`
+      : 'none';
   }
 
   const BANNER_LIVE_FIELDS = [
@@ -907,6 +1018,163 @@ export async function settingsView(root, route) {
     class: 'btn sm ghost', disabled: true, onclick: removeBannerPhoto,
   }, t('removeBannerPhoto'));
 
+  // ---------------------------------------------------------------- brand
+  //
+  // Everything that used to be a string literal in the storefront's own code:
+  // the mark in its header, the words that describe it, and the one colour the
+  // rest of its palette derives from. A shop that fills none of this in still
+  // gets a finished website — the server answers with its own name, neutral
+  // copy and the default gold — so every field below is genuinely optional and
+  // every one of them is shown with the fallback it would get as a placeholder.
+
+  const brandForm = buildForm([
+    { name: 'web.tagline_en', label: t('webTaglineEn'), placeholder: t('webTaglinePlaceholder'), disabled: !editable },
+    { name: 'web.tagline_ar', label: t('webTaglineAr'), placeholder: t('webTaglinePlaceholder'), disabled: !editable },
+    {
+      name: 'web.search_placeholder_en', label: t('webSearchPlaceholderEn'),
+      placeholder: 'Search products…', disabled: !editable,
+    },
+    {
+      name: 'web.search_placeholder_ar', label: t('webSearchPlaceholderAr'),
+      placeholder: 'ابحث عن المنتجات…', disabled: !editable,
+    },
+    {
+      name: 'web.about_en', label: t('webAboutEn'), type: 'textarea', span: 2,
+      hint: t('webAboutHint'), disabled: !editable,
+    },
+    { name: 'web.about_ar', label: t('webAboutAr'), type: 'textarea', span: 2, disabled: !editable },
+    {
+      name: 'web.meta_description_en', label: t('webMetaEn'), type: 'textarea', span: 2,
+      hint: t('webMetaHint'), disabled: !editable,
+    },
+    { name: 'web.meta_description_ar', label: t('webMetaAr'), type: 'textarea', span: 2, disabled: !editable },
+  ], settings, { columns: 2 });
+
+  // --- the logo
+
+  let logoMeta = { hasImage: false };
+  // Bumped on every upload and delete: `/logo/raw` is one URL for bytes that
+  // change, so without this the owner replaces the logo and sees the old one.
+  let logoVersion = Date.now();
+  const logoStrips = h('div', { class: 'logo-strips' });
+  const logoFacts = h('p', { class: 'small muted logo-facts' });
+
+  /** The mark a shop shows when it has uploaded nothing: the server's monogram. */
+  const monogramNode = () => h('span', { class: 'mono' }, shopMonogram() || '·');
+
+  /**
+   * The same picture on a dark strip and on a light one, at the size the site
+   * actually draws it. A logo is the one image whose background is not the
+   * designer's to choose — it sits on this shop's header and on its footer —
+   * and a white box only shows up against the dark one.
+   */
+  function renderLogoPreview() {
+    const previewNode = () => (logoMeta.hasImage
+      ? h('img', { src: `${apiBase()}/api/settings/website/logo/raw?_=${logoVersion}`, alt: '' })
+      : monogramNode());
+    mount(logoStrips,
+      h('div', { class: 'logo-strip-wrap' },
+        h('div', { class: 'logo-strip dark' }, previewNode()),
+        h('small', { class: 'muted' }, t('onDarkBackground'))),
+      h('div', { class: 'logo-strip-wrap' },
+        h('div', { class: 'logo-strip light' }, previewNode()),
+        h('small', { class: 'muted' }, t('onLightBackground'))));
+
+    const kb = logoMeta.byteSize ? `${Math.max(1, Math.round(logoMeta.byteSize / 1024))} KB` : null;
+    const size = logoMeta.width && logoMeta.height ? `${logoMeta.width} × ${logoMeta.height}` : null;
+    const type = (logoMeta.contentType || '').replace('image/', '').toUpperCase() || null;
+    mount(logoFacts, logoMeta.hasImage
+      ? [size, type, kb].filter(Boolean).join(' · ')
+      : t('noLogoHint'));
+    logoRemoveBtn.disabled = !editable || !logoMeta.hasImage;
+  }
+
+  async function loadLogoMeta() {
+    try { logoMeta = await api.get('/api/settings/website/logo'); } catch { logoMeta = { hasImage: false }; }
+    renderLogoPreview();
+  }
+
+  async function onLogoFileChosen(event) {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    if (!file.type.startsWith('image/')) { toastError(new Error(t('photoNotAnImage'))); return; }
+    logoUploadBtn.disabled = true;
+    try {
+      logoMeta = await api.put('/api/settings/website/logo', { dataUrl: await prepareLogo(file) });
+      logoVersion = Date.now();
+      renderLogoPreview();
+      // The sidebar and the tab are showing the old mark until something says
+      // otherwise, and the owner is looking straight at the new one.
+      session.branding = { ...(session.branding || {}), logo: '/api/shop/logo' };
+      refreshShopMark();
+      toast(t('saved'));
+    } catch (error) { toastError(error); } finally { logoUploadBtn.disabled = !editable; }
+  }
+
+  async function removeLogo() {
+    if (!await confirmDialog({ title: t('removeLogo'), message: t('logoRemoveConfirm'), danger: true })) return;
+    try {
+      logoMeta = await api.del('/api/settings/website/logo');
+      logoVersion = Date.now();
+      session.branding = { ...(session.branding || {}), logo: null };
+      renderLogoPreview();
+      refreshShopMark();
+      toast(t('deleted'));
+    } catch (error) { toastError(error); }
+  }
+
+  const logoFileInput = h('input', {
+    type: 'file', accept: 'image/*', style: { display: 'none' }, disabled: !editable, onchange: onLogoFileChosen,
+  });
+  const logoUploadBtn = h('button', {
+    class: 'btn sm', disabled: !editable, onclick: () => logoFileInput.click(),
+  }, t('uploadLogo'));
+  const logoRemoveBtn = h('button', {
+    class: 'btn sm ghost', disabled: true, onclick: removeLogo,
+  }, t('removeLogo'));
+
+  // --- the colour
+
+  const themeForm = buildForm([
+    {
+      name: 'web.theme_accent', label: t('themeAccent'), type: 'color',
+      hint: t('themeAccentHint'), disabled: !editable,
+    },
+    { name: 'web.theme_dark', label: t('themeDark'), type: 'checkbox', disabled: !editable },
+  ], settings, { columns: 2 });
+
+  // An unset colour is stored as an empty string and would reach the picker as
+  // black — the default the storefront would actually use is the honest value
+  // to show, and the same one `buildBranding()` falls back to server-side.
+  const accentInput = themeForm.inputs.get('web.theme_accent').input;
+  accentInput.value = normalizeHex(settings['web.theme_accent']) || DEFAULT_ACCENT;
+
+  const themePreview = h('div', { class: 'theme-preview' },
+    h('div', { class: 'tp-band' }, t('themePreviewBand')),
+    h('div', { class: 'tp-page' },
+      h('span', { class: 'tp-btn' }, t('themePreviewButton')),
+      h('span', { class: 'tp-price' }, money(249)),
+      h('span', { class: 'tp-link' }, t('themePreviewLink')),
+      h('span', { class: 'tp-chip' }, t('themePreviewChip'))));
+
+  /**
+   * The preview derives its shades with `applyTheme` — the very function the
+   * storefront calls on `<html>` — scoped to this one node. A preview that
+   * worked out its own lighter/darker siblings would be a preview of a site
+   * that does not exist.
+   */
+  function renderThemePreview() {
+    applyTheme(themePreview, {
+      accent: accentInput.value,
+      dark: themeForm.values()['web.theme_dark'] === 1,
+    });
+  }
+  for (const [, { input }] of themeForm.inputs) {
+    input.addEventListener('input', renderThemePreview);
+    input.addEventListener('change', renderThemePreview);
+  }
+
   // --- shipping: same mode/fields split the storefront basket and the
   // order service both live by (see src/shared/delivery.js) — flat charges a
   // fee, percent charges goodsTotal * percent with an optional floor/cap,
@@ -982,7 +1250,15 @@ export async function settingsView(root, route) {
   async function saveWebsite() {
     try {
       await api.put('/api/settings', {
-        ...bannerForm.values(), ...socialForm.values(), ...contactForm.values(), ...shippingForm.values(),
+        ...bannerForm.values(),
+        ...brandForm.values(),
+        // The colour control always has a value (a picker cannot be empty), so
+        // it is sent as typed; the server refuses anything that is not a hex
+        // rather than letting it reach `<html>` as a broken custom property.
+        ...themeForm.values(),
+        ...socialForm.values(),
+        ...contactForm.values(),
+        ...shippingForm.values(),
       });
       toast(t('saved'));
     } catch (error) { toastError(error); }
@@ -1076,9 +1352,32 @@ export async function settingsView(root, route) {
     }
     if (activeTab === 'website') {
       loadBannerMeta();
+      loadLogoMeta();
       renderShippingCard();
+      renderThemePreview();
       mount(body,
+        // The shop's identity comes first: it is what every page of the
+        // storefront wears, and the banner is one page of it.
         h('div', { class: 'card' },
+          h('div', { class: 'card-head' }, h('h3', {}, t('logoCard'))),
+          h('div', { class: 'card-body stack' },
+            h('p', { class: 'muted small' }, t('logoHint')),
+            logoStrips,
+            logoFacts,
+            h('div', { class: 'row' }, logoUploadBtn, logoRemoveBtn, logoFileInput))),
+        h('div', { class: 'card', style: { marginTop: '14px' } },
+          h('div', { class: 'card-head' }, h('h3', {}, t('brandWordsCard'))),
+          h('div', { class: 'card-body' },
+            h('p', { class: 'muted small', style: { marginBottom: '12px' } }, t('brandWordsHint')),
+            brandForm.node)),
+        h('div', { class: 'card', style: { marginTop: '14px' } },
+          h('div', { class: 'card-head' }, h('h3', {}, t('themeCard'))),
+          h('div', { class: 'card-body stack' },
+            themeForm.node,
+            h('div', {},
+              h('small', { class: 'muted' }, t('themePreviewLabel')),
+              themePreview))),
+        h('div', { class: 'card', style: { marginTop: '14px' } },
           h('div', { class: 'card-head' }, h('h3', {}, t('bannerCard'))),
           h('div', { class: 'card-body stack' },
             h('div', {},

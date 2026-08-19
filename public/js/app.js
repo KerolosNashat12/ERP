@@ -2,9 +2,10 @@
 import api, { onUnauthorized } from './core/api.js';
 import { h, mount, toast, toastError, modal } from './core/ui.js';
 import { t, setLanguage, getLanguage, pick } from './core/i18n.js';
-import { session, can, loadSession, clearSession, badges, refreshBadges, setTenant } from './core/store.js';
+import { session, can, loadSession, clearSession, badges, refreshBadges, setTenant, setBranding } from './core/store.js';
 import { defineRoutes, startRouter, navigate } from './core/router.js';
 import { startScanner, onScan, triggerScan } from './core/scanner.js';
+import { shopMark, applyShopIdentity } from './core/brand.js';
 
 import { renderLogin, promptPasswordChange } from './views/auth.js';
 import { dashboardView } from './views/dashboard.js';
@@ -98,9 +99,13 @@ let tenantInfo = null;
 
 async function loadTenantInfo() {
   try {
-    const { tenant } = await api.get('/api/session');
+    const { tenant, branding } = await api.get('/api/session');
     tenantInfo = tenant;
     setTenant(tenant);
+    // Unauthenticated on purpose (see the route): the sidebar, the tab and the
+    // login screen all need the shop's mark before anyone has signed in.
+    setBranding(branding);
+    applyShopIdentity(tenant?.name);
   } catch {
     tenantInfo = null;
   }
@@ -129,8 +134,8 @@ function buildShell() {
 
   const sidebar = h('aside', { class: 'sidebar', id: 'sidebar' },
     h('div', { class: 'sidebar-brand' },
-      h('span', { class: 'mark' }, 'M&M'),
-      h('div', {},
+      shopMark(),
+      h('div', { class: 'sidebar-brand-text' },
         h('div', { class: 'name' }, companyName()),
         h('div', { class: 'sub' }, 'ERP v1.0'))),
     h('nav', { class: 'nav', id: 'nav' }));
@@ -260,6 +265,9 @@ async function boot() {
 }
 
 async function startApp() {
+  // The tenant row named the shop before sign-in; its own settings name it
+  // better, and they have arrived by now.
+  applyShopIdentity(tenantInfo?.name);
   const content = buildShell();
 
   defineRoutes({

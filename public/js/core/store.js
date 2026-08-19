@@ -11,6 +11,14 @@ export const session = {
    * is the server's job and the server's alone.
    */
   tenant: null,
+  /**
+   * This shop's own identity — logo, monogram, accent — exactly as the
+   * storefront receives it, from `/api/session` (see the `branding` block in
+   * src/shared/branding.js). It is here so the ERP shell can wear the shop
+   * the staff actually work for; a back office showing another tenant's
+   * letters is the same bug as a storefront doing it, just quieter.
+   */
+  branding: null,
   /** The single shop location. Kept as a record so documents still reference it. */
   location: null,
   lookups: {},
@@ -18,6 +26,10 @@ export const session = {
 
 export function setTenant(tenant) {
   session.tenant = tenant || null;
+}
+
+export function setBranding(branding) {
+  session.branding = branding || null;
 }
 
 /** False only when a tenant is known and the module is not in its plan. */

@@ -17,11 +17,15 @@
 
 /** [key, value, value_type] — group_name is always 'website', bound separately. */
 const WEBSITE_SETTINGS = [
-  // --- banner
-  ['web.banner_heading_en', 'Accessories that finish the look', 'string'],
-  ['web.banner_heading_ar', 'إكسسوارات تكمل إطلالتك', 'string'],
-  ['web.banner_text_en', 'Bags, perfume and jewellery — chosen piece by piece.', 'string'],
-  ['web.banner_text_ar', 'شنط وعطور ومجوهرات — مختارة قطعة قطعة.', 'string'],
+  // --- banner. Empty, not "Accessories that finish the look": these ship to
+  // every shop on the platform, and a default that reads well is a default
+  // that names one shop's product categories. `INSERT OR IGNORE` means a
+  // database that already ran this migration keeps whatever it has — this
+  // changes nothing for them, and stops the next shop inheriting it.
+  ['web.banner_heading_en', '', 'string'],
+  ['web.banner_heading_ar', '', 'string'],
+  ['web.banner_text_en', '', 'string'],
+  ['web.banner_text_ar', '', 'string'],
   ['web.banner_cta_label_en', '', 'string'],
   ['web.banner_cta_label_ar', '', 'string'],
   ['web.banner_cta_link', '', 'string'],

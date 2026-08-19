@@ -115,4 +115,22 @@ router.get('/banner', asyncHandler(async (req, res) => {
   sendImage(req, res, { ...image, created_at: image.updated_at }, { cacheControl: 'public, max-age=300' });
 }));
 
+/**
+ * The shop's logo — the same slot mechanism as the banner above, and the same
+ * cache rules for the same reason: one URL that never changes, so it may not
+ * be `immutable`, and the ETag carries `updated_at` so a replaced logo is
+ * fetched again within five minutes rather than after a year.
+ *
+ * A 404 here is the normal case, not an error: most shops have not uploaded
+ * one, and `/config` already told the client so (`branding.logo` is null and
+ * `branding.monogram` is what to draw instead). The bytes are served with the
+ * content type sniffed at upload, so a PNG logo keeps its transparency —
+ * nothing in this path re-encodes anything.
+ */
+router.get('/logo', asyncHandler(async (req, res) => {
+  const image = await webAssets.bytes('logo');
+  if (!image) throw new NotFoundError('Logo image', 'logo');
+  sendImage(req, res, { ...image, created_at: image.updated_at }, { cacheControl: 'public, max-age=300' });
+}));
+
 export default router;

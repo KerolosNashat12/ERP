@@ -577,7 +577,7 @@ export function creditNote(record) {
     h('div', { class: 'doc-head' },
       h('div', {},
         h('div', { class: 'doc-title' },
-          ar ? (session.settings['company.name_ar'] || 'M&M') : (session.settings['company.name'] || 'M&M Accessories')),
+          ar ? (session.settings['company.name_ar'] || t('appName')) : (session.settings['company.name'] || t('appName'))),
         h('div', { class: 'doc-meta' }, session.settings['company.address'] || ''),
         h('div', { class: 'doc-meta' }, session.settings['company.phone'] || '')),
       h('div', { class: 'right' },

@@ -216,16 +216,49 @@ export async function listGroups(creds = null) {
   })).filter((row) => row.name);
 }
 
-/** Turso's own idea of the nearest region, so a new group is not put on the far side of the world. */
-async function closestLocation(creds) {
-  try {
-    const body = await call(creds, '/v1/locations');
-    const closest = body?.closest || body?.location || '';
-    if (closest) return String(closest);
-  } catch {
-    // Not worth failing a shop's creation over: fall through to a default.
+/**
+ * The region codes this account may actually use.
+ *
+ * Asked, never assumed. A hard-coded `fra` was refused outright — "invalid
+ * location fra" — because the set of codes is not the same on every Turso
+ * plan, and a code that was right last year is not right on a new account. So
+ * the list comes from Turso, and everything below only ever picks from it.
+ */
+async function listLocations(creds) {
+  const body = await call(creds, '/v1/locations');
+  if (Array.isArray(body?.locations)) {
+    return body.locations.map((row) => String(row?.code || row?.name || row)).filter(Boolean);
   }
-  return 'fra';
+  if (body?.locations && typeof body.locations === 'object') return Object.keys(body.locations);
+  return [];
+}
+
+/**
+ * Where to put a new group, best first.
+ *
+ * Turso's own nearest-region hint if it is offered and is really in the list,
+ * then a few European/Middle-East codes that suit a shop in Cairo, then
+ * whatever else the account has. The result is a *list* rather than one answer
+ * because the only reliable proof that a code is accepted is Turso accepting
+ * it, and the caller tries them in turn.
+ */
+async function locationCandidates(creds) {
+  let available = [];
+  try {
+    available = await listLocations(creds);
+  } catch {
+    // An account that cannot list regions can still often create a group with
+    // none named, which is the last resort below.
+  }
+
+  const preferred = ['fra', 'ams', 'cdg', 'lhr', 'iad'];
+  const ordered = [
+    ...preferred.filter((code) => available.includes(code)),
+    ...available.filter((code) => !preferred.includes(code)),
+  ];
+  // `null` = let Turso choose. Always last, and always present, so a group can
+  // still be created when the region list is unavailable or unrecognisable.
+  return [...ordered, null];
 }
 
 /**
@@ -250,12 +283,27 @@ export async function ensureGroup(creds = null) {
     return (conventional || groups[0]).name;
   }
 
-  const location = await closestLocation(resolved);
-  const created = await request(resolved, '/groups', {
-    method: 'POST',
-    body: { name: 'default', location },
-  });
-  return String(created?.group?.name || 'default');
+  // Try the candidates in order. A refused region is not a failure worth
+  // showing an owner — it is a fact about their plan that the next attempt
+  // already accounts for. Only when every one is refused does the last error
+  // reach them, and by then it says something true.
+  const candidates = await locationCandidates(resolved);
+  let lastError = null;
+  for (const location of candidates) {
+    try {
+      const created = await request(resolved, '/groups', {
+        method: 'POST',
+        body: location ? { name: 'default', location } : { name: 'default' },
+      });
+      return String(created?.group?.name || 'default');
+    } catch (error) {
+      // A name that is already taken means another request won the race — the
+      // group exists, which is all this function promised.
+      if (error.httpStatus === 409) return 'default';
+      lastError = error;
+    }
+  }
+  throw lastError || tursoError('no region on this account would accept a new group', { apiToken: resolved.apiToken });
 }
 
 export async function listDatabases(creds = null) {

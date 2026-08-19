@@ -18,7 +18,11 @@ const dictionary = {
     // --- chrome
     home: 'Home',
     search: 'Search',
-    searchPlaceholder: 'Search bags, perfumes, jewellery…',
+    // Neutral on purpose, and only ever a last resort: the shop's own wording
+    // arrives resolved in `config.branding.searchPlaceholder`, and a default
+    // that named a product category is exactly how a clothes shop ended up
+    // asking its customers to search for perfume.
+    searchPlaceholder: 'Search products…',
     searchClose: 'Close search',
     cart: 'Cart',
     trackOrder: 'Track order',
@@ -31,8 +35,11 @@ const dictionary = {
     skipToContent: 'Skip to content',
 
     // --- home
-    heroTagline: 'Bags, perfume and jewellery — chosen piece by piece',
-    heroBody: 'Everything on this page is in our Cairo shop today. Order it and pay the courier in cash when it reaches your door.',
+    // The hero's own fallbacks, used only when the shop has written neither a
+    // banner heading nor a tagline. True of a jeweller, a clothes shop and a
+    // bookshop alike — nothing here may name what is being sold.
+    heroTagline: 'Chosen piece by piece',
+    heroBody: 'Everything on this page is in the shop today. Order it and pay the courier in cash when it reaches your door.',
     heroCta: 'Browse the shop',
     shopByCategory: 'Shop by category',
     ourBrands: 'Our brands',
@@ -185,7 +192,6 @@ const dictionary = {
 
     // --- footer
     whatsappUs: 'Message us on WhatsApp',
-    footerAbout: 'A small accessories shop in Cairo. Everything we list is a piece we actually keep.',
     footerShop: 'Shop',
     footerHelp: 'Help',
     rightsReserved: 'All rights reserved.',
@@ -211,7 +217,7 @@ const dictionary = {
     // --- chrome
     home: 'الرئيسية',
     search: 'بحث',
-    searchPlaceholder: 'دوّر على شنطة أو عطر أو مجوهرات…',
+    searchPlaceholder: 'ابحث عن المنتجات…',
     searchClose: 'إغلاق البحث',
     cart: 'السلة',
     trackOrder: 'تتبّع طلبك',
@@ -224,8 +230,8 @@ const dictionary = {
     skipToContent: 'تخطَّ إلى المحتوى',
 
     // --- home
-    heroTagline: 'شنط وعطور ومجوهرات — مختارة قطعة قطعة',
-    heroBody: 'كل اللي في الصفحة دي موجود في محلنا في القاهرة النهاردة. اطلبه وادفع كاش للمندوب لما يوصل لحد باب البيت.',
+    heroTagline: 'مختارة قطعة قطعة',
+    heroBody: 'كل اللي في الصفحة دي موجود في المحل النهاردة. اطلبه وادفع كاش للمندوب لما يوصل لحد باب البيت.',
     heroCta: 'اتفرّج على المنتجات',
     shopByCategory: 'تسوّق حسب القسم',
     ourBrands: 'ماركاتنا',
@@ -378,7 +384,6 @@ const dictionary = {
 
     // --- footer
     whatsappUs: 'كلّمنا على واتساب',
-    footerAbout: 'محل إكسسوارات صغير في القاهرة. كل اللي معروض عندنا قطع موجودة فعلًا.',
     footerShop: 'المتجر',
     footerHelp: 'مساعدة',
     rightsReserved: 'كل الحقوق محفوظة.',

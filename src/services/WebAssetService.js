@@ -1,6 +1,7 @@
 /**
- * Named image slots for the public website — the hero banner today, and
- * whatever else earns a slot later (see `web_assets` in schema.js).
+ * Named image slots for the public website — the hero banner and the shop's
+ * logo today, and whatever else earns a slot later (see `web_assets` in
+ * schema.js).
  *
  * Modelled closely on ImageService: the bytes live in the database rather than
  * on a disk (the shop PC has to work with the internet down, and a serverless
@@ -9,16 +10,42 @@
  * because a banner and a product photo are the same kind of BLOB with a
  * different size ceiling.
  *
- * The banner is shown full-bleed behind text at a much larger area of the
- * screen than a product thumbnail, so its ceiling is higher than a product
- * photo's: 600 KB decoded rather than 400 KB.
+ * A slot is a row, not a table and not a second service: the logo is stored,
+ * limited, audited and served by exactly the code the banner already uses.
+ *
+ * What differs per slot is only how big the picture is allowed to be and what
+ * to call it when refusing one. The FORMAT is not a per-slot decision and must
+ * not become one: `decodeImageDataUrl` sniffs the real type out of the bytes
+ * and stores it, so a logo uploaded as a PNG is kept as a PNG and served with
+ * `Content-Type: image/png`. Nothing here re-encodes anything, which is what
+ * lets a logo keep its transparency — a logo flattened to JPEG would carry a
+ * white box across every dark header on the site.
  */
 import { getDb, transaction } from '../infrastructure/database/connection.js';
 import { decodeImageDataUrl } from '../shared/imageCodec.js';
+import { ValidationError } from '../shared/errors.js';
 import auditService from './AuditService.js';
 
-/** Decoded, not encoded: the base64 in transit is about a third larger. */
-const MAX_BYTES = 600 * 1024;
+/**
+ * Decoded bytes, not encoded: the base64 in transit is about a third larger.
+ *
+ * The banner is shown full-bleed behind text at a much larger area of the
+ * screen than a product thumbnail, so its ceiling is higher than a product
+ * photo's. The logo is drawn at header size but is usually a PNG with an alpha
+ * channel, which does not compress the way a photograph does — so it gets the
+ * product-photo ceiling rather than a token one.
+ */
+const SLOTS = {
+  banner: { maxBytes: 600 * 1024, label: 'banner image' },
+  logo: { maxBytes: 400 * 1024, label: 'logo' },
+};
+
+/** A slot name always comes from this codebase; an unknown one is a bug, not a shop's typo. */
+function rulesFor(slot) {
+  const rules = SLOTS[slot];
+  if (!rules) throw new ValidationError(`Unknown website image slot "${slot}"`);
+  return rules;
+}
 
 /** Everything except `data`. Callers that want the bytes ask for them. */
 const META_COLUMNS = 'id, content_type, byte_size, width, height, updated_at, updated_by';
@@ -49,9 +76,10 @@ export class WebAssetService {
 
   /** Store or replace the image in a slot. Returns the same shape as `get()`. */
   async set(dataUrl, context = {}, slot = 'banner') {
+    const { maxBytes, label } = rulesFor(slot);
     const { data, contentType, width = null, height = null } = decodeImageDataUrl(dataUrl, {
-      maxBytes: MAX_BYTES,
-      label: 'banner image',
+      maxBytes,
+      label,
     });
 
     return transaction(async () => {

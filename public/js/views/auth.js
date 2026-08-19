@@ -2,6 +2,7 @@
 import api from '../core/api.js';
 import { h, frag, mount, field, textInput, toast, toastError, modal, buildForm } from '../core/ui.js';
 import { t, setLanguage, getLanguage } from '../core/i18n.js';
+import { shopMark } from '../core/brand.js';
 
 const EYE_SHOW = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M1.8 12S5.4 5.4 12 5.4 22.2 12 22.2 12 18.6 18.6 12 18.6 1.8 12 1.8 12Z"/><circle cx="12" cy="12" r="3"/></svg>';
 const EYE_HIDE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M9.9 5.7A9.6 9.6 0 0 1 12 5.4c6.6 0 10.2 6.6 10.2 6.6a18 18 0 0 1-3.4 4.3M6.2 7.7A18 18 0 0 0 1.8 12S5.4 18.6 12 18.6c1.8 0 3.4-.5 4.7-1.2"/><path d="M10 10a3 3 0 0 0 4.2 4.2"/><path d="M3 3l18 18"/></svg>';
@@ -139,7 +140,9 @@ export function renderLogin(root, onSuccess) {
     h('div', { class: 'login-page' },
       h('aside', { class: 'login-aside' },
         h('div', {},
-          h('h1', {}, 'M', h('span', { class: 'gold' }, '&'), 'M'),
+          // The shop's own mark, not the platform's: whoever is signing in
+          // works for one shop, and `/api/session` has already said which.
+          h('div', { class: 'login-mark' }, shopMark({ className: 'mark', logoClass: 'mark-logo' })),
           h('p', { style: { color: '#9fb0c8', marginTop: '2px' } }, t('appTag')),
           h('ul', {},
             h('li', {}, t('products') + ' · ' + t('variants') + ' · ' + t('barcode')),

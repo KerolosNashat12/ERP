@@ -476,7 +476,7 @@ export function buildReceipt(sale, options = {}) {
     },
   },
   h('h3', { style: { fontSize: `${15 * scale}px` } },
-    ar ? (settings['company.name_ar'] || 'M&M') : (settings['company.name'] || 'M&M Accessories')),
+    ar ? (settings['company.name_ar'] || t('appName')) : (settings['company.name'] || t('appName'))),
   h('div', { class: 'center' }, settings['company.address'] || ''),
   h('div', { class: 'center' }, settings['company.phone'] || ''),
   settings['company.tax_number'] ? h('div', { class: 'center' }, `${t('taxNumber')}: ${settings['company.tax_number']}`) : null,

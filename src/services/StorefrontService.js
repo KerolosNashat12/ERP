@@ -31,8 +31,9 @@
  * `#variants()` only selects the number when it is asked to, so a listing
  * cannot start leaking counts because somebody widened a shared query.
  */
-import { getDb } from '../infrastructure/database/connection.js';
+import { getDb, currentTenant } from '../infrastructure/database/connection.js';
 import { NotFoundError } from '../shared/errors.js';
+import { buildBranding, companyNameFrom } from '../shared/branding.js';
 
 /** Settings the storefront reads. Listed so `config()` can fetch them in one query. */
 const CONFIG_KEYS = [
@@ -55,6 +56,14 @@ const CONFIG_KEYS = [
   'web.banner_overlay',
   'web.banner_align', 'web.banner_valign', 'web.banner_text_size',
   'web.banner_text_color', 'web.banner_box_width',
+
+  // --- website: branding. Words that describe a shop rather than a product
+  // category, and the two values the whole palette is derived from.
+  'web.tagline_en', 'web.tagline_ar',
+  'web.about_en', 'web.about_ar',
+  'web.search_placeholder_en', 'web.search_placeholder_ar',
+  'web.meta_description_en', 'web.meta_description_ar',
+  'web.theme_accent', 'web.theme_dark',
 
   // --- website: social links + their visibility toggles
   'web.social_facebook', 'web.social_facebook_enabled',
@@ -230,16 +239,17 @@ export class StorefrontService {
    */
   async config() {
     const placeholders = CONFIG_KEYS.map(() => '?').join(', ');
-    const [rows, bannerImage] = await Promise.all([
+    const [rows, assetRows] = await Promise.all([
       this.db.prepare(`
         SELECT key, value, value_type
         FROM settings
         WHERE key IN (${placeholders})
       `).all(...CONFIG_KEYS),
       // Existence only — never the bytes, and never a second table read of
-      // anything the /banner route itself will stream.
-      this.db.prepare("SELECT 1 FROM web_assets WHERE slot = 'banner'").get(),
+      // anything the /banner and /logo routes themselves will stream.
+      this.db.prepare("SELECT slot FROM web_assets WHERE slot IN ('banner', 'logo')").all(),
     ]);
+    const slots = new Set(assetRows.map((row) => row.slot));
 
     const s = new Map(rows.map((r) => [r.key, decodeSetting(r.value, r.value_type)]));
     const num = (key, fallback = 0) => {
@@ -253,6 +263,23 @@ export class StorefrontService {
     const ctaLabelEn = str('web.banner_cta_label_en');
     const ctaLabelAr = str('web.banner_cta_label_ar');
     const ctaLink = str('web.banner_cta_link');
+
+    // The shop's own name, and never a literal that belongs to one tenant —
+    // see shared/branding.js, which the ERP shell resolves it through too.
+    const companyName = companyNameFrom((key) => s.get(key), currentTenant());
+
+    /**
+     * Everything a shop's identity is made of, resolved server-side so the
+     * browser receives values it can paint without a fallback of its own.
+     * The rules themselves live in shared/branding.js — the ERP shell needs
+     * the same block for its sidebar, and a monogram derived twice is a
+     * monogram derived differently.
+     */
+    const branding = buildBranding({
+      get: (key) => s.get(key),
+      companyName,
+      hasLogo: slots.has('logo'),
+    });
 
     const social = SOCIAL_NETWORKS
       .filter((network) => Boolean(s.get(`web.social_${network}_enabled`)) && str(`web.social_${network}`))
@@ -268,10 +295,7 @@ export class StorefrontService {
       shopEnabled: s.get('shop.enabled') === null || s.get('shop.enabled') === undefined
         ? true
         : Boolean(s.get('shop.enabled')),
-      companyName: {
-        en: s.get('company.name') || 'M&M Accessories',
-        ar: s.get('company.name_ar') || s.get('company.name') || 'M&M Accessories',
-      },
+      companyName,
       currency: s.get('company.currency') || 'EGP',
       currencySymbol: {
         en: s.get('company.currency_symbol_en') || s.get('company.currency') || 'EGP',
@@ -287,8 +311,10 @@ export class StorefrontService {
         ar: s.get('shop.announcement_ar') || null,
       },
 
+      branding,
+
       banner: {
-        image: bannerImage ? '/api/shop/banner' : null,
+        image: slots.has('banner') ? '/api/shop/banner' : null,
         heading: { en: str('web.banner_heading_en'), ar: str('web.banner_heading_ar') },
         text: { en: str('web.banner_text_en'), ar: str('web.banner_text_ar') },
         // null only when BOTH the label and the link are empty — a shop that

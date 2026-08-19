@@ -11,6 +11,7 @@ import {
 import config from '../config/index.js';
 import { BusinessRuleError, ConflictError, NotFoundError, ValidationError } from '../shared/errors.js';
 import { ALL_PERMISSIONS } from '../shared/permissions.js';
+import { normalizeHexColor, booleanOr } from '../shared/branding.js';
 import authService from './AuthService.js';
 import auditService from './AuditService.js';
 
@@ -195,6 +196,28 @@ const SETTING_RANGES = {
   'shop.delivery_percent': [0, 100],
 };
 
+/**
+ * Settings that must be a hex colour. The storefront applies this one to
+ * `<html>` as a CSS custom property that buttons, links, prices and active
+ * states all derive from, so a typo is not a shade nobody likes — it is a page
+ * with no accent colour at all.
+ *
+ * Refusing it here is the half that tells somebody. `buildBranding()` refuses
+ * it again on the read path, which is the half that keeps a hand-edited row or
+ * a restored backup off the page; neither is enough on its own.
+ *
+ * Empty is allowed and means "unset": the read path answers with the default.
+ */
+const SETTING_COLOURS = new Set(['web.theme_accent']);
+
+/**
+ * Settings stored as a real boolean rather than as whatever the ERP form sent.
+ * `'0'` is a non-empty string, and a string is truthy — a checkbox saved as
+ * text would read as `true` for ever after, in a dark-mode switch nobody could
+ * turn off.
+ */
+const SETTING_BOOLEANS = new Set(['web.theme_dark']);
+
 export class SettingsService {
   constructor(deps = {}) {
     this.settings = deps.settings || repositories.settings;
@@ -221,6 +244,26 @@ export class SettingsService {
         throw new ValidationError(`${key} must be a number between ${min} and ${max}`, { key, value, min, max });
       }
     }
+    if (SETTING_COLOURS.has(key) && String(value ?? '').trim() !== ''
+      && normalizeHexColor(value) === null) {
+      throw new ValidationError(
+        `${key} must be a hex colour such as #c8a24a`, { key, value },
+      );
+    }
+  }
+
+  /**
+   * What actually gets stored. Only the keys above are touched — everything
+   * else is written exactly as the ERP sent it, as it always has been.
+   * `#000` and `#000000` are the same colour and must not be two rows' worth
+   * of difference to anything reading them back.
+   */
+  #normalize(key, value) {
+    if (SETTING_COLOURS.has(key)) {
+      return String(value ?? '').trim() === '' ? '' : normalizeHexColor(value);
+    }
+    if (SETTING_BOOLEANS.has(key)) return booleanOr(value, true);
+    return value;
   }
 
   async update(values, context = {}) {
@@ -230,7 +273,7 @@ export class SettingsService {
       }
       const before = await this.settings.asObject();
       for (const [key, value] of Object.entries(values || {})) {
-        await this.settings.set(key, value);
+        await this.settings.set(key, this.#normalize(key, value));
       }
       const after = await this.settings.asObject();
       await this.audit.recordChange(context, {

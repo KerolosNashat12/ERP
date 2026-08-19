@@ -1,28 +1,39 @@
 <!doctype html>
 <!--
-  M&M Accessories — public storefront.
+  The public storefront — for whichever shop this address belongs to.
 
   One HTML file for the whole shop: the server rewrites every /shop* path here
   and the hash router takes it from there, so #/product/12 is a real link with
   no server route behind it. Arabic is the default language and is set on the
   first paint below rather than by JavaScript, so a slow connection never shows
   a flash of left-to-right layout before the script lands.
+
+  ONE FILE, MANY SHOPS. Nothing here names a shop, describes one, or draws one's
+  mark: the title, the description and the icon below are placeholders that
+  `js/core/branding.js` and `js/core/seo.js` replace with this shop's own the
+  moment `/api/shop/config` answers. A name typed into this file would be shown
+  by every other shop on the platform for the first few hundred milliseconds of
+  every visit — which is how a clothes shop came to be called an accessories
+  shop in the first place.
 -->
 <html lang="ar" dir="rtl">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <!-- Overwritten from `branding.dark` once the config lands. -->
   <meta name="theme-color" content="#111827">
-  <title>إم آند إم للإكسسوارات</title>
-  <meta name="description" content="شنط وعطور ومجوهرات مختارة من القاهرة. الدفع عند الاستلام والتوصيل لكل محافظات مصر.">
-  <meta property="og:site_name" content="M&amp;M Accessories">
+  <title>المتجر</title>
+  <meta name="description" content="">
   <link rel="stylesheet" href="/shop/shop.css">
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23111827'/%3E%3Ctext x='16' y='22' font-family='Georgia,serif' font-size='15' fill='%23d4af37' text-anchor='middle'%3EM%3C/text%3E%3C/svg%3E">
+  <!-- A plain mark, replaced by the shop's logo or its own monogram on boot. -->
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23111827'/%3E%3C/svg%3E">
 </head>
 <body class="is-booting">
-  <!-- Replaced by the app on boot; visible only while the first request is in flight. -->
+  <!-- Replaced by the app on boot; visible only while the first request is in
+       flight, which is exactly why it carries no letters: the only mark this
+       shop has is the one the server is about to send. -->
   <div class="boot-screen" role="status" aria-live="polite">
-    <span class="boot-mark">M&amp;M</span>
+    <span class="boot-mark" aria-hidden="true"></span>
   </div>
   <script type="module" src="/shop/js/main.js"></script>
   <noscript>

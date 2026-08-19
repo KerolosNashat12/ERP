@@ -2,6 +2,7 @@
 import { el, chevron } from '../core/dom.js';
 import { imageUrl } from '../core/api.js';
 import { t, pick } from '../core/i18n.js';
+import { monogramText } from '../core/branding.js';
 import { priceRange } from '../core/format.js';
 import { href } from '../core/router.js';
 
@@ -21,6 +22,15 @@ export function availabilityBadge(availability) {
 }
 
 /**
+ * What fills a card with no photograph in it: this shop's own monogram, never
+ * a set of letters belonging to whoever this platform hosted first. The
+ * monogram rather than the logo even for a shop that has uploaded one — a
+ * wordmark stretched into a square photo frame is a worse placeholder than two
+ * quiet letters.
+ */
+const placeholderMark = () => el('span.photo-mark', monogramText());
+
+/**
  * A photo that reserves its space before it loads, so a grid of cards does not
  * jump as the images arrive. `loading="lazy"` matters more than usual here:
  * most of these visits are on mobile data.
@@ -29,7 +39,7 @@ export function productPhoto(imageId, alt, { eager = false } = {}) {
   const frame = el('div.photo');
   if (!imageId) {
     frame.classList.add('photo-empty');
-    frame.append(el('span.photo-mark', 'M&M'));
+    frame.append(placeholderMark());
     return frame;
   }
   const img = el('img', {
@@ -43,7 +53,7 @@ export function productPhoto(imageId, alt, { eager = false } = {}) {
   img.addEventListener('error', () => {
     frame.classList.add('photo-empty');
     img.remove();
-    frame.append(el('span.photo-mark', 'M&M'));
+    frame.append(placeholderMark());
   });
   frame.append(img);
   return frame;

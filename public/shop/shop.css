@@ -1,5 +1,5 @@
 /* =============================================================================
-   M&M Accessories — storefront stylesheet.
+   The storefront stylesheet — one sheet, every shop.
 
    ONE sheet serves both languages. There is no `left`, no `right` and no
    `[dir=rtl]` override block anywhere below: every edge is written as an
@@ -20,9 +20,69 @@
   --line-2: #f2efe9;
   --bg: #faf8f4;               /* warm paper, not grey */
   --surface: #ffffff;
-  --gold: #b8912f;             /* #d4af37 darkened to stay readable on white */
-  --gold-bright: #d4af37;      /* the ERP's gold — used on near-black only */
-  --gold-soft: #f7f0dd;
+
+  /* --------------------------------------------------------------------
+     THE SHOP'S OWN COLOUR.
+
+     These seven values are the whole palette. `js/core/branding.js` sets
+     them on `<html>` from the ONE hex in `config.branding.accent` (see
+     public/shared/brandTheme.js, which the ERP's live preview derives them
+     with too, so a preview cannot disagree with the site). The literals
+     below are the default gold — what a shop that has never opened the
+     colour control gets, and what the page wears for the few hundred
+     milliseconds before the config lands.
+
+     Nothing else in this file may name a colour that belongs to a shop.
+     One accent, one mode, and every rule under them derives.
+     -------------------------------------------------------------------- */
+  --accent: #b38d36;           /* on paper: hairlines, hovers, prices */
+  --accent-strong: #8c6e2a;    /* the same colour, dark enough to be words */
+  --accent-bright: #c8a24a;    /* on the dark chrome band */
+  --accent-soft: #f6f0e2;      /* a wash for badges and soft panels */
+  --accent-deep: #745c23;      /* pressed / hovered solid fills */
+  --accent-ink: #10131a;       /* ink ON a solid fill of the accent */
+  --accent-rgb: 179 141 54;    /* for rgb(... / alpha) scrims */
+
+  /* --------------------------------------------------------------------
+     THE MODE. `branding.dark` (default true) picks between the two blocks
+     below by setting `data-theme` on `<html>`.
+
+     "Dark" is the shop this platform started as: a paper page banded with
+     near-black — the announcement strip, the cart button, the footer — and
+     the accent used bright on top of it. "Light" is the same shop with the
+     bands lifted: pale surfaces, ink text, and the accent itself carrying
+     the solid fills. Both are DESIGNED; the light one is not the dark one
+     with its colours inverted, which is how a light shop ends up with grey
+     text on a grey footer.
+
+     Three families, and every band on the site is one of them:
+       --chrome*   a filled band (announcement, footer, toast, order card)
+       --solid*    a filled control (primary button, cart button, chip)
+       --hero-fill* the banner a shop has uploaded no photo for
+     -------------------------------------------------------------------- */
+  --chrome: var(--ink);
+  --on-chrome: #ffffff;
+  --on-chrome-2: #c9d1de;
+  --on-chrome-3: #9aa4b4;
+  --on-chrome-4: #7f8a9c;
+  --chrome-line: #33405a;
+  --chrome-line-2: #263043;
+  --on-chrome-accent: var(--accent-bright);
+
+  --solid: var(--ink);
+  --solid-hover: #1f2937;
+  --on-solid: #ffffff;
+  --on-solid-hover: var(--accent-bright);
+  --badge: var(--accent-bright);
+  --badge-ink: var(--ink);
+
+  --hero-fill:
+    radial-gradient(120% 130% at 100% 0%, rgb(var(--accent-rgb) / .18), transparent 55%),
+    linear-gradient(160deg, #111827 0%, #1b2333 60%, #232c40 100%);
+  --hero-fill-ink: #ffffff;
+  --hero-fill-body: #c9d1de;
+  --hero-fill-accent: var(--accent-bright);
+  --hero-fill-mark: rgb(var(--accent-rgb) / .16);
   --ok: #1a7a4c;
   --ok-soft: #e8f6ee;
   --warn: #a4630a;
@@ -69,6 +129,47 @@
   --font-display: Georgia, "Times New Roman", "Noto Naskh Arabic", serif;
 }
 
+/*
+ * A light shop. Not an inversion: the page under both modes is paper (this
+ * site has always been light where the products are), and what changes is the
+ * banding — near-black bands become pale ones, white ink becomes the page's
+ * own ink, and the solid fills stop being near-black and become the shop's own
+ * colour, which is the only strong colour a light design has left to use.
+ *
+ * The neutrals go cool here on purpose: the warm paper above was chosen to sit
+ * under gold, and a shop that picked pink is not a warm-paper shop.
+ */
+html[data-theme="light"] {
+  --bg: #fbfbfc;
+  --surface: #ffffff;
+  --line: #e6e7eb;
+  --line-2: #f2f3f5;
+
+  --chrome: #f4f5f7;
+  --on-chrome: var(--ink);
+  --on-chrome-2: var(--ink-2);
+  --on-chrome-3: var(--ink-2);
+  --on-chrome-4: var(--ink-3);
+  --chrome-line: #dfe1e6;
+  --chrome-line-2: #e6e7eb;
+  --on-chrome-accent: var(--accent-strong);
+
+  --solid: var(--accent);
+  --solid-hover: var(--accent-deep);
+  --on-solid: var(--accent-ink);
+  --on-solid-hover: var(--accent-ink);
+  --badge: var(--accent-ink);
+  --badge-ink: var(--accent);
+
+  --hero-fill:
+    radial-gradient(120% 130% at 100% 0%, rgb(var(--accent-rgb) / .30), transparent 60%),
+    linear-gradient(160deg, #ffffff 0%, #f6f6f8 55%, #eceef2 100%);
+  --hero-fill-ink: var(--ink);
+  --hero-fill-body: var(--ink-2);
+  --hero-fill-accent: var(--accent-strong);
+  --hero-fill-mark: rgb(var(--accent-rgb) / .13);
+}
+
 *, *::before, *::after { box-sizing: border-box; }
 
 html { -webkit-text-size-adjust: 100%; }
@@ -97,7 +198,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .icon { flex: none; }
 
 :focus-visible {
-  outline: 2px solid var(--gold);
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
   border-radius: 4px;
 }
@@ -112,10 +213,11 @@ button, input, select, textarea { font: inherit; color: inherit; }
   color: var(--ink-3);
 }
 .boot-mark {
-  font-family: var(--font-display);
-  font-size: 40px;
-  color: var(--gold);
-  letter-spacing: .05em;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  border: 2px solid var(--accent);
   animation: pulse 1.6s ease-in-out infinite;
 }
 @keyframes pulse { 0%, 100% { opacity: .35; } 50% { opacity: 1; } }
@@ -126,8 +228,8 @@ body:not(.is-booting) .boot-screen { display: none; }
   inset-block-start: -60px;
   inset-inline-start: 12px;
   z-index: 60;
-  background: var(--ink);
-  color: #fff;
+  background: var(--chrome);
+  color: var(--on-chrome);
   padding: 10px 16px;
   border-radius: 0 0 var(--radius-sm) var(--radius-sm);
 }
@@ -154,8 +256,8 @@ body:not(.is-booting) .boot-screen { display: none; }
 
 /* ------------------------------------------------------------- header ---- */
 .announce {
-  background: var(--ink);
-  color: var(--gold-bright);
+  background: var(--chrome);
+  color: var(--on-chrome-accent);
   font-size: 13px;
   letter-spacing: .01em;
   padding-block: 8px;
@@ -175,30 +277,65 @@ body:not(.is-booting) .boot-screen { display: none; }
 .head-inner {
   display: grid;
   grid-template-areas: "brand actions" "search search";
-  grid-template-columns: auto 1fr;
+  grid-template-columns: minmax(0, auto) 1fr;
   align-items: center;
   gap: 10px 12px;
 }
 
+/*
+ * The mark, the name and the tagline — all three of them the shop's own, none
+ * of them written down anywhere in this stylesheet or in the markup that builds
+ * it (see js/core/branding.js). Three shapes have to survive here: a wide
+ * wordmark PNG, a square badge PNG, and no logo at all, where the server's
+ * monogram is drawn instead.
+ */
 .brand {
   grid-area: brand;
   display: flex;
-  align-items: baseline;
-  gap: 7px;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
 }
 .brand-mark {
   font-family: var(--font-display);
   font-size: 24px;
+  line-height: 1;
   letter-spacing: .03em;
   color: var(--ink);
+  white-space: nowrap;
 }
-.brand-mark::first-letter { color: var(--gold); }
+.brand-mark::first-letter { color: var(--accent); }
+/*
+ * `height` fixed, `width: auto`: the logo is never squashed into a box of this
+ * sheet's choosing, whatever shape the shop uploaded. It is also never
+ * re-encoded anywhere on its way here, so a PNG's transparency is intact —
+ * which is why the same file can sit on this white header and on the footer's
+ * band without a white rectangle around it.
+ */
+.brand-logo {
+  height: 32px;
+  width: auto;
+  max-width: 116px;
+  object-fit: contain;
+}
+.brand-text { display: grid; min-width: 0; }
+.brand-name {
+  font-family: var(--font-display);
+  font-size: 16px;
+  line-height: 1.25;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .brand-word {
   font-size: 11px;
   letter-spacing: .16em;
   text-transform: uppercase;
   color: var(--ink-3);
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 html[lang="ar"] .brand-word { letter-spacing: 0; text-transform: none; font-size: 12px; }
 
@@ -213,7 +350,7 @@ html[lang="ar"] .brand-word { letter-spacing: 0; text-transform: none; font-size
   padding-inline: 12px;
   min-height: 42px;
 }
-.search:focus-within { background: var(--surface); border-color: var(--gold); }
+.search:focus-within { background: var(--surface); border-color: var(--accent); }
 .search-input {
   flex: 1;
   min-width: 0;
@@ -234,7 +371,7 @@ html[lang="ar"] .brand-word { letter-spacing: 0; text-transform: none; font-size
   cursor: pointer;
   border-radius: 999px;
 }
-.search-go:hover { color: var(--gold); }
+.search-go:hover { color: var(--accent); }
 
 .head-actions {
   grid-area: actions;
@@ -257,14 +394,14 @@ html[lang="ar"] .brand-word { letter-spacing: 0; text-transform: none; font-size
   font-size: 14px;
   min-height: 42px;
 }
-.icon-btn:hover { background: var(--line-2); color: var(--gold); }
+.icon-btn:hover { background: var(--line-2); color: var(--accent); }
 .btn-label, .lang-label { display: none; }
 .lang-btn .lang-label { display: inline; font-size: 13px; letter-spacing: .02em; }
 .track-btn { display: none; }
 .contact-btn { display: none; }
 
-.cart-btn { background: var(--ink); color: #fff; padding-inline: 12px; }
-.cart-btn:hover { background: #1f2937; color: var(--gold-bright); }
+.cart-btn { background: var(--solid); color: var(--on-solid); padding-inline: 12px; }
+.cart-btn:hover { background: var(--solid-hover); color: var(--on-solid-hover); }
 .cart-count {
   position: absolute;
   inset-block-start: 2px;
@@ -273,8 +410,8 @@ html[lang="ar"] .brand-word { letter-spacing: 0; text-transform: none; font-size
   height: 19px;
   padding-inline: 5px;
   border-radius: 999px;
-  background: var(--gold-bright);
-  color: var(--ink);
+  background: var(--badge);
+  color: var(--badge-ink);
   font-size: 11px;
   font-weight: 700;
   display: grid;
@@ -303,8 +440,8 @@ html[lang="ar"] .brand-word { letter-spacing: 0; text-transform: none; font-size
   background: var(--surface);
   white-space: nowrap;
 }
-.chip:hover { border-color: var(--gold); color: var(--gold); }
-.chip.is-active { background: var(--ink); border-color: var(--ink); color: #fff; }
+.chip:hover { border-color: var(--accent); color: var(--accent); }
+.chip.is-active { background: var(--solid); border-color: var(--solid); color: var(--on-solid); }
 
 /* --------------------------------------------------------------- hero ---- */
 /*
@@ -319,16 +456,12 @@ html[lang="ar"] .brand-word { letter-spacing: 0; text-transform: none; font-size
   position: relative;
   overflow: hidden;
   aspect-ratio: 4 / 3;
-  color: #fff;
+  color: var(--hero-fill-ink);
 }
-.hero:not(.has-image) {
-  background:
-    radial-gradient(120% 130% at 100% 0%, rgba(212, 175, 55, .16), transparent 55%),
-    linear-gradient(160deg, #111827 0%, #1b2333 60%, #232c40 100%);
-}
-/* A dark base under the photo while it decodes, rather than the paper `--bg`
+.hero:not(.has-image) { background: var(--hero-fill); }
+/* A filled base under the photo while it decodes, rather than the paper `--bg`
    flashing through for a frame. */
-.hero.has-image { background: #111827; }
+.hero.has-image { background: var(--chrome); }
 .hero-photo {
   position: absolute;
   inset: 0;
@@ -394,7 +527,11 @@ html[dir="rtl"] .hero-inner { direction: rtl; }
    empty half to fill, and only on the no-photo fill — a real photo already
    supplies its own visual interest. */
 .hero:not(.has-image) .hero-inner::after {
-  content: "M&M";
+  /* `--brand-monogram` is set on <html> by js/core/branding.js from the
+     monogram the SERVER derived (Arabic letters spaced so they do not fuse
+     into a ligature). Empty string until it lands, and empty for ever on a
+     name with no letters in it — never two letters this file chose. */
+  content: var(--brand-monogram, "");
   display: none;
   position: absolute;
   inset-block-start: 50%;
@@ -405,7 +542,7 @@ html[dir="rtl"] .hero-inner { direction: rtl; }
   line-height: 1;
   letter-spacing: .04em;
   direction: ltr;
-  color: rgba(212, 175, 55, .09);
+  color: var(--hero-fill-mark);
   pointer-events: none;
   user-select: none;
 }
@@ -413,7 +550,7 @@ html[dir="rtl"] .hero-inner { direction: rtl; }
   font-size: 12px;
   letter-spacing: .22em;
   text-transform: uppercase;
-  color: var(--gold-bright);
+  color: var(--hero-fill-accent);
 }
 html[lang="ar"] .hero-eyebrow { letter-spacing: .06em; text-transform: none; font-size: 13px; }
 /* Font sizes are `clamp()`s scaled by `--hero-scale` (small/medium/large from
@@ -433,7 +570,7 @@ html[lang="ar"] .hero-eyebrow { letter-spacing: .06em; text-transform: none; fon
 }
 html[lang="ar"] .hero-title { max-width: 20ch; }
 .hero-body {
-  color: #c9d1de;
+  color: var(--hero-fill-body);
   max-width: 46ch;
   font-size: calc(15px * var(--hero-scale, 1));
   display: -webkit-box;
@@ -481,7 +618,7 @@ html[lang="ar"] .hero-title { max-width: 20ch; }
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  color: var(--gold);
+  color: var(--accent-strong);
   font-size: 14px;
   white-space: nowrap;
   padding-block-end: 2px;
@@ -505,7 +642,7 @@ html[lang="ar"] .hero-title { max-width: 20ch; }
   box-shadow: var(--shadow-sm);
   transition: border-color .15s, transform .15s;
 }
-.tile:hover { border-color: var(--gold); transform: translateY(-1px); }
+.tile:hover { border-color: var(--accent); transform: translateY(-1px); }
 .tile-name { font-weight: 600; flex: 1; }
 .tile-count { font-size: 12.5px; color: var(--ink-3); }
 .tile .icon { color: var(--ink-3); }
@@ -519,7 +656,7 @@ html[lang="ar"] .hero-title { max-width: 20ch; }
   font-size: 14px;
   color: var(--ink-2);
 }
-.brand-pill:hover { border-color: var(--gold); color: var(--gold); }
+.brand-pill:hover { border-color: var(--accent); color: var(--accent); }
 
 /* --------------------------------------------------------------- cards --- */
 .grid {
@@ -537,7 +674,7 @@ html[lang="ar"] .hero-title { max-width: 20ch; }
   box-shadow: var(--shadow-sm);
   transition: box-shadow .18s, transform .18s, border-color .18s;
 }
-.card:hover { box-shadow: var(--shadow); transform: translateY(-2px); border-color: #ded7c9; }
+.card:hover { box-shadow: var(--shadow); transform: translateY(-2px); border-color: rgb(var(--accent-rgb) / .35); }
 /* The photo holds its own shape and never shrinks to make room for a long name. */
 .card-photo { position: relative; flex: none; aspect-ratio: var(--photo-ratio); }
 .card.is-out .photo { opacity: .55; }
@@ -629,7 +766,7 @@ html[lang="ar"] .card-brand { letter-spacing: 0; text-transform: none; font-size
 .photo-mark {
   font-family: var(--font-display);
   font-size: 22px;
-  color: #c9c0ae;
+  color: rgb(var(--accent-rgb) / .45);
   letter-spacing: .05em;
 }
 
@@ -670,10 +807,10 @@ html[lang="ar"] .card-brand { letter-spacing: 0; text-transform: none; font-size
   min-height: 46px;
   transition: background .15s, color .15s, border-color .15s;
 }
-.btn-primary { background: var(--ink); color: #fff; }
-.btn-primary:hover:not(:disabled) { background: #1f2937; color: var(--gold-bright); }
+.btn-primary { background: var(--solid); color: var(--on-solid); }
+.btn-primary:hover:not(:disabled) { background: var(--solid-hover); color: var(--on-solid-hover); }
 .btn-ghost { background: var(--surface); border-color: var(--line); color: var(--ink); }
-.btn-ghost:hover:not(:disabled) { border-color: var(--gold); color: var(--gold); }
+.btn-ghost:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
 .btn-block { width: 100%; }
 .btn-lg { min-height: 52px; font-size: 16px; }
 .btn:disabled, .btn.is-disabled, .is-disabled {
@@ -714,7 +851,7 @@ html[lang="ar"] .card-brand { letter-spacing: 0; text-transform: none; font-size
   min-height: 42px;
   cursor: pointer;
 }
-.select:hover { border-color: var(--gold); }
+.select:hover { border-color: var(--accent); }
 
 .pager {
   display: flex;
@@ -734,7 +871,7 @@ html[lang="ar"] .card-brand { letter-spacing: 0; text-transform: none; font-size
   color: var(--ink-3);
   flex-wrap: wrap;
 }
-.crumbs a:hover { color: var(--gold); }
+.crumbs a:hover { color: var(--accent-strong); }
 
 .product-layout { display: grid; gap: 22px; }
 .gallery { display: grid; gap: 10px; }
@@ -783,7 +920,7 @@ html[lang="ar"] .card-brand { letter-spacing: 0; text-transform: none; font-size
   object-fit: cover;
   object-position: center;
 }
-.thumb.is-active { border-color: var(--gold); box-shadow: 0 0 0 1px var(--gold); }
+.thumb.is-active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
 .thumb.skeleton { border: 0; }
 
 .product-info { display: grid; gap: 12px; align-content: start; }
@@ -791,7 +928,7 @@ html[lang="ar"] .card-brand { letter-spacing: 0; text-transform: none; font-size
   font-size: 12px;
   letter-spacing: .14em;
   text-transform: uppercase;
-  color: var(--gold);
+  color: var(--accent-strong);
 }
 html[lang="ar"] .product-brand { letter-spacing: 0; text-transform: none; font-size: 14px; }
 .product-name {
@@ -799,7 +936,10 @@ html[lang="ar"] .product-brand { letter-spacing: 0; text-transform: none; font-s
   font-weight: 400;
   font-size: clamp(23px, 6vw, 31px);
 }
-.price { font-size: 23px; font-weight: 600; }
+/* The one price on the page a shopper is deciding on: in the shop's own
+   colour, in the readable sibling of it. The prices in a grid of cards stay
+   ink — twenty accent prices at once is a colour chart, not a shop. */
+.price { font-size: 23px; font-weight: 600; color: var(--accent-strong); }
 .availability { margin-block-start: -4px; }
 
 .field { display: grid; gap: 7px; }
@@ -820,11 +960,11 @@ html[lang="ar"] .product-brand { letter-spacing: 0; text-transform: none; font-s
   cursor: pointer;
   min-height: 46px;
 }
-.variant:hover:not(:disabled) { border-color: var(--gold); }
+.variant:hover:not(:disabled) { border-color: var(--accent); }
 .variant[aria-checked="true"] {
-  border-color: var(--ink);
-  box-shadow: inset 0 0 0 1px var(--ink);
-  background: #fcfbf8;
+  border-color: var(--solid);
+  box-shadow: inset 0 0 0 1px var(--solid);
+  background: rgb(var(--accent-rgb) / .06);
 }
 .variant-label { font-size: 14.5px; font-weight: 600; }
 .variant-price { font-size: 12.5px; color: var(--ink-3); }
@@ -902,8 +1042,10 @@ html[lang="ar"] .product-brand { letter-spacing: 0; text-transform: none; font-s
 .prose { color: var(--ink-2); font-size: 15px; line-height: 1.75; white-space: pre-line; }
 .note-list { display: grid; gap: 7px; font-size: 14px; color: var(--ink-2); }
 .note-list li { display: flex; gap: 8px; }
-.note-list li::before { content: "—"; color: var(--gold); }
-.delivery-note { background: #fdfcf9; }
+.note-list li::before { content: "—"; color: var(--accent); }
+/* A whisper of the shop's own colour rather than a fixed warm cream — the
+   cream was the gold's, and a pink shop is not a warm-cream shop. */
+.delivery-note { background: rgb(var(--accent-rgb) / .05); }
 
 /* --------------------------------------------------------------- contact --- */
 .contact-card { gap: 18px; }
@@ -913,15 +1055,15 @@ html[lang="ar"] .product-brand { letter-spacing: 0; text-transform: none; font-s
   width: 40px;
   height: 40px;
   border-radius: 50%;
-  background: var(--gold-soft);
-  color: var(--gold);
+  background: var(--accent-soft);
+  color: var(--accent);
   display: grid;
   place-items: center;
 }
 .contact-row-body { display: grid; gap: 2px; padding-block-start: 2px; }
 .contact-row-label { font-size: 12.5px; color: var(--ink-3); }
 .contact-value { font-size: 15.5px; font-weight: 500; white-space: pre-line; }
-a.contact-value:hover { color: var(--gold); }
+a.contact-value:hover { color: var(--accent-strong); }
 
 /* ---------------------------------------------------------------- cart --- */
 .cart-layout { display: grid; gap: 18px; }
@@ -982,11 +1124,11 @@ a.contact-value:hover { color: var(--gold); }
 .summary-actions { display: grid; gap: 8px; margin-block-start: 6px; }
 
 .free-note {
-  background: var(--gold-soft);
+  background: var(--accent-soft);
   border-radius: var(--radius-sm);
   padding: 10px 12px;
   font-size: 13.5px;
-  color: #6f5411;
+  color: var(--accent-deep);
   display: grid;
   gap: 8px;
 }
@@ -994,13 +1136,13 @@ a.contact-value:hover { color: var(--gold); }
 .free-bar {
   height: 5px;
   border-radius: 999px;
-  background: rgba(184, 145, 47, .22);
+  background: rgb(var(--accent-rgb) / .22);
   overflow: hidden;
 }
 .free-bar > span {
   display: block;
   height: 100%;
-  background: var(--gold);
+  background: var(--accent);
   border-radius: 999px;
   transition: width .3s ease;
 }
@@ -1021,7 +1163,7 @@ a.contact-value:hover { color: var(--gold); }
   min-height: 48px;
   resize: vertical;
 }
-.input:focus { outline: none; border-color: var(--gold); box-shadow: 0 0 0 3px rgba(184, 145, 47, .15); }
+.input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgb(var(--accent-rgb) / .15); }
 .has-error .input { border-color: var(--danger); }
 .field-error { font-size: 13px; color: var(--danger); font-weight: 500; }
 
@@ -1036,13 +1178,13 @@ a.contact-value:hover { color: var(--gold); }
   font-size: 14.5px;
 }
 
-.panel-cod { background: #fdfcf9; border-color: #ecdfba; }
+.panel-cod { background: rgb(var(--accent-rgb) / .06); border-color: rgb(var(--accent-rgb) / .35); }
 .cod-badge {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  background: var(--gold-soft);
-  color: #6f5411;
+  background: var(--accent-soft);
+  color: var(--accent-deep);
   border-radius: 999px;
   padding: 7px 14px;
   font-size: 14.5px;
@@ -1088,8 +1230,8 @@ a.contact-value:hover { color: var(--gold); }
 .success-sub { color: var(--ink-2); max-width: 42ch; }
 .order-no-card {
   width: 100%;
-  background: var(--ink);
-  color: #fff;
+  background: var(--chrome);
+  color: var(--on-chrome);
   border-radius: var(--radius);
   padding: 22px 16px;
   display: grid;
@@ -1100,19 +1242,19 @@ a.contact-value:hover { color: var(--gold); }
   font-size: 12px;
   letter-spacing: .18em;
   text-transform: uppercase;
-  color: #9aa4b4;
+  color: var(--on-chrome-3);
 }
 html[lang="ar"] .order-no-label { letter-spacing: .04em; text-transform: none; font-size: 13px; }
 .order-no {
   font-family: var(--font-display);
   font-size: clamp(28px, 9vw, 44px);
-  color: var(--gold-bright);
+  color: var(--on-chrome-accent);
   letter-spacing: .04em;
   line-height: 1.15;
   direction: ltr;              /* an order number is a code, not prose */
   unicode-bidi: isolate;
 }
-.order-no-note { font-size: 13.5px; color: #c9d1de; max-width: 40ch; }
+.order-no-note { font-size: 13.5px; color: var(--on-chrome-2); max-width: 40ch; }
 .success-total { display: flex; gap: 12px; align-items: baseline; font-size: 17px; }
 .success-total strong { font-size: 21px; }
 .success-cod { font-size: 14px; color: var(--ink-3); }
@@ -1139,7 +1281,7 @@ html[lang="ar"] .order-no-label { letter-spacing: .04em; text-transform: none; f
 }
 .status-pending { background: var(--warn-soft); color: var(--warn); }
 .status-accepted { background: #eaf1fe; color: #1f5fd0; }
-.status-out-for-delivery { background: var(--gold-soft); color: var(--gold); }
+.status-out-for-delivery { background: var(--accent-soft); color: var(--accent-strong); }
 .status-delivered { background: var(--ok-soft); color: var(--ok); }
 .status-not-received { background: var(--danger-soft); color: var(--danger); }
 .status-cancelled { background: var(--danger-soft); color: var(--danger); }
@@ -1193,12 +1335,12 @@ html[lang="ar"] .order-no-label { letter-spacing: .04em; text-transform: none; f
 .progress-step.is-done .progress-label { color: var(--ink-2); }
 
 .progress-step.is-now .progress-dot {
-  background: var(--gold-bright);
-  border-color: var(--gold);
-  box-shadow: 0 0 0 4px var(--gold-soft);
+  background: var(--accent);
+  border-color: var(--accent-strong);
+  box-shadow: 0 0 0 4px var(--accent-soft);
 }
 .progress-step.is-now .progress-label { color: var(--ink); font-weight: 700; }
-.progress-step.is-now .progress-when { color: var(--gold); font-weight: 600; }
+.progress-step.is-now .progress-when { color: var(--accent-strong); font-weight: 600; }
 
 /* An order that stopped. Deliberately not a progress line: a half-drawn track
    would read as "still on its way". */
@@ -1236,8 +1378,8 @@ html[lang="ar"] .order-no-label { letter-spacing: .04em; text-transform: none; f
   width: 52px;
   height: 52px;
   border-radius: 50%;
-  background: var(--gold-soft);
-  color: var(--gold);
+  background: var(--accent-soft);
+  color: var(--accent);
   display: grid;
   place-items: center;
   font-size: 22px;
@@ -1282,8 +1424,8 @@ html[lang="ar"] .order-no-label { letter-spacing: .04em; text-transform: none; f
   z-index: 60;
   margin-inline: auto;
   max-width: 420px;
-  background: var(--ink);
-  color: #fff;
+  background: var(--chrome);
+  color: var(--on-chrome);
   border-radius: 999px;
   padding: 12px 18px;
   display: flex;
@@ -1296,32 +1438,37 @@ html[lang="ar"] .order-no-label { letter-spacing: .04em; text-transform: none; f
   transition: opacity .22s, transform .22s;
 }
 .toast.is-in { opacity: 1; transform: translateY(0); }
-.toast .icon { color: var(--gold-bright); }
-.toast-link { margin-inline-start: auto; color: var(--gold-bright); font-weight: 600; white-space: nowrap; }
+.toast .icon { color: var(--on-chrome-accent); }
+.toast-link { margin-inline-start: auto; color: var(--on-chrome-accent); font-weight: 600; white-space: nowrap; }
 
 /* -------------------------------------------------------------- footer --- */
 .site-foot {
-  background: var(--ink);
-  color: #c9d1de;
+  background: var(--chrome);
+  color: var(--on-chrome-2);
+  border-block-start: 1px solid var(--chrome-line-2);
   margin-block-start: 40px;
   padding-block: 34px 20px;
   font-size: 14.5px;
 }
 .foot-inner { display: grid; gap: 26px; }
 .foot-brand { display: grid; gap: 10px; justify-items: start; }
-.foot-brand .brand-mark { color: #fff; font-size: 26px; }
-.foot-about { color: #9aa4b4; max-width: 40ch; font-size: 14px; }
+.foot-mark { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.foot-mark .brand-mark { color: var(--on-chrome); font-size: 26px; }
+.foot-mark .brand-mark::first-letter { color: var(--on-chrome-accent); }
+.foot-mark .brand-logo { height: 40px; max-width: 170px; }
+.foot-name { font-family: var(--font-display); font-size: 18px; color: var(--on-chrome); }
+.foot-about { color: var(--on-chrome-3); max-width: 40ch; font-size: 14px; }
 .wa-link {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  border: 1px solid #33405a;
+  border: 1px solid var(--chrome-line);
   border-radius: 999px;
   padding: 9px 16px;
-  color: #fff;
+  color: var(--on-chrome);
   font-size: 14px;
 }
-.wa-link:hover { border-color: var(--gold-bright); color: var(--gold-bright); }
+.wa-link:hover { border-color: var(--on-chrome-accent); color: var(--on-chrome-accent); }
 /* `config.social` — nothing rendered means no `.social-links` node at all,
    never an empty row. */
 .social-links { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -1330,31 +1477,31 @@ html[lang="ar"] .order-no-label { letter-spacing: .04em; text-transform: none; f
   place-items: center;
   width: 34px;
   height: 34px;
-  border: 1px solid #33405a;
+  border: 1px solid var(--chrome-line);
   border-radius: 50%;
-  color: #c9d1de;
+  color: var(--on-chrome-2);
 }
-.social-link:hover { border-color: var(--gold-bright); color: var(--gold-bright); }
+.social-link:hover { border-color: var(--on-chrome-accent); color: var(--on-chrome-accent); }
 .foot-col { display: grid; gap: 8px; align-content: start; }
 .foot-col h3 {
   font-size: 12px;
   letter-spacing: .16em;
   text-transform: uppercase;
-  color: var(--gold-bright);
+  color: var(--on-chrome-accent);
   margin-block-end: 2px;
 }
 html[lang="ar"] .foot-col h3 { letter-spacing: .04em; text-transform: none; font-size: 14px; }
-.foot-col a:hover { color: #fff; }
-.foot-note { color: #7f8a9c; font-size: 13px; }
+.foot-col a:hover { color: var(--on-chrome); }
+.foot-note { color: var(--on-chrome-4); font-size: 13px; }
 .foot-base {
   display: flex;
   justify-content: space-between;
   gap: 10px;
   flex-wrap: wrap;
-  border-block-start: 1px solid #263043;
+  border-block-start: 1px solid var(--chrome-line-2);
   margin-block-start: 26px;
   padding-block-start: 16px;
-  color: #7f8a9c;
+  color: var(--on-chrome-4);
   font-size: 13px;
 }
 
@@ -1393,6 +1540,8 @@ html[lang="ar"] .foot-col h3 { letter-spacing: .04em; text-transform: none; font
     grid-template-columns: auto minmax(0, 1fr) auto;
     gap: 26px;
   }
+  .brand-logo { height: 38px; max-width: 190px; }
+  .brand-name { font-size: 18px; }
   .btn-label { display: inline; }
   .track-btn { display: inline-flex; }
   .contact-btn { display: inline-flex; }
