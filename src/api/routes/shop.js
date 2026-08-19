@@ -13,6 +13,7 @@ import storefront from '../../services/StorefrontService.js';
 import images from '../../services/ImageService.js';
 import webAssets from '../../services/WebAssetService.js';
 import { currentTenant } from '../../infrastructure/database/connection.js';
+import { confirmTenant } from '../middleware/tenant.js';
 import { NotFoundError } from '../../shared/errors.js';
 
 const router = Router();
@@ -25,12 +26,26 @@ const router = Router();
  * reachable while the switch is off. With no tenant resolved (the
  * single-shop build), `currentTenant()` is null and nothing changes.
  */
-router.use((req, res, next) => {
+router.use(async (req, res, next) => {
   const tenant = currentTenant();
-  if (tenant && !tenant.websiteEnabled) {
-    return res.status(404).json({ error: { code: 'NOT_FOUND', message: `No route for ${req.method} ${req.path}` } });
+  if (!tenant || tenant.websiteEnabled) return next();
+
+  // Before closing a storefront, ask the control plane again. This instance's
+  // cached row may have been written by another one — and a shop that is open
+  // being told it is closed, in front of its customers, is the one failure this
+  // gate must never produce. Only a refusal that survives a fresh read stands.
+  try {
+    const confirmed = await confirmTenant(tenant.slug);
+    if (confirmed && confirmed.websiteEnabled) {
+      tenant.websiteEnabled = true;
+      return next();
+    }
+  } catch {
+    // The control plane being unreachable is not a reason to open a door the
+    // owner closed; fall through to the 404 below.
   }
-  return next();
+
+  return res.status(404).json({ error: { code: 'NOT_FOUND', message: `No route for ${req.method} ${req.path}` } });
 });
 
 /** Shop-wide settings, categories and brands the pages need on first paint. */

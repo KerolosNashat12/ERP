@@ -197,7 +197,12 @@ export const config = Object.freeze({
      * working by sending them to `/t/<slug>`, so switching the platform on
      * costs nobody a dead link. Unset, `/` is the owner's console.
      */
-    defaultTenant: (process.env.MM_DEFAULT_TENANT || PLATFORM_FILE.defaultTenant || '').trim(),
+    // An explicitly-set variable wins even when it is empty: that is how a run
+    // says "this deployment has no default shop" despite platform.json naming
+    // one, which the single-shop tests need and a second deployment might too.
+    defaultTenant: (process.env.MM_DEFAULT_TENANT !== undefined
+      ? process.env.MM_DEFAULT_TENANT
+      : (PLATFORM_FILE.defaultTenant || '')).trim(),
   },
   /**
    * How this deployment makes a database for a new shop by itself.

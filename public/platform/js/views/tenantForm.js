@@ -1,9 +1,17 @@
 /**
- * Shared bits between "create tenant" and "manage tenant": the module list,
- * the slug rule (mirrors `TenantService.js`'s `SLUG_RE` / `RESERVED_SLUGS`
- * exactly, so a bad slug is caught before the round trip, not after), and
- * the module checkbox grid.
+ * Shared bits between "create a shop" and the shop's own Settings tab: the
+ * module list, the slug rule (mirrors `TenantService.js`'s `SLUG_RE` /
+ * `RESERVED_SLUGS` exactly, so a bad slug is caught before the round trip, not
+ * after), and the question of where the shop's data lives.
+ *
+ * The shape of the create form is the point of it: an owner opening a shop
+ * types a name. The slug is suggested from that name, the database is made by
+ * the server, and everything else — modules, limits, the storefront switch —
+ * has a sensible default and is folded away behind one line. The same builder
+ * draws the Settings tab with the fold opened out, because there the modules
+ * and the limits *are* the screen.
  */
+import api from '../core/api.js';
 import {
   h, field, textInput, numberInput, checkboxInput, passwordInput, selectInput,
 } from '../core/dom.js';
@@ -46,11 +54,54 @@ export function slugify(name) {
 }
 
 /**
- * Builds the shared fields (name EN/AR, modules, website switch, limits) used
- * by both the create dialog and the manage page. `slugField` is only present
- * when `withSlug` is true (create only — a slug never changes after creation).
+ * What this deployment can do, asked once per session.
+ *
+ * Deliberately not fetched when this module loads: the console imports every
+ * view at boot, including before anyone has signed in, and a 401 from a
+ * speculative probe would drop the app back to the sign-in screen. It is asked
+ * the first time a form that needs the answer is built, and a probe that fails
+ * assumes the conservative answer — no automatic database — so the owner is
+ * offered the path that always works rather than one that may not.
  */
-export function buildTenantFields(initial = {}, { withSlug = true, hostedControlPlane = false } = {}) {
+let environmentPromise = null;
+export function platformEnvironment() {
+  if (!environmentPromise) {
+    environmentPromise = api.get('/environment')
+      .catch(() => ({ hostedControlPlane: false, canProvision: false }));
+  }
+  return environmentPromise;
+}
+
+/**
+ * The one word in a sentence that is a thing to be typed, set in the console's
+ * monospace so it can be picked out of a line of Arabic prose and copied
+ * correctly — a variable name half-remembered is a variable name misspelt.
+ */
+function withMono(sentence, token) {
+  const [before, ...rest] = String(sentence).split(token);
+  if (!rest.length) return sentence;
+  return [before, h('span', { class: 'mono strong', dir: 'ltr' }, token), rest.join(token)];
+}
+
+/**
+ * A folded block. `<details>` is the only honest "there is more here" control
+ * that works without script, and `.chart-table` is the console's one styling
+ * for it (the muted summary with its +/− marker) — reused rather than
+ * re-invented under a second name.
+ */
+const fold = (summary, ...body) => h('details', { class: 'chart-table' },
+  h('summary', {}, summary),
+  h('div', { class: 'stack' }, ...body));
+
+/**
+ * Builds the shared fields (name EN/AR, modules, website switch, limits) used
+ * by both the create dialog and the Settings tab. `slugField` is only present
+ * when `withSlug` is true (create only — a slug never changes after creation),
+ * and `withSlug` is also what decides whether the secondary fields are folded.
+ */
+export function buildTenantFields(initial = {}, {
+  withSlug = true, hostedControlPlane = false, foldAdvanced = withSlug,
+} = {}) {
   const nameEnInput = textInput({ value: initial.nameEn || '' });
   const nameArInput = textInput({ value: initial.nameAr || '', dir: 'rtl' });
 
@@ -86,11 +137,18 @@ export function buildTenantFields(initial = {}, { withSlug = true, hostedControl
   // one database to another is a migration, not a field edit.
   const databaseChooser = withSlug ? buildDatabaseChooser(hostedControlPlane) : null;
 
+  /**
+   * A brand-new shop gets every module. The server stores exactly what this
+   * form sends and defaults to nothing, so an unticked grid would open a shop
+   * whose sidebar is empty — the opposite of what an owner who typed a name
+   * and pressed Create meant.
+   */
+  const initialModules = initial.modules || (withSlug ? MODULE_KEYS : []);
+
   const moduleChecks = new Map();
   const moduleGrid = h('div', { class: 'checkbox-grid' },
     ...MODULE_KEYS.map((key) => {
-      const checked = (initial.modules || []).includes(key);
-      const box = checkboxInput({ label: t(key), checked });
+      const box = checkboxInput({ label: t(key), checked: initialModules.includes(key) });
       moduleChecks.set(key, box.querySelector('input'));
       return box;
     }));
@@ -102,6 +160,14 @@ export function buildTenantFields(initial = {}, { withSlug = true, hostedControl
   const maxUsersInput = numberInput({ min: '0', value: initial.limits?.maxUsers || '', placeholder: '0' });
   const maxProductsInput = numberInput({ min: '0', value: initial.limits?.maxProducts || '', placeholder: '0' });
 
+  const advanced = [
+    field({ label: t('modules'), input: moduleGrid, hint: t('modulesHint') }),
+    h('div', { class: 'grid cols-2' },
+      field({ label: t('maxUsers'), input: maxUsersInput, hint: t('unlimitedHint') }),
+      field({ label: t('maxProducts'), input: maxProductsInput, hint: t('unlimitedHint') })),
+    h('div', { class: 'field' }, websiteBox, h('span', { class: 'hint' }, t('websiteEnabledHint'))),
+  ];
+
   const nodes = [
     h('div', { class: 'grid cols-2' },
       field({ label: `${t('nameEn')} *`, input: nameEnInput }),
@@ -110,11 +176,9 @@ export function buildTenantFields(initial = {}, { withSlug = true, hostedControl
       ? field({ label: `${t('slug')} *`, input: slugInput, hint: t('slugAuto') })
       : null,
     databaseChooser ? databaseChooser.node : null,
-    field({ label: t('modules'), input: moduleGrid, hint: t('modulesHint') }),
-    h('div', { class: 'grid cols-2' },
-      field({ label: t('maxUsers'), input: maxUsersInput, hint: t('unlimitedHint') }),
-      field({ label: t('maxProducts'), input: maxProductsInput, hint: t('unlimitedHint') })),
-    h('div', { class: 'field' }, websiteBox, h('span', { class: 'hint' }, t('websiteEnabledHint'))),
+    foldAdvanced
+      ? fold(t('advancedOptions'), h('span', { class: 'hint' }, t('advancedHint')), ...advanced)
+      : h('div', { class: 'stack' }, ...advanced),
   ];
 
   return {
@@ -163,12 +227,17 @@ export function buildTenantFields(initial = {}, { withSlug = true, hostedControl
 }
 
 /**
- * The "where does this shop's data live?" choice, and the two fields the hosted
- * answer needs.
+ * "Where does this shop's data live?" — one question with a default the owner
+ * should never have to touch.
  *
- * On a hosted control plane the file option is offered but disabled rather than
- * hidden: an owner who has used this form on a shop PC should see why the
- * choice they remember is gone, not wonder where it went.
+ * When the server says it can provision, **Create a database for me** is the
+ * answer and the URL and token fields do not exist on the page at all: an
+ * owner opening their fourth shop should type a name and press Create.
+ *
+ * When it says it cannot, the automatic option is still listed — disabled, with
+ * one plain line naming `TURSO_API_TOKEN`, because "the option I remember is
+ * gone" is a worse thing to hand somebody than "here is why it is greyed out".
+ * The manual path stays exactly where it was, one choice away.
  *
  * The token field is `type="password"` because it is one — a bearer credential
  * for a whole shop's database, typed at a counter where other people can see
@@ -178,15 +247,13 @@ export function buildTenantFields(initial = {}, { withSlug = true, hostedControl
 function buildDatabaseChooser(hostedControlPlane) {
   const modeSelect = selectInput({
     options: [
+      { value: 'auto', label: t('dataLocationAuto') },
+      { value: 'libsql', label: t('dataLocationExisting') },
       { value: 'file', label: t('dataLocationFile') },
-      { value: 'libsql', label: t('dataLocationHosted') },
     ],
-    value: hostedControlPlane ? 'libsql' : 'file',
+    value: 'auto',
   });
-  if (hostedControlPlane) {
-    // A file on a host with no disk is not a worse choice, it is a broken one.
-    modeSelect.querySelector('option[value="file"]').disabled = true;
-  }
+  const optionFor = (value) => modeSelect.querySelector(`option[value="${value}"]`);
 
   const urlInput = textInput({ dir: 'ltr', autocomplete: 'off', placeholder: 'libsql://my-shop-owner.turso.io' });
   const tokenInput = passwordInput({ dir: 'ltr', placeholder: '••••••••••••' });
@@ -196,16 +263,32 @@ function buildDatabaseChooser(hostedControlPlane) {
     field({ label: `${t('dbUrl')} *`, input: urlInput, hint: t('dbUrlHint') }),
     field({ label: t('dbToken'), input: tokenInput, hint: t('dbTokenHint') }));
 
-  const hint = h('span', { class: 'hint' });
+  const hint = h('span', { class: 'hint' }, t('dataLocationChecking'));
+  /**
+   * The line that names what has to be configured. Plainly said and plainly
+   * styled: nothing here has gone wrong, and an alarm-coloured box would tell
+   * an owner that something had. It sits under the choice rather than inside
+   * the hint so that it stays on the page when they switch to the manual path
+   * and get on with their day.
+   */
+  const provisionNote = h('div', {
+    class: 'small muted', style: { display: 'none', marginTop: 'var(--s1)' },
+  }, withMono(t('dataLocationAutoOff'), 'TURSO_API_TOKEN'));
+
   const node = h('div', { class: 'field' },
     h('label', {}, t('dataLocation')),
     modeSelect,
     hint,
+    provisionNote,
     hostedFields);
 
-  function isHosted() {
-    return modeSelect.value === 'libsql';
-  }
+  // Until the probe answers, the automatic path is assumed and no fields are
+  // shown — the common case, and the one that keeps the form from flickering
+  // a URL box into existence and out again on every open.
+  let canProvision = true;
+  let hosted = hostedControlPlane;
+
+  const isExisting = () => modeSelect.value === 'libsql';
 
   function clearError() {
     node.classList.remove('error');
@@ -220,29 +303,43 @@ function buildDatabaseChooser(hostedControlPlane) {
   }
 
   function sync() {
-    const hosted = isHosted();
-    hostedFields.style.display = hosted ? '' : 'none';
-    if (hostedControlPlane) hint.textContent = t('dataLocationHostedOnly');
-    else hint.textContent = hosted ? t('dataLocationHostedHint') : t('dataLocationFileHint');
-    if (!hosted) clearError();
+    const existing = isExisting();
+    hostedFields.style.display = existing ? '' : 'none';
+    if (existing) hint.textContent = t('dataLocationHostedHint');
+    else if (modeSelect.value === 'auto') hint.textContent = t('dataLocationAutoHint');
+    else hint.textContent = hosted ? t('dataLocationHostedOnly') : t('dataLocationFileHint');
+    if (!existing) clearError();
   }
 
   modeSelect.addEventListener('change', sync);
   urlInput.addEventListener('input', clearError);
   sync();
 
+  platformEnvironment().then((environment) => {
+    canProvision = Boolean(environment.canProvision);
+    hosted = Boolean(environment.hostedControlPlane);
+    // A file on a host with no disk of its own is not a worse choice, it is a
+    // broken one.
+    optionFor('file').disabled = hosted;
+    optionFor('auto').disabled = !canProvision;
+    provisionNote.style.display = canProvision ? 'none' : '';
+    if (!canProvision) modeSelect.value = hosted ? 'libsql' : 'file';
+    sync();
+  });
+
   return {
     node,
     validate() {
       clearError();
-      if (!isHosted()) return true;
+      if (!isExisting()) return true;
       const url = urlInput.value.trim();
       if (!url) { showError(t('dbUrlRequired')); return false; }
       if (!DB_URL_RE.test(url)) { showError(t('dbUrlInvalid')); return false; }
       return true;
     },
     value() {
-      if (!isHosted()) return { mode: 'file' };
+      if (modeSelect.value === 'auto') return { mode: 'auto' };
+      if (modeSelect.value === 'file') return { mode: 'file' };
       const token = tokenInput.value.trim();
       return { mode: 'libsql', url: urlInput.value.trim(), ...(token ? { authToken: token } : {}) };
     },

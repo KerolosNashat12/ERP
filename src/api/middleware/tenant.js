@@ -66,13 +66,30 @@ async function fetchTenant(slug) {
 }
 
 /** Cached lookup — the only place that reads the `tenants` table per-request. */
-export async function loadTenant(slug) {
-  const hit = cache.get(slug);
-  if (hit && hit.expires > Date.now()) return hit.tenant;
+export async function loadTenant(slug, { fresh = false } = {}) {
+  if (!fresh) {
+    const hit = cache.get(slug);
+    if (hit && hit.expires > Date.now()) return hit.tenant;
+  }
 
   const tenant = await fetchTenant(slug);
   cache.set(slug, { tenant, expires: Date.now() + TTL_MS });
   return tenant;
+}
+
+/**
+ * Read the control plane again before refusing a request.
+ *
+ * The expiry above bounds how long a stale answer can be served, but "bounded"
+ * is the wrong guarantee for the answers that hurt: telling a customer a shop
+ * does not exist, or telling a shop it is suspended, on the strength of a cached
+ * row that another instance changed. Those three refusals are rare, so they can
+ * afford one extra read — and with it, a shop that is actually open is never
+ * closed by a cache. A refusal that survives this second look is a real one.
+ */
+async function confirmRefusal(slug) {
+  cache.delete(slug);
+  return loadTenant(slug, { fresh: true });
 }
 
 /**
@@ -106,15 +123,20 @@ export async function resolveTenant(req, res, next) {
 
 async function resolve(slug, req, res, next) {
   try {
-    const tenant = await loadTenant(slug);
+    let tenant = await loadTenant(slug);
 
-    if (!tenant) {
-      return res.status(404).json({ error: { code: 'NOT_FOUND', message: `No shop at "${slug}"` } });
-    }
-    if (tenant.status === 'suspended') {
-      return res.status(423).json({
-        error: { code: 'TENANT_SUSPENDED', message: 'This shop is currently suspended' },
-      });
+    if (!tenant || tenant.status === 'suspended') {
+      // Never refuse on a cached row — see confirmRefusal.
+      const confirmed = await confirmRefusal(slug);
+      if (!confirmed) {
+        return res.status(404).json({ error: { code: 'NOT_FOUND', message: `No shop at "${slug}"` } });
+      }
+      if (confirmed.status === 'suspended') {
+        return res.status(423).json({
+          error: { code: 'TENANT_SUSPENDED', message: 'This shop is currently suspended' },
+        });
+      }
+      tenant = confirmed;
     }
 
     const connection = await connectionFor(slug, () => openConnection({
@@ -139,4 +161,14 @@ async function resolve(slug, req, res, next) {
   }
 }
 
-export default { resolveTenant, resolveDefaultTenant, forgetTenant, loadTenant };
+export default { resolveTenant, resolveDefaultTenant, forgetTenant, loadTenant, confirmTenant };
+
+/**
+ * Used by the storefront gate for the same reason `confirmRefusal` exists: a
+ * shop is only told its website is off after the control plane has been asked
+ * again. A customer seeing "this does not exist" because of a cache is the
+ * failure this whole file is now shaped around.
+ */
+export async function confirmTenant(slug) {
+  return confirmRefusal(slug);
+}

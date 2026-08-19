@@ -22,6 +22,9 @@ const testDataDir = path.join(here, '..', 'data', 'entitlements-test');
 process.env.MM_PLATFORM = '1';
 process.env.MM_PLATFORM_DB = path.join(testDataDir, 'platform.db');
 process.env.MM_TENANTS_DIR = path.join(testDataDir, 'tenants');
+// No default shop in this process: these tests are about a fleet where every
+// shop is addressed by slug, and `platform.json` names one for the deployment.
+process.env.MM_DEFAULT_TENANT = '';
 
 fs.rmSync(testDataDir, { recursive: true, force: true });
 fs.mkdirSync(testDataDir, { recursive: true });

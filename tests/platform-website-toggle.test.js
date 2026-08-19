@@ -136,3 +136,18 @@ test('suspending and resuming behaves the same way across instances', async () =
   await wait(Number(process.env.MM_TENANT_CACHE_MS) + 150);
   assert.equal((await get('/t/shopone/api/session')).status, 200);
 });
+
+test('a stale "off" cannot close a shop that is actually open', async () => {
+  // The failure this whole cache is now shaped around: another instance turned
+  // the website back on, this one still believes it is off, and a customer is
+  // standing in front of the storefront. The gate must ask before refusing.
+  await tenantService.update('shopone', { websiteEnabled: false });
+  assert.equal((await get('/api/shop/config')).status, 404, 'off is off');
+
+  // Straight into the control plane: no invalidation, exactly like another
+  // instance switching it back on.
+  await platformDb().prepare("UPDATE tenants SET website_enabled = 1 WHERE slug = 'shopone'").run();
+
+  const immediately = await get('/api/shop/config');
+  assert.equal(immediately.status, 200, 'and the shop is open again on the very next request, not after a wait');
+});
