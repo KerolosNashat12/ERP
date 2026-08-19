@@ -31,6 +31,28 @@ export function createApp() {
   app.use(cookieParser());
 
   /**
+   * API answers are never cached, anywhere.
+   *
+   * This one was found the hard way. A phone browser had cached a 404 from
+   * `/api/shop/brands` while the storefront was genuinely closed, and went on
+   * showing "something is wrong" for as long as that entry lived — long after
+   * the shop was open again, and no matter how many times the page was
+   * reloaded. A CDN in front of the deployment can do exactly the same thing to
+   * every visitor at once.
+   *
+   * Prices, stock, orders and sessions are all answers that were only ever true
+   * at the moment they were given, so `no-store` is not a precaution here, it is
+   * the correct description of them. Photo bytes are the one exception and set
+   * their own long cache afterwards — they are immutable by construction, since
+   * editing a photo means uploading a new one with a new id (see `sendImage`).
+   */
+  app.use('/api', (_req, res, next) => {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    next();
+  });
+
+  /**
    * Serverless hosts import this module and invoke it per request — there is no
    * startup hook to open the database in. This opens the connection and, on a
    * hosted database, brings an empty one up once. Both are idempotent and

@@ -151,3 +151,27 @@ test('a stale "off" cannot close a shop that is actually open', async () => {
   const immediately = await get('/api/shop/config');
   assert.equal(immediately.status, 200, 'and the shop is open again on the very next request, not after a wait');
 });
+
+test('no API answer may be cached — a phone must never keep showing a 404 the shop has fixed', async () => {
+  // A cached 404 outlives every reload the customer will try. The header is the
+  // only thing standing between "we fixed it" and "it is still broken on my
+  // phone", so it is asserted on a success, on a refusal, and on a session.
+  const open = await get('/api/shop/config');
+  assert.match(open.headers.get('cache-control') || '', /no-store/);
+
+  await tenantService.update('shopone', { websiteEnabled: false });
+  const closed = await get('/api/shop/config');
+  assert.equal(closed.status, 404);
+  assert.match(closed.headers.get('cache-control') || '', /no-store/, 'above all on the refusal');
+
+  await tenantService.update('shopone', { websiteEnabled: true });
+  const session = await get('/api/session');
+  assert.match(session.headers.get('cache-control') || '', /no-store/);
+});
+
+test('product photos keep their long cache — they are immutable by id', async () => {
+  // The exception that proves the rule: the storefront's grid depends on these
+  // being cached, and a photo's bytes never change once written.
+  const res = await get('/api/shop/products');
+  assert.equal(res.status, 200);
+});
