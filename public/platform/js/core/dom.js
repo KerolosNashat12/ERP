@@ -154,6 +154,16 @@ export function numberInput(props = {}) {
   return h('input', { class: 'input', type: 'number', step: '1', ...props });
 }
 
+/**
+ * A secret the browser must never render in the clear: an auth token typed into
+ * a shared screen at a counter, or captured in a screenshot of the form.
+ */
+export function passwordInput(props = {}) {
+  return h('input', {
+    class: 'input', type: 'password', autocomplete: 'new-password', ...props,
+  });
+}
+
 export function selectInput({
   options = [], value, placeholder, ...props
 } = {}) {

@@ -5,6 +5,7 @@
  */
 import { Router } from 'express';
 import { z } from 'zod';
+import config from '../../config/index.js';
 import platformAuth from '../../platform/auth.js';
 import tenantService from '../../platform/TenantService.js';
 import { migrateAllTenants } from '../../platform/migrateAll.js';
@@ -57,6 +58,23 @@ const limitsSchema = z.object({
   maxProducts: z.number().int().min(0).optional(),
 }).optional();
 
+/**
+ * Where the new tenant's data lives. Absent means `{ mode: 'file' }` — the
+ * shop-PC default — so an older client that knows nothing about hosting keeps
+ * working unchanged.
+ *
+ * The token is accepted here and never travels the other way: it is written to
+ * the control-plane row and `TenantService.toView` reports only `hasAuthToken`.
+ */
+const databaseSchema = z.discriminatedUnion('mode', [
+  z.object({ mode: z.literal('file') }),
+  z.object({
+    mode: z.literal('libsql'),
+    url: z.string().min(1),
+    authToken: z.string().optional(),
+  }),
+]).optional();
+
 const tenantCreateSchema = z.object({
   slug: z.string().min(2).max(31),
   nameEn: z.string().min(1),
@@ -64,6 +82,7 @@ const tenantCreateSchema = z.object({
   modules: z.array(z.string()).optional(),
   limits: limitsSchema,
   websiteEnabled: z.boolean().optional(),
+  database: databaseSchema,
 });
 
 const tenantUpdateSchema = z.object({
@@ -74,6 +93,17 @@ const tenantUpdateSchema = z.object({
   websiteEnabled: z.boolean().optional(),
   notes: z.string().optional(),
 });
+
+/**
+ * What kind of deployment this dashboard is talking to.
+ *
+ * The create form needs it to pick a sensible default and to say plainly that a
+ * file cannot work on a host with no disk. Deliberately says nothing about the
+ * control plane's URL or credentials — only which shape it is.
+ */
+router.get('/environment', asyncHandler(async (_req, res) => {
+  res.json({ hostedControlPlane: config.platform.driver === 'libsql' });
+}));
 
 router.get('/tenants', asyncHandler(async (_req, res) => {
   res.json({ rows: await tenantService.list() });

@@ -41,6 +41,38 @@ export function showOneTimePassword({ slug, adminUsername, adminPassword, headli
 }
 
 /**
+ * The other way a tenant can come into being: an existing shop attached as it
+ * is. There is no password to hand over, so showing the one-time-password
+ * dialog with an empty slot would be worse than useless — this says what was
+ * found instead, which is the reassurance the owner actually wants when the
+ * database they just pointed at is the one their shop is running on.
+ */
+export function showAdoptionSummary({ slug, users, products }) {
+  const dialog = modal({
+    title: t('tenantAdopted'),
+    size: 'narrow',
+    body: h('div', { class: 'otp-panel' },
+      h('p', { class: 'muted small', style: { margin: 0 } }, t('tenantAdoptedHeadline')),
+      h('div', { class: 'small muted' }, `${t('tenant')}: `, h('span', { class: 'mono strong' }, slug)),
+      h('div', { class: 'small muted' }, t('adoptedFound')),
+      h('div', { class: 'adopted-counts' },
+        h('div', {}, h('b', {}, users), h('span', {}, t('usersStat'))),
+        h('div', {}, h('b', {}, products), h('span', {}, t('productsStat')))),
+      h('div', { class: 'otp-note' },
+        h('span', { class: 'ico' }, '✓'),
+        h('span', {}, t('tenantAdoptedBody')))),
+    footer: [
+      h('a', {
+        class: 'btn', href: `${window.location.origin}/t/${slug}`, target: '_blank', rel: 'noopener',
+      }, `${t('openErp')} ↗`),
+      h('span', { class: 'spacer' }),
+      h('button', { class: 'btn primary', onclick: () => dialog.close() }, t('close')),
+    ],
+  });
+  return dialog;
+}
+
+/**
  * navigator.clipboard only exists on a secure origin, and this console can
  * run over plain HTTP on a LAN — fall back to the old copy command, and
  * then to simply selecting the text so it can be copied by hand.

@@ -239,6 +239,13 @@ html[dir="rtl"] .kpi .label { letter-spacing: 0; }
   background: var(--line-2); border: 1px dashed var(--line); border-radius: var(--radius); overflow-wrap: anywhere;
 }
 .otp-warn { display: flex; align-items: flex-start; gap: 9px; padding: 10px 12px; border-radius: var(--radius-sm); border-inline-start: 3px solid var(--warn); background: var(--warn-soft); color: var(--warn); font-size: 12.5px; font-weight: 600; }
+/* An adoption is good news, so it is green where a one-time password is amber:
+   the two dialogs must never be mistaken for one another at a glance. */
+.otp-note { display: flex; align-items: flex-start; gap: 9px; padding: 10px 12px; border-radius: var(--radius-sm); border-inline-start: 3px solid var(--ok); background: var(--ok-soft); color: var(--ok); font-size: 12.5px; font-weight: 600; }
+.adopted-counts { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; text-align: center; }
+.adopted-counts > div { background: var(--line-2); border: 1px solid var(--line); border-radius: var(--radius); padding: 13px 10px; }
+.adopted-counts b { display: block; font-size: 24px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.adopted-counts span { font-size: 12px; color: var(--ink-3); }
 .copy-helper { position: fixed; inset-block-start: 0; inset-inline-start: -9999px; width: 1px; height: 1px; opacity: 0; }
 
 /* ---------------------------------------------------------------- toasts */

@@ -95,7 +95,17 @@ async function seedOwnerIfEmpty() {
   const existing = await db.prepare('SELECT id FROM platform_users LIMIT 1').get();
   if (existing) return;
 
-  const password = generateOwnerPassword();
+  /**
+   * On a hosted deployment nobody sees stdout, and hunting a generated password
+   * through a log viewer is a poor way to meet a new system. `MM_PLATFORM_OWNER_PASSWORD`
+   * lets the owner choose it before the first boot; without it the generated one
+   * is printed as before, which is what a shop PC wants.
+   */
+  const chosen = String(process.env.MM_PLATFORM_OWNER_PASSWORD || '').trim();
+  if (chosen && chosen.length < 8) {
+    throw new Error('MM_PLATFORM_OWNER_PASSWORD must be at least 8 characters');
+  }
+  const password = chosen || generateOwnerPassword();
   const hash = bcrypt.hashSync(password, config.auth.bcryptRounds);
   await db.prepare(`
     INSERT INTO platform_users (username, password_hash, full_name, is_active, created_at)
@@ -107,16 +117,39 @@ async function seedOwnerIfEmpty() {
   console.log('  ───────────────────────────────────────────');
   console.log('  A platform owner account was created:');
   console.log('    username  owner');
-  console.log(`    password  ${password}`);
-  console.log('  This is shown once. Only its hash is stored — write it down now.');
+  // A password the owner chose is already known to them, and printing it would
+  // only copy a secret into a log file that outlives this process.
+  console.log(chosen ? '    password  (the one you set in MM_PLATFORM_OWNER_PASSWORD)' : `    password  ${password}`);
+  if (!chosen) console.log('  This is shown once. Only its hash is stored — write it down now.');
   console.log('');
 }
 
-/** Idempotent — safe to call from every request path and every script. */
+/**
+ * The control plane's own descriptor: a libSQL database when
+ * MM_PLATFORM_DB_URL is set, the local file otherwise.
+ *
+ * Only the file branch touches the disk. A hosted deployment's filesystem is
+ * read-only outside a scratch directory, so creating a directory for a database
+ * that will never live there is both pointless and a way to fail at boot.
+ */
+function controlPlaneDescriptor() {
+  if (config.platform.driver === 'libsql') {
+    return { driver: 'libsql', url: config.platform.url, authToken: config.platform.authToken };
+  }
+  fs.mkdirSync(path.dirname(config.platform.databaseFile), { recursive: true });
+  return { driver: 'sqlite', file: config.platform.databaseFile };
+}
+
+/**
+ * Idempotent — safe to call from every request path and every script.
+ *
+ * The schema is applied the same way on both drivers: `PLATFORM_SCHEMA_SQL` is
+ * entirely `CREATE … IF NOT EXISTS`, so re-applying it on every start is what
+ * makes a deploy that adds a table actually work, and costs one round trip.
+ */
 export async function initPlatformDb() {
   if (connection) return connection.facade;
-  fs.mkdirSync(path.dirname(config.platform.databaseFile), { recursive: true });
-  const driver = await openDriver({ driver: 'sqlite', file: config.platform.databaseFile });
+  const driver = await openDriver(controlPlaneDescriptor());
   connection = buildConnection(driver);
   await driver.applySchema(PLATFORM_SCHEMA_SQL);
   await seedOwnerIfEmpty();

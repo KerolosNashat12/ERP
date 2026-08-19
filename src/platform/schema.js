@@ -20,9 +20,11 @@ CREATE TABLE IF NOT EXISTS tenants (
   name_en         TEXT    NOT NULL,
   name_ar         TEXT    NOT NULL,
   status          TEXT    NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'suspended')),
-  -- Hosting is out of scope this round, so every row is 'sqlite' with a
-  -- db_file — but the hosted columns exist now so a Turso tenant can be
-  -- added later with a row update, not a migration.
+  -- Exactly one of these is filled in. 'sqlite' + db_file is a database on
+  -- this machine; 'libsql' + db_url (+ db_auth_token) is a database somewhere
+  -- on the internet, attached rather than created. db_auth_token is a secret:
+  -- it is written here, read only to open a connection, and never returned by
+  -- the API or written to an audit row.
   driver          TEXT    NOT NULL DEFAULT 'sqlite',
   db_file         TEXT,
   db_url          TEXT,

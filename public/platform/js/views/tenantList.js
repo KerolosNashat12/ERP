@@ -6,11 +6,22 @@ import {
 import { t, pickName, getLanguage } from '../core/i18n.js';
 import { navigate } from '../core/router.js';
 import { buildTenantFields } from './tenantForm.js';
-import { showOneTimePassword } from './otp.js';
+import { showOneTimePassword, showAdoptionSummary } from './otp.js';
 
 export async function tenantsView(root) {
   let allRows = [];
   const statsCache = new Map();
+  /**
+   * Whether this console is talking to a hosted control plane. Fetched once
+   * here rather than inside the dialog, so opening "new tenant" never waits on
+   * the network. A failed probe assumes "not hosted", which is the shop-PC
+   * default and the safe one: it offers a file rather than demanding a URL the
+   * owner may not have.
+   */
+  let hostedControlPlane = false;
+  try {
+    ({ hostedControlPlane } = await api.get('/environment'));
+  } catch { hostedControlPlane = false; }
 
   const searchInput = textInput({ placeholder: t('search') });
   const statusSelect = selectInput({
@@ -28,7 +39,7 @@ export async function tenantsView(root) {
         h('h2', {}, t('tenants')),
         h('p', {}, t('tenantsSubtitle'))),
       h('span', { class: 'spacer' }),
-      h('button', { class: 'btn primary', onclick: () => openCreateDialog(refresh) }, `+ ${t('newTenant')}`)),
+      h('button', { class: 'btn primary', onclick: () => openCreateDialog(refresh, hostedControlPlane) }, `+ ${t('newTenant')}`)),
     h('div', { class: 'card' },
       h('div', { class: 'filters' },
         field({ label: t('search'), input: searchInput }),
@@ -57,7 +68,7 @@ export async function tenantsView(root) {
         h('span', { class: 'ico' }, '⌂'),
         h('div', { class: 'lead' }, t('noTenantsTitle')),
         h('div', {}, t('noTenantsBody')),
-        h('button', { class: 'btn primary', style: { marginTop: '14px' }, onclick: () => openCreateDialog(refresh) }, `+ ${t('newTenant')}`)));
+        h('button', { class: 'btn primary', style: { marginTop: '14px' }, onclick: () => openCreateDialog(refresh, hostedControlPlane) }, `+ ${t('newTenant')}`)));
       return;
     }
 
@@ -158,8 +169,8 @@ function formatDate(iso) {
   } catch { return iso; }
 }
 
-function openCreateDialog(onDone) {
-  const form = buildTenantFields({ websiteEnabled: true }, { withSlug: true });
+function openCreateDialog(onDone, hostedControlPlane = false) {
+  const form = buildTenantFields({ websiteEnabled: true }, { withSlug: true, hostedControlPlane });
   const submit = h('button', { class: 'btn primary' }, t('create'));
 
   const dialog = modal({
@@ -180,12 +191,18 @@ function openCreateDialog(onDone) {
     try {
       const result = await api.post('/tenants', values);
       dialog.close();
-      showOneTimePassword({
-        slug: result.slug,
-        adminUsername: result.adminUsername,
-        adminPassword: result.adminPassword,
-        headline: t('tenantCreated'),
-      });
+      // An adopted shop never had a password generated for it — showing the
+      // one-time-password dialog would invent one that does not exist.
+      if (result.adopted) {
+        showAdoptionSummary({ slug: result.slug, users: result.users, products: result.products });
+      } else {
+        showOneTimePassword({
+          slug: result.slug,
+          adminUsername: result.adminUsername,
+          adminPassword: result.adminPassword,
+          headline: t('tenantCreated'),
+        });
+      }
       toast(t('saved'));
       await onDone();
     } catch (error) {

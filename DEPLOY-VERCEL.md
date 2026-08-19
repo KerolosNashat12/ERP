@@ -58,6 +58,51 @@ to start without it rather than fail mysteriously later.
 Do **not** set `MM_DATA_DIR` or `MM_DB_FILE`. Setting `TURSO_DATABASE_URL` is
 what switches the driver — there is no separate flag to remember.
 
+### Hosting the multi-tenant platform
+
+Only needed if you run the owner's fleet console (`MM_PLATFORM=1`). Skip this
+section for a single-shop deployment.
+
+| Variable | What it does | Required |
+|---|---|---|
+| `MM_PLATFORM` | `1` turns the fleet console on. Unset = single shop, unchanged | no |
+| `MM_PLATFORM_DB_URL` | the **control plane's** own Turso database URL | **yes, when `MM_PLATFORM=1` on Vercel** |
+| `MM_PLATFORM_DB_TOKEN` | its auth token | yes, if that database needs one |
+| `MM_PLATFORM_OWNER_PASSWORD` | the owner console's first password. Without it one is generated and printed to the server log, which nobody reads on a hosted deployment | recommended when hosted |
+
+The control plane — the list of shops, the owner's account, the audit trail —
+is a database of its own, separate from any shop's. On a shop PC it is the file
+`data/platform.db`. On Vercel there is no disk to put that file on, so
+`MM_PLATFORM_DB_URL` points it at a **second Turso database**, created the same
+way as the first.
+
+Do not point `MM_PLATFORM_DB_URL` at the same database as `TURSO_DATABASE_URL`.
+They have different schemas; sharing one would put fleet rows inside a shop's
+data.
+
+With `MM_PLATFORM_DB_URL` unset the control plane is the local file, exactly as
+before — the shop-PC install needs no new variable.
+
+Each shop then gets its own Turso database, chosen in the console's **New
+tenant** form under *"Where does this shop's data live?"*:
+
+- **On this machine (file)** — the default on a shop PC, and disabled on a
+  hosted deployment, where a file cannot survive a request.
+- **Turso database (for the internet)** — paste the database's URL
+  (`libsql://…` or `https://…`) and its auth token.
+
+If that database is **empty**, the shop is created in it: schema, migrations,
+baseline, and a one-time admin password shown once. If it **already has users
+in it**, the shop is *adopted* — nothing is seeded, no setting is changed, no
+password is generated, and everyone signs in exactly as before. That is how an
+already-running shop joins the platform without moving a byte, and it is decided
+by reading the database, not by a checkbox.
+
+The auth token is stored in the control plane and never comes back out: the API
+reports only whether one is set, and nothing writes it to a log line or an audit
+row. Two tenants can never be pointed at one database — the second attempt is
+refused and names the tenant already using it.
+
 ## Steps
 
 1. **Add the database.** Vercel dashboard → Storage → Marketplace → **Turso

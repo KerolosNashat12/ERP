@@ -63,7 +63,7 @@ async function paint(root, tenant) {
       h('div', { class: 'page-head' },
         h('div', {},
           h('h2', {}, pickName(tenant), ' ', h('span', { class: 'small mono muted' }, `/t/${tenant.slug}`)),
-          h('p', {}, statusTag, ' · ', t('createdAt'), ' ', formatDateTime(tenant.createdAt))),
+          h('p', {}, statusTag, ' · ', databaseSummary(tenant), ' · ', t('createdAt'), ' ', formatDateTime(tenant.createdAt))),
         h('span', { class: 'spacer' }),
         h('a', { class: 'btn', href: erpUrl, target: '_blank', rel: 'noopener' }, `${t('openErp')} ↗`),
         h('a', { class: 'btn', href: shopUrl, target: '_blank', rel: 'noopener' }, `${t('openStorefront')} ↗`)),
@@ -143,6 +143,25 @@ async function handleResetPassword(tenant) {
   } catch (error) {
     toastError(error);
   }
+}
+
+/**
+ * Where this shop's data lives, said out loud on the page that manages it —
+ * an owner looking at a suspend button should be able to see at a glance
+ * whether they are about to affect a file on this machine or a database on the
+ * internet. The auth token is reported as set or not set and never printed:
+ * the API does not return it, and this line is exactly the kind of place a
+ * screenshot gets taken.
+ */
+function databaseSummary(tenant) {
+  const database = tenant.database || {};
+  if (database.driver !== 'libsql') return tag(t('dataLocationFileShort'), '');
+  return h('span', {},
+    tag(t('dataLocationHostedShort'), 'ok'),
+    ' ',
+    h('span', { class: 'small mono muted', dir: 'ltr' }, database.url || ''),
+    ' ',
+    h('span', { class: 'small muted' }, database.hasAuthToken ? t('tokenSet') : t('tokenNotSet')));
 }
 
 function formatDateTime(iso) {

@@ -50,6 +50,112 @@ function generatePassword() {
   return crypto.randomBytes(15).toString('base64url');
 }
 
+/**
+ * Addresses a libSQL database can actually live at.
+ *
+ * `libsql://` and `https://` are the two Turso hands out. `file:` is here
+ * because the driver treats a local libSQL file exactly like a remote one —
+ * that is what lets the hosted path be exercised without a Turso account (see
+ * tests/platform-hosted.test.js). Everything else — a Postgres URL, a bare
+ * hostname, a dashboard link pasted out of a browser — is rejected before a
+ * single byte is sent anywhere.
+ */
+const DATABASE_URL_RE = /^(libsql:\/\/|https:\/\/|file:)/i;
+
+function assertValidDatabaseUrl(url) {
+  if (!url) throw new ValidationError('A database URL is required to attach an existing database');
+  if (!DATABASE_URL_RE.test(url)) {
+    throw new ValidationError(
+      `"${url}" is not a database address — it must start with libsql:// or https:// `
+      + '(Turso shows both on the database\'s page)',
+    );
+  }
+}
+
+/**
+ * Two tenants sharing one database is the single way this architecture's
+ * isolation can be defeated: separate databases are what make a forgotten
+ * `WHERE tenant_id = ?` impossible, and a shared URL quietly undoes that for
+ * both shops at once. Compared on a canonical form so a trailing slash or a
+ * capitalised host cannot slip past, and the refusal names the tenant already
+ * using it — an owner who sees "already used by mm" knows immediately whether
+ * they pasted the wrong URL or are about to merge two shops.
+ */
+const canonicalUrl = (url) => String(url || '').trim().toLowerCase().replace(/\/+$/, '');
+
+async function assertDatabaseNotShared(url) {
+  const rows = await platformDb()
+    .prepare('SELECT slug, db_url FROM tenants WHERE db_url IS NOT NULL AND db_url != \'\'').all();
+  const wanted = canonicalUrl(url);
+  const clash = rows.find((row) => canonicalUrl(row.db_url) === wanted);
+  if (clash) {
+    throw new ConflictError(
+      `That database is already used by tenant "${clash.slug}" — two shops must never share one database`,
+    );
+  }
+}
+
+/** Tokens are secrets: if a driver ever quoted one back at us, it stops here. */
+function redactToken(message, authToken) {
+  const text = String(message || '').split('\n')[0].trim();
+  return authToken ? text.replaceAll(authToken, '***') : text;
+}
+
+/**
+ * Open an already-existing database and prove it answers, so a wrong URL or a
+ * rejected token surfaces as one sentence a shop owner can act on rather than
+ * as a driver stack trace thrown from the middle of a DDL batch.
+ */
+async function connectAttached({ url, authToken }) {
+  let connection = null;
+  try {
+    connection = await openConnection({ driver: 'libsql', url, authToken });
+    await connection.facade.prepare('SELECT 1 AS ok').get();
+    return connection;
+  } catch (error) {
+    if (connection) {
+      try { await connection.close(); } catch { /* it never opened; nothing to salvage */ }
+    }
+    throw new ValidationError(
+      'Could not connect to that database — check the URL and the auth token. '
+      + `(${redactToken(error.message, authToken)})`,
+    );
+  }
+}
+
+/**
+ * Where this tenant's data will live. The two modes are the difference between
+ * "make me a database" and "here is one already":
+ *
+ *   { mode: 'file' }                    a new SQLite file under `tenantsDir`
+ *   { mode: 'libsql', url, authToken }  an existing database, attached as-is
+ *
+ * Only the file mode touches the disk — and only to check that it is not about
+ * to overwrite something.
+ */
+function resolveDatabaseTarget(slug, database) {
+  const mode = database?.mode || 'file';
+
+  if (mode === 'file') {
+    fs.mkdirSync(config.platform.tenantsDir, { recursive: true });
+    const file = path.join(config.platform.tenantsDir, `${slug}.db`);
+    if (fs.existsSync(file)) {
+      throw new ConflictError(`A database file already exists for "${slug}" — remove it before retrying`);
+    }
+    return { mode, driver: 'sqlite', file, url: null, authToken: null };
+  }
+
+  if (mode !== 'libsql') {
+    throw new ValidationError(`Unknown database mode "${mode}" — use "file" or "libsql"`);
+  }
+
+  const url = String(database.url || '').trim();
+  assertValidDatabaseUrl(url);
+  return {
+    mode, driver: 'libsql', file: null, url, authToken: String(database.authToken || '').trim() || null,
+  };
+}
+
 function toView(row, modules) {
   return {
     id: row.id,
@@ -58,6 +164,18 @@ function toView(row, modules) {
     nameAr: row.name_ar,
     status: row.status,
     driver: row.driver,
+    /**
+     * Where this shop's data lives. `hasAuthToken` rather than the token
+     * itself: the dashboard only ever needs to know whether one is set, and a
+     * token that is never sent back cannot be read out of a browser tab, a
+     * proxy log or a screenshot.
+     */
+    database: {
+      driver: row.driver,
+      url: row.db_url || null,
+      file: row.db_file || null,
+      hasAuthToken: Boolean(row.db_auth_token),
+    },
     websiteEnabled: Boolean(row.website_enabled),
     limits: { maxUsers: row.max_users, maxProducts: row.max_products },
     modules,
@@ -108,18 +226,34 @@ export async function get(slug) {
 }
 
 /**
- * Provision a tenant end to end: the control-plane row, its own database
- * file, schema, migrations, the baseline seed, the shop's own name, and a
- * fresh admin password nobody chose — returned once, stored nowhere in the
- * clear.
+ * Provision a tenant end to end: the control-plane row, its database, schema,
+ * migrations, and — only if that database turns out to be empty — the baseline
+ * seed, the shop's own name and a fresh admin password nobody chose, returned
+ * once and stored nowhere in the clear.
  *
- * On any failure past the row insert, both the row and the database file
- * (plus its WAL/SHM siblings, if the failure happened after they existed)
- * are removed, so a retry of the same slug starts clean.
+ * `input.database` says where the data lives. `{ mode: 'file' }` is the default
+ * and today's behaviour. `{ mode: 'libsql', url, authToken }` attaches a
+ * database that already exists — which is how a shop that is already serving
+ * customers joins the platform without moving a byte.
+ *
+ * Whether to seed is decided by what is in the database, never by a flag the
+ * caller passes. A caller who ticks the wrong box in a form should not be able
+ * to overwrite a live shop, so the question asked is "are there users in here?"
+ * and the answer comes from the database itself:
+ *
+ *   no users    -> a new shop: seed the baseline, return a one-time password
+ *   users exist -> an existing shop: seed nothing, touch no settings, and
+ *                  report back what was found so the caller can see that
+ *                  nothing was lost
+ *
+ * Rollback differs for the same reason. A file this call created is deleted on
+ * failure. An attached database is never deleted, never truncated and never
+ * altered on failure — a failed attach leaves the customer's data exactly as it
+ * was found, and only the control-plane row is removed.
  */
 export async function create(input, actor = null) {
   const {
-    slug, nameEn, nameAr, modules = [], limits = {}, websiteEnabled = true,
+    slug, nameEn, nameAr, modules = [], limits = {}, websiteEnabled = true, database,
   } = input || {};
 
   assertValidSlug(slug);
@@ -128,11 +262,8 @@ export async function create(input, actor = null) {
 
   if (await findRow(slug)) throw new ConflictError(`Tenant "${slug}" already exists`);
 
-  fs.mkdirSync(config.platform.tenantsDir, { recursive: true });
-  const dbFile = path.join(config.platform.tenantsDir, `${slug}.db`);
-  if (fs.existsSync(dbFile)) {
-    throw new ConflictError(`A database file already exists for "${slug}" — remove it before retrying`);
-  }
+  const target = resolveDatabaseTarget(slug, database);
+  if (target.mode === 'libsql') await assertDatabaseNotShared(target.url);
 
   const db = platformDb();
   const now = new Date().toISOString();
@@ -141,11 +272,12 @@ export async function create(input, actor = null) {
 
   try {
     const inserted = await db.prepare(`
-      INSERT INTO tenants (slug, name_en, name_ar, status, driver, db_file, website_enabled,
-                            max_users, max_products, created_at, updated_at)
-      VALUES (?, ?, ?, 'active', 'sqlite', ?, ?, ?, ?, ?, ?)
+      INSERT INTO tenants (slug, name_en, name_ar, status, driver, db_file, db_url, db_auth_token,
+                            website_enabled, max_users, max_products, created_at, updated_at)
+      VALUES (?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
-      slug, nameEn, nameAr || nameEn, dbFile, websiteEnabled ? 1 : 0,
+      slug, nameEn, nameAr || nameEn, target.driver, target.file, target.url, target.authToken,
+      websiteEnabled ? 1 : 0,
       Number(limits.maxUsers || 0), Number(limits.maxProducts || 0), now, now,
     );
     tenantId = inserted.lastInsertRowid;
@@ -154,18 +286,31 @@ export async function create(input, actor = null) {
       await db.prepare('INSERT INTO tenant_modules (tenant_id, module) VALUES (?, ?)').run(tenantId, module);
     }
 
-    const connection = await openConnection({ driver: 'sqlite', file: dbFile });
-    fileCreated = true;
-    let adminPassword;
+    let connection;
+    if (target.mode === 'libsql') {
+      connection = await connectAttached(target);
+    } else {
+      connection = await openConnection({ driver: 'sqlite', file: target.file });
+      fileCreated = true;
+    }
+
+    let provisioned;
     try {
-      adminPassword = await runWithTenant(
+      provisioned = await runWithTenant(
         { slug, modules: new Set(modules), limits, websiteEnabled },
         connection,
         async () => {
+          // Applied to both kinds of database. Every statement is
+          // `CREATE … IF NOT EXISTS`, so a database that already has the
+          // schema is unchanged by this and one that is missing a newer table
+          // gains it.
           await connection.applySchema();
           await runMigrations();
-          await seedBaseline();
 
+          const existing = await connection.facade.prepare('SELECT COUNT(*) AS n FROM users').get();
+          if (existing.n > 0) return adoptExisting(connection.facade, existing.n);
+
+          await seedBaseline();
           const generated = generatePassword();
           const hash = bcrypt.hashSync(generated, config.auth.bcryptRounds);
           await connection.facade.prepare(
@@ -174,20 +319,31 @@ export async function create(input, actor = null) {
           await connection.facade.prepare("UPDATE settings SET value = ? WHERE key = 'company.name'").run(nameEn);
           await connection.facade.prepare("UPDATE settings SET value = ? WHERE key = 'company.name_ar'")
             .run(nameAr || nameEn);
-          return generated;
+          return { adopted: false, adminPassword: generated };
         },
       );
     } finally {
       await connection.close();
     }
 
-    await recordAudit('CREATE', { tenantId, actor, detail: { slug } });
+    await recordAudit(provisioned.adopted ? 'ADOPT' : 'CREATE', {
+      tenantId,
+      actor,
+      // The URL is fine to keep; the token is a secret and is never written
+      // to an audit row, a log line or a response.
+      detail: { slug, driver: target.driver, url: target.url },
+    });
     // A negative lookup could have been cached by a request that raced this
     // creation; drop it so the tenant is reachable immediately.
     await forgetTenant(slug);
 
+    if (provisioned.adopted) {
+      return {
+        slug, id: tenantId, adopted: true, users: provisioned.users, products: provisioned.products,
+      };
+    }
     return {
-      slug, id: tenantId, adminUsername: 'admin', adminPassword,
+      slug, id: tenantId, adminUsername: 'admin', adminPassword: provisioned.adminPassword,
     };
   } catch (error) {
     if (tenantId) {
@@ -195,14 +351,26 @@ export async function create(input, actor = null) {
         await db.prepare('DELETE FROM tenants WHERE id = ?').run(tenantId);
       } catch { /* the file cleanup below still runs even if this fails */ }
     }
-    if (fileCreated || fs.existsSync(dbFile)) {
+    // Only ever a file this call made. An attached database belongs to the
+    // customer — deleting or emptying it because provisioning failed would
+    // destroy exactly the data this feature exists to preserve.
+    if (target.mode === 'file' && (fileCreated || fs.existsSync(target.file))) {
       for (const suffix of ['', '-wal', '-shm']) {
-        const file = `${dbFile}${suffix}`;
+        const file = `${target.file}${suffix}`;
         if (fs.existsSync(file)) fs.rmSync(file, { force: true });
       }
     }
     throw error;
   }
+}
+
+/**
+ * An existing shop, joining as it is. Nothing is written — this only reads back
+ * enough for the caller to show that nothing was lost.
+ */
+async function adoptExisting(facade, users) {
+  const products = await facade.prepare('SELECT COUNT(*) AS n FROM products').get();
+  return { adopted: true, users, products: products.n };
 }
 
 export async function update(slug, patch = {}, actor = null) {

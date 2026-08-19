@@ -41,6 +41,27 @@ const dictionary = {
     maxUsers: 'Max users', maxProducts: 'Max products', unlimitedHint: 'Blank or 0 = unlimited',
     create: 'Create', creating: 'Creating…',
 
+    // where the shop's data lives
+    dataLocation: 'Where does this shop\'s data live?',
+    dataLocationFile: 'On this machine (file)',
+    dataLocationHosted: 'Turso database (for the internet)',
+    dataLocationFileHint: 'A SQLite file in the platform\'s data folder. Fine on a shop PC or a LAN server.',
+    dataLocationHostedHint: 'An existing Turso database. If it already has a shop in it, that shop is adopted as it is — nothing is seeded and nothing is overwritten.',
+    dataLocationHostedOnly: 'This platform is running on a hosted deployment, which has no disk of its own. A file cannot work here — every shop needs its own Turso database.',
+    dbUrl: 'Database URL', dbToken: 'Auth token',
+    dbUrlHint: 'Starts with libsql:// or https:// — copy it from the database\'s page in Turso.',
+    dbTokenHint: 'Sent once and kept by the server. It is never shown again and never returned by the API.',
+    dbUrlRequired: 'A database URL is required',
+    dbUrlInvalid: 'A database URL must start with libsql:// or https://',
+    dataLocationLabel: 'Data', dataLocationFileShort: 'File', dataLocationHostedShort: 'Turso',
+    tokenSet: 'auth token set', tokenNotSet: 'no auth token',
+
+    // adoption
+    tenantAdopted: 'Existing shop adopted',
+    tenantAdoptedHeadline: 'This database already had a shop in it, so it was attached exactly as it was.',
+    tenantAdoptedBody: 'Nothing was seeded, no setting was changed and no password was generated. Everyone who already used this shop signs in exactly as they did before.',
+    adoptedFound: 'Found in this database',
+
     // one-time password
     oneTimePassword: 'Admin password', oneTimePasswordHint: 'Shown once, right now. It is never stored in the clear and will not be shown again — write it down or copy it before closing this dialog.',
     tenantCreated: 'Tenant created — hand this password to the shop owner',
@@ -108,6 +129,25 @@ const dictionary = {
     websiteEnabled: 'الموقع الإلكتروني مفعّل', websiteEnabledHint: 'إيقافه يعني عدم وجود متجر إلكتروني — /shop يرجع 404 لهذا المتجر.',
     maxUsers: 'أقصى عدد مستخدمين', maxProducts: 'أقصى عدد منتجات', unlimitedHint: 'فارغ أو ٠ = بلا حد',
     create: 'إنشاء', creating: 'جارٍ الإنشاء…',
+
+    dataLocation: 'أين تُحفظ بيانات هذا المتجر؟',
+    dataLocationFile: 'على هذا الجهاز (ملف)',
+    dataLocationHosted: 'قاعدة بيانات Turso (للإنترنت)',
+    dataLocationFileHint: 'ملف SQLite داخل مجلد بيانات المنصّة. مناسب لجهاز المتجر أو سيرفر الشبكة المحلية.',
+    dataLocationHostedHint: 'قاعدة بيانات Turso موجودة بالفعل. إذا كانت تحتوي على متجر قائم، يتم ضمّه كما هو — بلا أي تهيئة وبلا الكتابة فوق أي شيء.',
+    dataLocationHostedOnly: 'هذه المنصّة تعمل على استضافة بلا قرص تخزين خاص بها، لذلك لا يصلح استخدام ملف هنا — كل متجر يحتاج قاعدة بيانات Turso خاصة به.',
+    dbUrl: 'رابط قاعدة البيانات', dbToken: 'رمز الدخول',
+    dbUrlHint: 'يبدأ بـ libsql:// أو https:// — انسخه من صفحة قاعدة البيانات في Turso.',
+    dbTokenHint: 'يُرسل مرة واحدة ويحتفظ به الخادم. لا يُعرض مرة أخرى ولا ترجعه واجهة البرمجة أبدًا.',
+    dbUrlRequired: 'رابط قاعدة البيانات مطلوب',
+    dbUrlInvalid: 'رابط قاعدة البيانات يجب أن يبدأ بـ libsql:// أو https://',
+    dataLocationLabel: 'البيانات', dataLocationFileShort: 'ملف', dataLocationHostedShort: 'Turso',
+    tokenSet: 'رمز الدخول محفوظ', tokenNotSet: 'بلا رمز دخول',
+
+    tenantAdopted: 'تم ضمّ متجر قائم',
+    tenantAdoptedHeadline: 'قاعدة البيانات هذه كانت تحتوي على متجر بالفعل، فتم ضمّها كما هي تمامًا.',
+    tenantAdoptedBody: 'لم تتم أي تهيئة، ولم يتغيّر أي إعداد، ولم تُولّد أي كلمة مرور. كل من كان يستخدم هذا المتجر يسجّل الدخول تمامًا كما كان.',
+    adoptedFound: 'الموجود في قاعدة البيانات',
 
     oneTimePassword: 'كلمة مرور المدير', oneTimePasswordHint: 'تظهر مرة واحدة الآن فقط. لا تُحفظ أبدًا بشكل واضح ولن تظهر مرة أخرى — اكتبها أو انسخها قبل إغلاق هذه النافذة.',
     tenantCreated: 'تم إنشاء المتجر — سلّم كلمة المرور هذه لصاحب المتجر',

@@ -24,6 +24,12 @@ const DB_URL = process.env.MM_DB_URL || process.env.TURSO_DATABASE_URL || '';
 const DB_DRIVER = (process.env.MM_DB_DRIVER || (DB_URL ? 'libsql' : 'sqlite')).toLowerCase();
 const IS_HOSTED_DB = DB_DRIVER === 'libsql';
 
+/**
+ * The control plane's own address. Set on a hosted deployment, empty on a shop
+ * PC — see `config.platform` below.
+ */
+const PLATFORM_DB_URL = process.env.MM_PLATFORM_DB_URL || '';
+
 const DATA_DIR = process.env.MM_DATA_DIR
   ? path.resolve(process.env.MM_DATA_DIR)
   : path.join(ROOT_DIR, 'data');
@@ -89,12 +95,21 @@ export const config = Object.freeze({
    * in `src/platform/*` is ever imported from a request path that matters —
    * the single-shop build is exactly what it was before this existed.
    *
-   * Hosting is out of scope this round: every tenant is a local SQLite file
-   * under `tenantsDir`, and the control-plane database itself is always the
-   * local file at `databaseFile`, regardless of MM_DB_DRIVER.
+   * The control plane has the same two homes the ERP itself has. On a shop PC
+   * it is the local file at `databaseFile`. On a host with no durable disk it
+   * is a libSQL database, switched on by MM_PLATFORM_DB_URL alone — one
+   * variable, so there is no combination of flags that can half-switch it.
+   *
+   * It is kept separate from MM_DB_URL on purpose: the ERP's own default
+   * database and the fleet register are different databases with different
+   * schemas, and pointing both at one URL would put tenant rows inside a
+   * shop's data.
    */
   platform: {
     enabled: process.env.MM_PLATFORM === '1',
+    driver: PLATFORM_DB_URL ? 'libsql' : 'sqlite',
+    url: PLATFORM_DB_URL,
+    authToken: process.env.MM_PLATFORM_DB_TOKEN || '',
     databaseFile: process.env.MM_PLATFORM_DB || path.join(DATA_DIR, 'platform.db'),
     tenantsDir: process.env.MM_TENANTS_DIR || path.join(DATA_DIR, 'tenants'),
   },
