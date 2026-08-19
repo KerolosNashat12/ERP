@@ -197,6 +197,67 @@ export async function listOrganizations(apiToken) {
   return readOrganisations(await call(creds, '/v1/organizations'));
 }
 
+/**
+ * Every group in the organisation.
+ *
+ * A group is where Turso actually puts a database, and the name is not a
+ * constant: an account may have one called `default`, one called something
+ * else, or — on a fresh account — none at all. Assuming `default` is what
+ * produced "group not found (HTTP 400)" in front of an owner who had done
+ * everything right.
+ */
+export async function listGroups(creds = null) {
+  const resolved = creds || await credentials();
+  const body = await request(resolved, '/groups');
+  const rows = Array.isArray(body?.groups) ? body.groups : [];
+  return rows.map((row) => ({
+    name: String(row?.name || '').trim(),
+    primary: String(row?.primary || row?.locations?.[0] || '').trim(),
+  })).filter((row) => row.name);
+}
+
+/** Turso's own idea of the nearest region, so a new group is not put on the far side of the world. */
+async function closestLocation(creds) {
+  try {
+    const body = await call(creds, '/v1/locations');
+    const closest = body?.closest || body?.location || '';
+    if (closest) return String(closest);
+  } catch {
+    // Not worth failing a shop's creation over: fall through to a default.
+  }
+  return 'fra';
+}
+
+/**
+ * The group a database can actually be created in — found, or made.
+ *
+ * In order: the one that was stored if it still exists; the only one there is;
+ * otherwise a new one called `default` in the nearest region. The owner never
+ * has to know the word "group", which is the point — it is Turso's unit of
+ * infrastructure, not a decision about their shop.
+ */
+export async function ensureGroup(creds = null) {
+  const resolved = creds || await credentials();
+  const groups = await listGroups(resolved);
+
+  const wanted = String(resolved.group || '').trim();
+  if (wanted && groups.some((row) => row.name === wanted)) return wanted;
+  if (groups.length === 1) return groups[0].name;
+  if (groups.length > 1) {
+    // Several, and the stored name is not among them: prefer a conventional
+    // name, else the first, rather than guessing at random each call.
+    const conventional = groups.find((row) => row.name === 'default');
+    return (conventional || groups[0]).name;
+  }
+
+  const location = await closestLocation(resolved);
+  const created = await request(resolved, '/groups', {
+    method: 'POST',
+    body: { name: 'default', location },
+  });
+  return String(created?.group?.name || 'default');
+}
+
 export async function listDatabases(creds = null) {
   const resolved = creds || await credentials();
   const body = await request(resolved, '/databases');
@@ -258,12 +319,21 @@ export async function verifyToken({ apiToken, org = '', group = '' } = {}) {
     throw error;
   }
 
-  const resolvedGroup = String(group || '').trim() || config.turso.group || 'default';
+  const probe = {
+    apiUrl: config.turso.apiUrl,
+    apiToken: token,
+    org: chosen.slug,
+    group: String(group || '').trim() || config.turso.group || '',
+  };
+
   // The second half of the proof: the token can actually read this
   // organisation's databases, which is the permission it is being kept for.
-  const databases = await listDatabases({
-    apiUrl: config.turso.apiUrl, apiToken: token, org: chosen.slug, group: resolvedGroup,
-  });
+  const databases = await listDatabases(probe);
+
+  // And the group is settled now rather than at the moment a shop is being
+  // created — an account with no group at all is normal, and finding that out
+  // here means it is fixed before it can interrupt anybody.
+  const resolvedGroup = await ensureGroup(probe);
 
   return {
     org: chosen.slug,
@@ -292,9 +362,13 @@ export async function createDatabase(name) {
   );
   if (taken) throw conflict();
 
+  // Resolved rather than assumed: the stored group may not exist on this
+  // account at all, and a database has to be created *somewhere*.
+  const group = await ensureGroup(creds);
+
   let body;
   try {
-    body = await request(creds, '/databases', { method: 'POST', body: { name, group: creds.group }, name });
+    body = await request(creds, '/databases', { method: 'POST', body: { name, group }, name });
   } catch (error) {
     if (error.httpStatus === 409) throw conflict();
     throw error;

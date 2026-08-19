@@ -91,6 +91,10 @@ function startTursoStub() {
     // Every route is bearer-authenticated, exactly as Turso's is.
     if (!TOKEN_ORGS.has(bearer)) return send(401, { error: 'could not authenticate api token' });
 
+    if (req.method === 'GET' && req.url === '/v1/locations') {
+      return send(200, { locations: { fra: 'Frankfurt' }, closest: 'fra' });
+    }
+
     if (req.method === 'GET' && req.url === '/v1/organizations') {
       if (control.failOrganisations) return send(500, { error: 'organizations service unavailable' });
       // Turso answers with a bare array.
@@ -107,6 +111,19 @@ function startTursoStub() {
       return send(403, { error: `token cannot see organization ${org}` });
     }
     const databases = orgs.get(org);
+
+    // Groups: an account may have one, several, or none, and the group is
+    // where a database is actually created. `control.groups` lets a test say
+    // which of those this account is — the "none" case is the one that took a
+    // live console down with "group not found".
+    if (req.method === 'GET' && route === '/groups') {
+      return send(200, { groups: (control.groups ?? ['default']).map((name) => ({ name, primary: 'fra' })) });
+    }
+    if (req.method === 'POST' && route === '/groups') {
+      const name = body?.name || 'default';
+      control.groups = [...(control.groups ?? []), name];
+      return send(200, { group: { name, primary: body?.location || 'fra' } });
+    }
 
     if (req.method === 'GET' && route === '/databases') {
       return send(200, {
@@ -353,7 +370,10 @@ test('a token that verifies is stored, canProvision flips to true, and the organ
     assert.deepEqual(turso.after(mark).map((c) => `${c.method} ${c.url}`), [
       'GET /v1/organizations',
       `GET /v1/organizations/${CONSOLE_ORG}/databases`,
-    ], 'the token is proved twice — that it is real, and that it can do the job it is kept for');
+      // And the group is settled while the owner is still here, rather than at
+      // the moment a shop is being created — the failure that reached one.
+      `GET /v1/organizations/${CONSOLE_ORG}/groups`,
+    ], 'the token is proved twice, and the group it will use is resolved once');
     assert.ok(turso.after(mark).every((c) => c.token === CONSOLE_TOKEN),
       'and it travels in the Authorization header, nowhere else');
 
@@ -390,6 +410,7 @@ test('and creating a shop then provisions a database, in the organisation that w
 
     assert.deepEqual(turso.after(mark).map((c) => `${c.method} ${c.url}`), [
       `GET /v1/organizations/${CONSOLE_ORG}/databases`,
+      `GET /v1/organizations/${CONSOLE_ORG}/groups`,
       `POST /v1/organizations/${CONSOLE_ORG}/databases`,
       `POST /v1/organizations/${CONSOLE_ORG}/databases/mm-habb-el-banat/auth/tokens`,
     ], 'the console-pasted credentials are what provisioning uses');
@@ -535,4 +556,69 @@ test('the control plane wins when both are present', async () => {
   assert.equal(turso.orgs.get(ENV_ORG).has('mm-tie-break'), false,
     'the stale variable on the host did not get a say');
   assertNoTokenAnywhere(created.text, 'a created tenant');
+});
+
+// ------------------------------------------------ 6. GROUPS, FOUND OR MADE
+
+test('an account with no group at all still gets a shop — the failure a real owner hit', async () => {
+  // "Turso refused: group not found (HTTP 400)", in front of an owner who had
+  // done everything right: a fresh Turso account has no group called
+  // `default`, and this code assumed one. A group is Turso's unit of
+  // infrastructure, not a decision about a shop, so the platform finds one or
+  // makes one rather than asking.
+  await withNothingInTheEnvironment(async () => {
+    const previous = turso.control.groups;
+    turso.control.groups = [];
+    try {
+      await api('/api/platform/integrations/turso', owner({
+        method: 'PUT', body: { apiToken: CONSOLE_TOKEN },
+      }));
+
+      const created = await api('/api/platform/tenants', owner({
+        method: 'POST',
+        body: {
+          slug: 'no-group-shop',
+          nameEn: 'No Group Shop',
+          modules: ['dashboard'],
+          database: { mode: 'auto' },
+        },
+      }));
+
+      assert.equal(created.status, 201, created.data?.error?.message);
+      assert.ok(turso.control.groups.includes('default'), 'the group was created by the platform');
+      assert.ok(created.data.adminPassword, 'and the shop came out the other side');
+    } finally {
+      turso.control.groups = previous;
+    }
+  });
+});
+
+test('an account whose group is called something else is used as it is', async () => {
+  await withNothingInTheEnvironment(async () => {
+    const previous = turso.control.groups;
+    turso.control.groups = ['production'];
+    try {
+      await api('/api/platform/integrations/turso', owner({
+        method: 'PUT', body: { apiToken: CONSOLE_TOKEN },
+      }));
+
+      const mark = turso.since();
+      const created = await api('/api/platform/tenants', owner({
+        method: 'POST',
+        body: {
+          slug: 'other-group-shop',
+          nameEn: 'Other Group Shop',
+          modules: ['dashboard'],
+          database: { mode: 'auto' },
+        },
+      }));
+
+      assert.equal(created.status, 201, created.data?.error?.message);
+      const create = turso.after(mark).filter((c) => c.method === 'POST' && c.url.endsWith('/databases')).pop();
+      assert.equal(create.body.group, 'production', "the account's own group, not an invented name");
+      assert.deepEqual(turso.control.groups, ['production'], 'and nothing was created that did not need to be');
+    } finally {
+      turso.control.groups = previous;
+    }
+  });
 });

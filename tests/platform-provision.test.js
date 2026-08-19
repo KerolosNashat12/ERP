@@ -69,9 +69,25 @@ function startTursoStub() {
       res.end(JSON.stringify(payload));
     };
 
+    if (req.method === 'GET' && req.url === '/v1/locations') {
+      return send(200, { locations: { fra: 'Frankfurt' }, closest: 'fra' });
+    }
     if (!req.url.startsWith(prefix)) return send(404, { error: 'unknown organization' });
     if (req.headers.authorization !== `Bearer ${API_TOKEN}`) {
       return send(401, { error: 'invalid api token' });
+    }
+
+    // Groups: an account may have one, several, or none, and the group is
+    // where a database is actually created. `control.groups` lets a test say
+    // which of those this account is — the "none" case is the one that took a
+    // live console down with "group not found".
+    if (req.method === 'GET' && route === '/groups') {
+      return send(200, { groups: (control.groups ?? ['default']).map((name) => ({ name, primary: 'fra' })) });
+    }
+    if (req.method === 'POST' && route === '/groups') {
+      const name = body?.name || 'default';
+      control.groups = [...(control.groups ?? []), name];
+      return send(200, { group: { name, primary: body?.location || 'fra' } });
     }
 
     if (req.method === 'GET' && route === '/databases') {
@@ -232,10 +248,14 @@ test('auto mode makes the database, mints its token, seeds it, and hands back a 
   const calls = turso.after(mark);
   assert.deepEqual(calls.map((c) => `${c.method} ${c.route}`), [
     'GET /databases',
+    // The group is resolved rather than assumed — an account with none, or
+    // with one under a different name, is normal, and guessing "default"
+    // failed in front of a real owner with "group not found".
+    'GET /groups',
     'POST /databases',
     'POST /databases/mm-auto-shop/auth/tokens',
   ], 'the name is checked, the database is made, a token is minted — and nothing is deleted');
-  assert.deepEqual(calls[1].body, { name: 'mm-auto-shop', group: 'default' });
+  assert.deepEqual(calls[2].body, { name: 'mm-auto-shop', group: 'default' });
   assert.ok(calls.every((c) => c.authorization === `Bearer ${API_TOKEN}`),
     'the platform token travels in the header and nowhere else');
   assert.ok(turso.databases.has('mm-auto-shop'), 'the database is still there when the dust settles');
@@ -287,6 +307,7 @@ test('a failure minting the token deletes the database this call just created, a
   const calls = turso.after(mark).map((c) => `${c.method} ${c.route}`);
   assert.deepEqual(calls, [
     'GET /databases',
+    'GET /groups',
     'POST /databases',
     'POST /databases/mm-token-fails/auth/tokens',
     'DELETE /databases/mm-token-fails',
