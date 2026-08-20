@@ -71,7 +71,7 @@ if exist "hosted-db-setup.txt" del /f /q "hosted-db-setup.txt" >> "%LOG%" 2>&1
 echo.
 echo   Committing...
 git add -A >> "%LOG%" 2>&1
-git -c user.email="kerolosnashatestfanous@gmail.com" -c user.name="KerolosNashat12" commit -m "KJ Admin reskinned to the new design: light indigo, icon rail on the right in Arabic and the left in English, white cards" >> "%LOG%" 2>&1
+git -c user.email="kerolosnashatestfanous@gmail.com" -c user.name="KerolosNashat12" commit -m "One search rule everywhere: a product name or any of its codes finds it on every screen, and an exact code is always first" >> "%LOG%" 2>&1
 if errorlevel 1 echo   Nothing new to commit - pushing whatever is outstanding.
 
 echo   Pushing (your connection to GitHub drops sometimes, so this retries)...

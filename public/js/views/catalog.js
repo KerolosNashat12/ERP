@@ -97,7 +97,7 @@ export async function productsView(root, route) {
   }
 
   const searchBox = textInput({
-    placeholder: `${t('search')} — ${t('name')}, ${t('sku')}, ${t('barcode')}`,
+    placeholder: t('searchNameOrCode'),
     value: state.search,
     oninput: debounce((e) => { state.search = e.target.value; state.page = 1; load(); }, 280),
   });

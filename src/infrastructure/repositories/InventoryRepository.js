@@ -4,6 +4,10 @@
  */
 import { BaseRepository } from './BaseRepository.js';
 import { getDb } from '../database/connection.js';
+import {
+  VARIANT_DETAIL_ROW, likeParam, matchReasonColumns, normaliseTerm, rankExpression,
+  rowExact, rowMatch,
+} from '../database/productSearch.js';
 
 export class InventoryRepository {
   get db() {
@@ -78,10 +82,13 @@ export class InventoryRepository {
     if (warehouseId) { where.push('warehouse_id = ?'); params.push(warehouseId); }
     if (brandId) { where.push('brand_id = ?'); params.push(brandId); }
     if (categoryId) { where.push('category_id = ?'); params.push(categoryId); }
-    if (search) {
-      where.push('(sku LIKE ? OR barcode LIKE ? OR product_name_en LIKE ? OR product_name_ar LIKE ? OR variant_label LIKE ?)');
-      const like = `%${search}%`;
-      params.push(like, like, like, like, like);
+    const term = normaliseTerm(search);
+    if (term) {
+      // The same rule POS uses. The view now also carries the product's own
+      // code, so typing a product code here finds every variant under it.
+      const match = rowMatch(term, '', VARIANT_DETAIL_ROW);
+      where.push(match.sql);
+      params.push(...match.params);
     }
     if (lowStockOnly) where.push('quantity <= reorder_level AND reorder_level > 0');
     if (zeroStock === 'hide') where.push('quantity <> 0');
@@ -92,10 +99,14 @@ export class InventoryRepository {
     const total = (await this.db.prepare(`SELECT COUNT(*) AS n FROM v_stock_on_hand ${whereSql}`).get(...params)).n;
     const size = Math.min(Math.max(Number(pageSize) || 50, 1), 1000);
     const current = Math.max(Number(page) || 1, 1);
+    const rank = term ? rankExpression(rowExact(term, '', VARIANT_DETAIL_ROW)) : null;
+    const orderSql = rank
+      ? `ORDER BY ${rank.sql}, product_name_en, variant_label`
+      : 'ORDER BY product_name_en, variant_label';
     const rows = await this.db.prepare(`
       SELECT * FROM v_stock_on_hand ${whereSql}
-      ORDER BY product_name_en, variant_label LIMIT ? OFFSET ?
-    `).all(...params, size, (current - 1) * size);
+      ${orderSql} LIMIT ? OFFSET ?
+    `).all(...params, ...(rank ? rank.params : []), size, (current - 1) * size);
 
     const totals = await this.db.prepare(`
       SELECT COALESCE(SUM(quantity),0) AS total_qty, COALESCE(SUM(stock_value),0) AS total_value
@@ -117,9 +128,23 @@ export class InventoryRepository {
     return this.db.prepare(sql).all(...params);
   }
 
-  async movements({ variantId, warehouseId, movementType, dateFrom, dateTo, page = 1, pageSize = 50 }) {
+  /**
+   * The ledger. `search` answers "where does this thing appear?" — the question
+   * somebody standing at the counter with the product in one hand actually has.
+   * A movement row already names its product, so it needs no match explanation:
+   * either the reference number matched or the product on the row did, and both
+   * are visible in the row itself.
+   */
+  async movements({ search = '', variantId, warehouseId, movementType, dateFrom, dateTo,
+    page = 1, pageSize = 50 }) {
     const where = ['1 = 1'];
     const params = [];
+    const term = normaliseTerm(search);
+    if (term) {
+      const match = rowMatch(term, 'vd', VARIANT_DETAIL_ROW);
+      where.push(`(m.reference_no LIKE ? ESCAPE '\\' OR ${match.sql})`);
+      params.push(likeParam(term), ...match.params);
+    }
     if (variantId) { where.push('m.variant_id = ?'); params.push(variantId); }
     if (warehouseId) { where.push('m.warehouse_id = ?'); params.push(warehouseId); }
     if (movementType) { where.push('m.movement_type = ?'); params.push(movementType); }
@@ -127,9 +152,24 @@ export class InventoryRepository {
     if (dateTo) { where.push('m.created_at <= ?'); params.push(`${dateTo}T23:59:59Z`); }
 
     const whereSql = `WHERE ${where.join(' AND ')}`;
-    const total = (await this.db.prepare(`SELECT COUNT(*) AS n FROM stock_movements m ${whereSql}`).get(...params)).n;
+    // The count has to see the same join the page does, now that the filter can
+    // name a column that only exists on the joined view.
+    const total = (await this.db.prepare(`
+      SELECT COUNT(*) AS n FROM stock_movements m
+      JOIN v_variant_details vd ON vd.variant_id = m.variant_id
+      ${whereSql}
+    `).get(...params)).n;
     const size = Math.min(Math.max(Number(pageSize) || 50, 1), 500);
     const current = Math.max(Number(page) || 1, 1);
+    const rank = term
+      ? rankExpression({
+        sql: `(m.reference_no = ? COLLATE NOCASE OR ${rowExact(term, 'vd', VARIANT_DETAIL_ROW).sql})`,
+        params: [normaliseTerm(term), ...rowExact(term, 'vd', VARIANT_DETAIL_ROW).params],
+      })
+      : null;
+    const orderSql = rank
+      ? `ORDER BY ${rank.sql}, m.created_at DESC, m.id DESC`
+      : 'ORDER BY m.created_at DESC, m.id DESC';
     const rows = await this.db.prepare(`
       SELECT m.*, vd.sku, vd.product_name_en, vd.product_name_ar, vd.variant_label,
              w.name_en AS warehouse_name_en, u.full_name AS user_name
@@ -138,9 +178,9 @@ export class InventoryRepository {
       JOIN warehouses w ON w.id = m.warehouse_id
       LEFT JOIN users u ON u.id = m.created_by
       ${whereSql}
-      ORDER BY m.created_at DESC, m.id DESC
+      ${orderSql}
       LIMIT ? OFFSET ?
-    `).all(...params, size, (current - 1) * size);
+    `).all(...params, ...(rank ? rank.params : []), size, (current - 1) * size);
     return { rows, total, page: current, pageSize: size, pages: Math.ceil(total / size) || 1 };
   }
 
@@ -159,28 +199,47 @@ export class StockAdjustmentRepository extends BaseRepository {
       columns: ['adjustment_no', 'warehouse_id', 'reason', 'status', 'notes',
         'created_by', 'posted_by', 'posted_at'],
       searchable: ['adjustment_no', 'notes'],
+      // A stock count is a document about products, so it can be found by the
+      // products it counted — which is exactly how somebody holding the item
+      // asks "was this counted, and what did we say it was?".
+      productScope: { table: 'stock_adjustment_lines', key: 'adjustment_id' },
       timestamps: false,
     });
   }
 
-  async listDetailed({ status, page = 1, pageSize = 25 } = {}) {
+  async listDetailed({ search = '', status, page = 1, pageSize = 25 } = {}) {
     const where = ['1 = 1'];
     const params = [];
+    const predicate = this.searchPredicate(search, { alias: 'a' });
+    if (predicate) { where.push(predicate.sql); params.push(...predicate.params); }
     if (status) { where.push('a.status = ?'); params.push(status); }
     const whereSql = `WHERE ${where.join(' AND ')}`;
     const total = (await this.db.prepare(`SELECT COUNT(*) AS n FROM stock_adjustments a ${whereSql}`).get(...params)).n;
     const size = Number(pageSize) || 25;
     const current = Math.max(Number(page) || 1, 1);
+
+    const reason = predicate
+      ? matchReasonColumns(search, {
+        alias: 'a', ...this.productScope,
+        documentSql: predicate.documentSql, documentParams: predicate.documentParams,
+        scoped: predicate.scoped,
+      })
+      : null;
+    const rank = predicate ? this.searchRank(search, { alias: 'a' }) : null;
+    const orderSql = rank ? `ORDER BY ${rank.sql}, a.id DESC` : 'ORDER BY a.id DESC';
+
     const rows = await this.db.prepare(`
       SELECT a.*, w.name_en AS warehouse_name, u.full_name AS created_by_name,
              (SELECT COUNT(*) FROM stock_adjustment_lines l WHERE l.adjustment_id = a.id) AS line_count,
              (SELECT COALESCE(SUM(difference * unit_cost),0) FROM stock_adjustment_lines l WHERE l.adjustment_id = a.id) AS value_impact
+             ${reason ? `, ${reason.sql}` : ''}
       FROM stock_adjustments a
       JOIN warehouses w ON w.id = a.warehouse_id
       LEFT JOIN users u ON u.id = a.created_by
       ${whereSql}
-      ORDER BY a.id DESC LIMIT ? OFFSET ?
-    `).all(...params, size, (current - 1) * size);
+      ${orderSql} LIMIT ? OFFSET ?
+    `).all(...(reason ? reason.params : []), ...params, ...(rank ? rank.params : []),
+      size, (current - 1) * size);
     return { rows, total, page: current, pageSize: size, pages: Math.ceil(total / size) || 1 };
   }
 

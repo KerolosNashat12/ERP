@@ -1,6 +1,7 @@
 /** Sales, sale lines, payments and returns. */
 import { BaseRepository } from './BaseRepository.js';
 import { getDb } from '../database/connection.js';
+import { matchReasonColumns } from '../database/productSearch.js';
 
 export class SalesRepository extends BaseRepository {
   constructor() {
@@ -14,6 +15,10 @@ export class SalesRepository extends BaseRepository {
         'notes', 'created_by', 'voided_by', 'voided_at', 'void_reason',
       ],
       searchable: ['invoice_no', 'notes'],
+      // An invoice is not a product; it matches a product code by containing a
+      // line for it. Declaring the line table here is what lets the shared
+      // predicate say so — and `search_match` below tells the user which it was.
+      productScope: { table: 'sale_lines', key: 'sale_id' },
       timestamps: false,
     });
   }
@@ -22,7 +27,8 @@ export class SalesRepository extends BaseRepository {
     dateFrom, dateTo, page = 1, pageSize = 25 } = {}) {
     const where = ['1 = 1'];
     const params = [];
-    if (search) { where.push('s.invoice_no LIKE ?'); params.push(`%${search}%`); }
+    const predicate = this.searchPredicate(search, { alias: 's', extra: ['c.name'] });
+    if (predicate) { where.push(predicate.sql); params.push(...predicate.params); }
     if (status) { where.push('s.status = ?'); params.push(status); }
     if (paymentStatus) { where.push('s.payment_status = ?'); params.push(paymentStatus); }
     if (customerId) { where.push('s.customer_id = ?'); params.push(customerId); }
@@ -32,26 +38,44 @@ export class SalesRepository extends BaseRepository {
     if (dateTo) { where.push('date(s.sale_date) <= date(?)'); params.push(dateTo); }
     const whereSql = `WHERE ${where.join(' AND ')}`;
 
-    const total = (await this.db.prepare(`SELECT COUNT(*) AS n FROM sales s ${whereSql}`).get(...params)).n;
+    // The customer join is now part of the filter, so the count and the summary
+    // have to see it too or they would report a different population.
+    const joins = `
+      LEFT JOIN customers c ON c.id = s.customer_id
+      JOIN warehouses w ON w.id = s.warehouse_id
+      LEFT JOIN users u ON u.id = s.created_by`;
+    const total = (await this.db.prepare(`
+      SELECT COUNT(*) AS n FROM sales s ${joins} ${whereSql}
+    `).get(...params)).n;
     const size = Number(pageSize) || 25;
     const current = Math.max(Number(page) || 1, 1);
+
+    const reason = predicate
+      ? matchReasonColumns(search, {
+        alias: 's', ...this.productScope,
+        documentSql: predicate.documentSql, documentParams: predicate.documentParams,
+        scoped: predicate.scoped,
+      })
+      : null;
+    const rank = predicate ? this.searchRank(search, { alias: 's' }) : null;
+    const orderSql = rank ? `ORDER BY ${rank.sql}, s.id DESC` : 'ORDER BY s.id DESC';
+
     const rows = await this.db.prepare(`
       SELECT s.*, c.name AS customer_name, c.phone AS customer_phone,
              w.name_en AS warehouse_name, u.full_name AS cashier_name,
              (SELECT COUNT(*) FROM sale_lines l WHERE l.sale_id = s.id) AS line_count
-      FROM sales s
-      LEFT JOIN customers c ON c.id = s.customer_id
-      JOIN warehouses w ON w.id = s.warehouse_id
-      LEFT JOIN users u ON u.id = s.created_by
+             ${reason ? `, ${reason.sql}` : ''}
+      FROM sales s ${joins}
       ${whereSql}
-      ORDER BY s.id DESC LIMIT ? OFFSET ?
-    `).all(...params, size, (current - 1) * size);
+      ${orderSql} LIMIT ? OFFSET ?
+    `).all(...(reason ? reason.params : []), ...params, ...(rank ? rank.params : []),
+      size, (current - 1) * size);
 
     const summary = await this.db.prepare(`
       SELECT COALESCE(SUM(CASE WHEN s.status='completed' THEN s.total_amount ELSE 0 END),0) AS total_sales,
              COALESCE(SUM(CASE WHEN s.status='completed' THEN s.total_amount - s.total_cost ELSE 0 END),0) AS gross_profit,
              COALESCE(SUM(CASE WHEN s.status='completed' THEN s.total_amount - s.paid_amount ELSE 0 END),0) AS outstanding
-      FROM sales s ${whereSql}
+      FROM sales s ${joins} ${whereSql}
     `).get(...params);
 
     return { rows, total, summary, page: current, pageSize: size, pages: Math.ceil(total / size) || 1 };
@@ -147,6 +171,7 @@ export class SalesReturnRepository extends BaseRepository {
         'items_restocked', 'items_written_off', 'created_by', 'approved_by',
       ],
       searchable: ['return_no', 'invoice_no', 'reason_note'],
+      productScope: { table: 'sales_return_lines', key: 'return_id' },
       timestamps: false,
     });
   }
@@ -155,11 +180,8 @@ export class SalesReturnRepository extends BaseRepository {
     page = 1, pageSize = 25 } = {}) {
     const where = ['1 = 1'];
     const params = [];
-    if (search) {
-      where.push('(r.return_no LIKE ? OR r.invoice_no LIKE ? OR c.name LIKE ?)');
-      const like = `%${search}%`;
-      params.push(like, like, like);
-    }
+    const predicate = this.searchPredicate(search, { alias: 'r', extra: ['c.name'] });
+    if (predicate) { where.push(predicate.sql); params.push(...predicate.params); }
     if (reasonCode) { where.push('r.reason_code = ?'); params.push(reasonCode); }
     if (refundMethod) { where.push('r.refund_method = ?'); params.push(refundMethod); }
     if (returnType) { where.push('r.return_type = ?'); params.push(returnType); }
@@ -174,17 +196,29 @@ export class SalesReturnRepository extends BaseRepository {
     const size = Number(pageSize) || 25;
     const current = Math.max(Number(page) || 1, 1);
 
+    const reason = predicate
+      ? matchReasonColumns(search, {
+        alias: 'r', ...this.productScope,
+        documentSql: predicate.documentSql, documentParams: predicate.documentParams,
+        scoped: predicate.scoped,
+      })
+      : null;
+    const rank = predicate ? this.searchRank(search, { alias: 'r' }) : null;
+    const orderSql = rank ? `ORDER BY ${rank.sql}, r.id DESC` : 'ORDER BY r.id DESC';
+
     const rows = await this.db.prepare(`
       SELECT r.*, s.invoice_no AS sale_invoice_no, c.name AS customer_name, c.phone AS customer_phone,
              u.full_name AS created_by_name,
              (SELECT COUNT(*) FROM sales_return_lines l WHERE l.return_id = r.id) AS line_count,
              (SELECT COALESCE(SUM(quantity),0) FROM sales_return_lines l WHERE l.return_id = r.id) AS total_qty
+             ${reason ? `, ${reason.sql}` : ''}
       FROM sales_returns r
       LEFT JOIN sales s ON s.id = r.sale_id
       LEFT JOIN customers c ON c.id = r.customer_id
       LEFT JOIN users u ON u.id = r.created_by
-      ${whereSql} ORDER BY r.id DESC LIMIT ? OFFSET ?
-    `).all(...params, size, (current - 1) * size);
+      ${whereSql} ${orderSql} LIMIT ? OFFSET ?
+    `).all(...(reason ? reason.params : []), ...params, ...(rank ? rank.params : []),
+      size, (current - 1) * size);
 
     const summary = await this.db.prepare(`
       SELECT COALESCE(SUM(r.total_amount),0) AS refunded,

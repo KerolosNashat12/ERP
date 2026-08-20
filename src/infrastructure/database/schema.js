@@ -281,6 +281,12 @@ CREATE TABLE IF NOT EXISTS product_variants (
 );
 CREATE INDEX IF NOT EXISTS idx_variants_product ON product_variants(product_id);
 CREATE INDEX IF NOT EXISTS idx_variants_barcode ON product_variants(barcode);
+-- sku is UNIQUE, so it already has a binary index — but every exact-code
+-- lookup in the app compares it COLLATE NOCASE (a code typed in lower case is
+-- the same code), and a binary index cannot serve a NOCASE comparison. This is
+-- the index that makes "the term IS this SKU" a seek instead of a scan, which
+-- is what keeps the exact-match-first ordering cheap.
+CREATE INDEX IF NOT EXISTS idx_variants_sku_nocase ON product_variants(sku COLLATE NOCASE);
 
 CREATE TABLE IF NOT EXISTS variant_attribute_values (
   variant_id         INTEGER NOT NULL REFERENCES product_variants(id) ON DELETE CASCADE,
@@ -354,6 +360,9 @@ CREATE TABLE IF NOT EXISTS stock_adjustment_lines (
   notes         TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_adjustment_lines ON stock_adjustment_lines(adjustment_id);
+-- "which counts contain this product?" — the document search reaches a line
+-- table by variant_id, so every line table needs that direction indexed.
+CREATE INDEX IF NOT EXISTS idx_adjustment_lines_variant ON stock_adjustment_lines(variant_id);
 
 -- =============================================================================
 --  5. PURCHASING
@@ -398,6 +407,7 @@ CREATE TABLE IF NOT EXISTS purchase_order_lines (
   notes              TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_po_lines ON purchase_order_lines(purchase_order_id);
+CREATE INDEX IF NOT EXISTS idx_po_lines_variant ON purchase_order_lines(variant_id);
 
 -- =============================================================================
 --  6. CLIENTS & SALES
@@ -545,6 +555,7 @@ CREATE TABLE IF NOT EXISTS sales_return_lines (
   notes         TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_return_lines ON sales_return_lines(return_id);
+CREATE INDEX IF NOT EXISTS idx_return_lines_variant ON sales_return_lines(variant_id);
 
 -- =============================================================================
 --  7. PROMOTIONS — DISCOUNT CODES & VOUCHERS
@@ -671,6 +682,10 @@ SELECT
   v.reorder_level,
   v.is_active         AS variant_active,
   p.id                AS product_id,
+  -- The product's own code, carried on the variant row so every screen that
+  -- reads this view can answer "search by product code" with the one shared
+  -- predicate instead of joining back to the products table for it.
+  p.sku_prefix,
   p.name_en           AS product_name_en,
   p.name_ar           AS product_name_ar,
   p.unit,

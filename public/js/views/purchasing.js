@@ -3,6 +3,7 @@ import api from '../core/api.js';
 import {
   h, mount, dataTable, pager, spinner, toast, toastError, textInput, selectInput,
   numberInput, field, modal, debounce, statusTag, buildForm, confirmDialog, printNode, tag,
+  matchNote,
 } from '../core/ui.js';
 import { t, pick } from '../core/i18n.js';
 import { money, number, date, isoDate } from '../core/format.js';
@@ -23,7 +24,14 @@ export async function purchasesView(root, route) {
     const data = await api.get('/api/purchases', state);
     mount(listHost, dataTable({
       columns: [
-        { key: 'po_number', label: t('poNumber'), class: 'mono small' },
+        {
+          key: 'po_number',
+          label: t('poNumber'),
+          class: 'mono small',
+          // "Have we ever ordered this?" is answered by the orders that have a
+          // line for it, so a row says which line brought it back.
+          render: (r) => h('div', {}, h('div', {}, r.po_number), matchNote(r)),
+        },
         { key: 'order_date', label: t('orderDate'), render: (r) => date(r.order_date) },
         { key: 'supplier_name', label: t('supplier'), render: (r) => pick(r, 'supplier_name') },
         { key: 'line_count', label: t('products'), type: 'number' },
@@ -52,7 +60,7 @@ export async function purchasesView(root, route) {
     h('div', { class: 'card' },
       h('div', { class: 'filters' },
         h('div', { class: 'field grow' }, textInput({
-          placeholder: t('search'),
+          placeholder: t('searchNameOrCode'),
           oninput: debounce((e) => { state.search = e.target.value; state.page = 1; load(); }, 280),
         })),
         h('div', { class: 'field' }, selectInput({

@@ -6,6 +6,9 @@
  */
 import { BaseRepository } from './BaseRepository.js';
 import { getDb } from '../database/connection.js';
+import {
+  VARIANT_DETAIL_ROW, normaliseTerm, productExact, productMatch, rankExpression, rowExact, rowMatch,
+} from '../database/productSearch.js';
 
 export class ProductRepository extends BaseRepository {
   constructor() {
@@ -25,16 +28,21 @@ export class ProductRepository extends BaseRepository {
     });
   }
 
-  /** Rich list used by the catalogue grid: brand/category names + variant rollups. */
+  /**
+   * Rich list used by the catalogue grid: brand/category names + variant rollups.
+   *
+   * The search half is `productMatch` — the one shared rule — so a barcode or a
+   * variant's SKU finds the product that owns it, and it does so through an
+   * `EXISTS` in SQL rather than by pulling rows into JavaScript to sift them.
+   */
   async search({ search = '', brandId, categoryId, supplierId, isActive, page = 1, pageSize = 25 }) {
     const where = [];
     const params = [];
-    if (search) {
-      where.push(`(p.name_en LIKE ? OR p.name_ar LIKE ? OR p.sku_prefix LIKE ?
-                   OR EXISTS (SELECT 1 FROM product_variants v
-                              WHERE v.product_id = p.id AND (v.sku LIKE ? OR v.barcode LIKE ?)))`);
-      const like = `%${search}%`;
-      params.push(like, like, like, like, like);
+    const term = normaliseTerm(search);
+    if (term) {
+      const match = productMatch(term, 'p');
+      where.push(match.sql);
+      params.push(...match.params);
     }
     if (brandId) { where.push('p.brand_id = ?'); params.push(brandId); }
     if (categoryId) { where.push('p.category_id = ?'); params.push(categoryId); }
@@ -46,6 +54,11 @@ export class ProductRepository extends BaseRepository {
     const total = (await db.prepare(`SELECT COUNT(*) AS n FROM products p ${whereSql}`).get(...params)).n;
     const size = Math.min(Math.max(Number(pageSize) || 25, 1), 500);
     const current = Math.max(Number(page) || 1, 1);
+
+    // A term that IS a code — a scan, or a number copied off a label — puts its
+    // product first, ahead of anything that merely contains the string.
+    const rank = term ? rankExpression(productExact(term, 'p')) : null;
+    const orderSql = rank ? `ORDER BY ${rank.sql}, p.updated_at DESC` : 'ORDER BY p.updated_at DESC';
 
     const rows = await db.prepare(`
       SELECT p.*,
@@ -64,9 +77,9 @@ export class ProductRepository extends BaseRepository {
       LEFT JOIN categories c ON c.id = p.category_id
       LEFT JOIN suppliers s  ON s.id = p.supplier_id
       ${whereSql}
-      ORDER BY p.updated_at DESC
+      ${orderSql}
       LIMIT ? OFFSET ?
-    `).all(...params, size, (current - 1) * size);
+    `).all(...params, ...(rank ? rank.params : []), size, (current - 1) * size);
 
     return { rows, total, page: current, pageSize: size, pages: Math.ceil(total / size) || 1 };
   }
@@ -252,28 +265,33 @@ export class VariantRepository extends BaseRepository {
     `).get(code, code)) || null;
   }
 
-  /** Type-ahead used by POS, purchase orders, transfers and label printing. */
+  /**
+   * Type-ahead used by POS, purchase orders, transfers and label printing.
+   *
+   * This is the behaviour the owner expects everywhere, so it is now expressed
+   * in the shared predicate rather than in an inline `OR` list that the rest of
+   * the system had to imitate from memory. The one change to it: an exact SKU
+   * or barcode now sorts to the top instead of being alphabetised among the
+   * partial matches.
+   */
   async lookup(term, limit = 20, warehouseId = null) {
-    const like = `%${term}%`;
+    const match = rowMatch(term, 'vd', VARIANT_DETAIL_ROW);
+    const rank = rankExpression(rowExact(term, 'vd', VARIANT_DETAIL_ROW));
     if (warehouseId) {
       return getDb().prepare(`
         SELECT vd.*, COALESCE(sl.quantity, 0) AS quantity
         FROM v_variant_details vd
         LEFT JOIN stock_levels sl ON sl.variant_id = vd.variant_id AND sl.warehouse_id = ?
-        WHERE vd.variant_active = 1 AND vd.product_active = 1
-          AND (vd.sku LIKE ? OR vd.barcode LIKE ? OR vd.product_name_en LIKE ?
-               OR vd.product_name_ar LIKE ? OR vd.variant_label LIKE ?)
-        ORDER BY vd.product_name_en LIMIT ?
-      `).all(warehouseId, like, like, like, like, like, limit);
+        WHERE vd.variant_active = 1 AND vd.product_active = 1 AND ${match.sql}
+        ORDER BY ${rank.sql}, vd.product_name_en LIMIT ?
+      `).all(warehouseId, ...match.params, ...rank.params, limit);
     }
     return getDb().prepare(`
       SELECT vd.*, (SELECT COALESCE(SUM(quantity),0) FROM stock_levels sl WHERE sl.variant_id = vd.variant_id) AS quantity
       FROM v_variant_details vd
-      WHERE vd.variant_active = 1 AND vd.product_active = 1
-        AND (vd.sku LIKE ? OR vd.barcode LIKE ? OR vd.product_name_en LIKE ?
-             OR vd.product_name_ar LIKE ? OR vd.variant_label LIKE ?)
-      ORDER BY vd.product_name_en LIMIT ?
-    `).all(like, like, like, like, like, limit);
+      WHERE vd.variant_active = 1 AND vd.product_active = 1 AND ${match.sql}
+      ORDER BY ${rank.sql}, vd.product_name_en LIMIT ?
+    `).all(...match.params, ...rank.params, limit);
   }
 
   async replaceOptions(variantId, options) {

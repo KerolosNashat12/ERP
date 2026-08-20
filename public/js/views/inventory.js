@@ -2,7 +2,7 @@
 import api from '../core/api.js';
 import {
   h, mount, dataTable, pager, spinner, toast, toastError, textInput, selectInput,
-  checkboxInput, field, modal, debounce, tag, statusTag, buildForm,
+  checkboxInput, field, modal, debounce, tag, statusTag, buildForm, matchNote,
 } from '../core/ui.js';
 import { t, pick } from '../core/i18n.js';
 import { money, number, dateTime } from '../core/format.js';
@@ -83,7 +83,7 @@ export async function inventoryView(root, route) {
   }
 
   const searchBox = textInput({
-    placeholder: t('search'),
+    placeholder: t('searchNameOrCode'),
     oninput: debounce((e) => { state.search = e.target.value; state.page = 1; load(); }, 280),
   });
 
@@ -170,7 +170,7 @@ function openQuickAdjust(row, refresh) {
 
 export async function movementsView(root, route) {
   const state = {
-    variantId: route.query.variantId || '', movementType: '',
+    search: '', variantId: route.query.variantId || '', movementType: '',
     dateFrom: '', dateTo: '', page: 1, pageSize: 50,
   };
   const listHost = h('div', { class: 'card-body tight' }, spinner());
@@ -205,6 +205,13 @@ export async function movementsView(root, route) {
       }, t('export')) : null),
     h('div', { class: 'card' },
       h('div', { class: 'filters' },
+        // The ledger is where "where does this thing appear?" is actually
+        // answered, so it gets the same box as every other screen: a name, a
+        // product code, a SKU, a barcode — or the document number on the row.
+        h('div', { class: 'field grow' }, textInput({
+          placeholder: t('searchNameOrCode'),
+          oninput: debounce((e) => { state.search = e.target.value; state.page = 1; load(); }, 280),
+        })),
         h('div', { class: 'field' }, selectInput({
           placeholder: t('movementType'),
           options: ['purchase_receipt', 'sale', 'sale_return', 'adjustment', 'opening_balance', 'write_off']
@@ -223,12 +230,19 @@ export async function movementsView(root, route) {
 export async function adjustmentsView(root, route) {
   if (route.segments[1]) return adjustmentFormView(root, route);
 
+  const state = { search: '', pageSize: 50 };
   const listHost = h('div', { class: 'card-body tight' }, spinner());
   async function load() {
-    const data = await api.get('/api/inventory/adjustments', { pageSize: 50 });
+    mount(listHost, spinner());
+    const data = await api.get('/api/inventory/adjustments', state);
     mount(listHost, dataTable({
       columns: [
-        { key: 'adjustment_no', label: t('document'), class: 'mono small' },
+        {
+          key: 'adjustment_no',
+          label: t('document'),
+          class: 'mono small',
+          render: (r) => h('div', {}, h('div', {}, r.adjustment_no), matchNote(r)),
+        },
         { key: 'created_at', label: t('date'), render: (r) => dateTime(r.created_at) },
         { key: 'reason', label: t('reason'), render: (r) => tag(t(camel(r.reason), r.reason)) },
         { key: 'line_count', label: t('products'), type: 'number' },
@@ -246,7 +260,13 @@ export async function adjustmentsView(root, route) {
       h('div', {}, h('h2', {}, t('adjustments')), h('p', {}, t('countsSubtitle'))),
       h('span', { class: 'spacer' }),
       can('inventory.count') ? h('button', { class: 'btn primary', onclick: () => navigate('adjustments/new') }, '＋ ' + t('newCount')) : null),
-    h('div', { class: 'card' }, listHost));
+    h('div', { class: 'card' },
+      h('div', { class: 'filters' },
+        h('div', { class: 'field grow' }, textInput({
+          placeholder: t('searchNameOrCode'),
+          oninput: debounce((e) => { state.search = e.target.value; load(); }, 280),
+        }))),
+      listHost));
   await load();
   return undefined;
 }

@@ -2,7 +2,7 @@
 import api from '../core/api.js';
 import {
   h, mount, dataTable, pager, spinner, toast, toastError, textInput, selectInput,
-  field, modal, debounce, statusTag, buildForm, printNode, tag,
+  field, modal, debounce, statusTag, buildForm, printNode, tag, matchNote,
 } from '../core/ui.js';
 import { t } from '../core/i18n.js';
 import { money, number, date, dateTime } from '../core/format.js';
@@ -29,7 +29,15 @@ export async function salesView(root, route) {
 
     mount(listHost, dataTable({
       columns: [
-        { key: 'invoice_no', label: t('invoiceNo'), class: 'mono small' },
+        {
+          key: 'invoice_no',
+          label: t('invoiceNo'),
+          class: 'mono small',
+          // An invoice can now be found by what it sold, so it has to say when
+          // that is why it is here — otherwise a barcode search looks like a
+          // list of unrelated documents.
+          render: (r) => h('div', {}, h('div', {}, r.invoice_no), matchNote(r)),
+        },
         { key: 'sale_date', label: t('date'), render: (r) => h('span', { class: 'small' }, dateTime(r.sale_date)) },
         { key: 'customer_name', label: t('customer'), render: (r) => r.customer_name || t('walkIn') },
         { key: 'line_count', label: t('products'), type: 'number' },
@@ -58,7 +66,7 @@ export async function salesView(root, route) {
     h('div', { class: 'card' },
       h('div', { class: 'filters' },
         h('div', { class: 'field grow' }, textInput({
-          placeholder: t('invoiceNo'),
+          placeholder: t('searchNameOrCode'),
           oninput: debounce((e) => { state.search = e.target.value; state.page = 1; load(); }, 280),
         })),
         h('div', { class: 'field' }, field({

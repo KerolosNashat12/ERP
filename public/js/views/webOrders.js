@@ -19,7 +19,7 @@
 import api from '../core/api.js';
 import {
   h, mount, dataTable, pager, spinner, toast, toastError, textInput, selectInput,
-  field, modal, statusTag, tag,
+  field, modal, statusTag, tag, debounce, matchNote,
 } from '../core/ui.js';
 import { t, pick } from '../core/i18n.js';
 import { money, number, dateTime } from '../core/format.js';
@@ -59,7 +59,7 @@ const NEXT_STEPS = {
 export async function webOrdersView(root, route) {
   if (route.segments[1]) return orderDetailView(root, Number(route.segments[1]));
 
-  const state = { status: route.query.status || '', page: 1 };
+  const state = { search: '', status: route.query.status || '', page: 1 };
   const listHost = h('div', { class: 'card-body tight' }, spinner());
   const pagerHost = h('div');
   const kpiHost = h('div', { class: 'kpis', style: { marginBottom: '14px' } });
@@ -76,7 +76,12 @@ export async function webOrdersView(root, route) {
 
     mount(listHost, dataTable({
       columns: [
-        { key: 'order_no', label: t('orderNo'), class: 'mono small' },
+        {
+          key: 'order_no',
+          label: t('orderNo'),
+          class: 'mono small',
+          render: (r) => h('div', {}, h('div', {}, r.order_no), matchNote(r)),
+        },
         { key: 'created_at', label: t('placedAt'), render: (r) => h('span', { class: 'small' }, dateTime(r.created_at)) },
         { key: 'customer_name', label: t('customer') },
         { key: 'customer_phone', label: t('phone'), class: 'mono small' },
@@ -115,6 +120,14 @@ export async function webOrdersView(root, route) {
     kpiHost,
     h('div', { class: 'card' },
       h('div', { class: 'filters' },
+        // A web order can be found by its number, by who placed it, or by what
+        // is in the box — the same rule as every other document screen.
+        h('div', { class: 'field grow' }, textInput({
+          placeholder: t('searchNameOrCode'),
+          oninput: debounce((event) => {
+            state.search = event.target.value; state.page = 1; load();
+          }, 280),
+        })),
         h('div', { class: 'field' }, field({
           label: t('status'),
           input: selectInput({

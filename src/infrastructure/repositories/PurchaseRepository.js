@@ -1,5 +1,6 @@
 /** Purchase order persistence (header + lines). */
 import { BaseRepository } from './BaseRepository.js';
+import { matchReasonColumns } from '../database/productSearch.js';
 
 export class PurchaseOrderRepository extends BaseRepository {
   constructor() {
@@ -11,38 +12,60 @@ export class PurchaseOrderRepository extends BaseRepository {
         'paid_amount', 'notes', 'created_by', 'approved_by', 'approved_at',
       ],
       searchable: ['po_number', 'notes'],
+      // "Have we ever ordered this?" — a purchase order answers a product code
+      // by the lines it was raised for.
+      productScope: { table: 'purchase_order_lines', key: 'purchase_order_id' },
     });
   }
 
   async listDetailed({ search = '', status, supplierId, dateFrom, dateTo, page = 1, pageSize = 25 } = {}) {
     const where = ['1 = 1'];
     const params = [];
-    if (search) { where.push('po.po_number LIKE ?'); params.push(`%${search}%`); }
+    const predicate = this.searchPredicate(search, { alias: 'po', extra: ['s.name_en', 's.name_ar'] });
+    if (predicate) { where.push(predicate.sql); params.push(...predicate.params); }
     if (status) { where.push('po.status = ?'); params.push(status); }
     if (supplierId) { where.push('po.supplier_id = ?'); params.push(supplierId); }
     if (dateFrom) { where.push('po.order_date >= ?'); params.push(dateFrom); }
     if (dateTo) { where.push('po.order_date <= ?'); params.push(dateTo); }
     const whereSql = `WHERE ${where.join(' AND ')}`;
 
-    const total = (await this.db.prepare(`SELECT COUNT(*) AS n FROM purchase_orders po ${whereSql}`).get(...params)).n;
+    // The supplier join is part of the filter now, so the count and the summary
+    // must be built over the same joined shape as the page.
+    const joins = `
+      JOIN suppliers s  ON s.id = po.supplier_id
+      JOIN warehouses w ON w.id = po.warehouse_id
+      LEFT JOIN users u ON u.id = po.created_by`;
+    const total = (await this.db.prepare(`
+      SELECT COUNT(*) AS n FROM purchase_orders po ${joins} ${whereSql}
+    `).get(...params)).n;
     const size = Number(pageSize) || 25;
     const current = Math.max(Number(page) || 1, 1);
+
+    const reason = predicate
+      ? matchReasonColumns(search, {
+        alias: 'po', ...this.productScope,
+        documentSql: predicate.documentSql, documentParams: predicate.documentParams,
+        scoped: predicate.scoped,
+      })
+      : null;
+    const rank = predicate ? this.searchRank(search, { alias: 'po' }) : null;
+    const orderSql = rank ? `ORDER BY ${rank.sql}, po.id DESC` : 'ORDER BY po.id DESC';
+
     const rows = await this.db.prepare(`
       SELECT po.*, s.name_en AS supplier_name, s.name_ar AS supplier_name_ar,
              w.name_en AS warehouse_name, u.full_name AS created_by_name,
              (SELECT COUNT(*) FROM purchase_order_lines l WHERE l.purchase_order_id = po.id) AS line_count
-      FROM purchase_orders po
-      JOIN suppliers s  ON s.id = po.supplier_id
-      JOIN warehouses w ON w.id = po.warehouse_id
-      LEFT JOIN users u ON u.id = po.created_by
+             ${reason ? `, ${reason.sql}` : ''}
+      FROM purchase_orders po ${joins}
       ${whereSql}
-      ORDER BY po.id DESC LIMIT ? OFFSET ?
-    `).all(...params, size, (current - 1) * size);
+      ${orderSql} LIMIT ? OFFSET ?
+    `).all(...(reason ? reason.params : []), ...params, ...(rank ? rank.params : []),
+      size, (current - 1) * size);
 
     const summary = await this.db.prepare(`
       SELECT COALESCE(SUM(po.total_amount),0) AS total_value,
              COALESCE(SUM(po.total_amount - po.paid_amount),0) AS outstanding
-      FROM purchase_orders po ${whereSql}
+      FROM purchase_orders po ${joins} ${whereSql}
     `).get(...params);
 
     return { rows, total, summary, page: current, pageSize: size, pages: Math.ceil(total / size) || 1 };

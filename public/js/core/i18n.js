@@ -96,6 +96,12 @@ const dictionary = {
     scanPrompt: 'Scan or type a code…', added: 'Added', nameAr: 'Name (Arabic)',
     nameEn: 'Name (English)', general: 'General',
 
+    // --- one search box behaviour, everywhere: the same placeholder on every
+    // box that is about products, and the line that explains a document which
+    // came back because of what is inside it.
+    searchNameOrCode: 'Search — name, product code, SKU or barcode',
+    containsItem: 'Contains',
+
     // dashboard
     todaysSales: "Today's sales", todaysInvoices: 'Invoices today', monthRevenue: 'Revenue this month',
     monthProfit: 'Profit this month', stockValue: 'Stock value at cost', lowStockItems: 'Low stock items',
@@ -594,6 +600,9 @@ const dictionary = {
     revenue: 'الإيرادات', margin: 'هامش الربح', invoice: 'الفاتورة', document: 'المستند',
     scanPrompt: 'امسح أو اكتب الكود…', added: 'تمت الإضافة', nameAr: 'الاسم (بالعربية)',
     nameEn: 'الاسم (بالإنجليزية)', general: 'عام',
+
+    searchNameOrCode: 'بحث — الاسم أو كود المنتج أو الكود أو الباركود',
+    containsItem: 'يحتوي على',
 
     todaysSales: 'مبيعات اليوم', todaysInvoices: 'فواتير اليوم', monthRevenue: 'إيرادات الشهر',
     monthProfit: 'أرباح الشهر', stockValue: 'قيمة المخزون بالتكلفة', lowStockItems: 'أصناف تحت الحد',

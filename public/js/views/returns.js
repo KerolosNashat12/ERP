@@ -9,7 +9,7 @@
 import api from '../core/api.js';
 import {
   h, mount, dataTable, pager, spinner, toast, toastError, textInput, selectInput,
-  numberInput, field, modal, debounce, tag, printNode,
+  numberInput, field, modal, debounce, tag, printNode, matchNote,
 } from '../core/ui.js';
 import { t, pick, getLanguage } from '../core/i18n.js';
 import { money, number, date, dateTime } from '../core/format.js';
@@ -52,7 +52,12 @@ export async function returnsView(root, route) {
 
     mount(listHost, dataTable({
       columns: [
-        { key: 'return_no', label: t('document'), class: 'mono small' },
+        {
+          key: 'return_no',
+          label: t('document'),
+          class: 'mono small',
+          render: (r) => h('div', {}, h('div', {}, r.return_no), matchNote(r)),
+        },
         { key: 'return_date', label: t('date'), render: (r) => h('span', { class: 'small' }, dateTime(r.return_date)) },
         {
           key: 'invoice_no',
@@ -104,7 +109,7 @@ export async function returnsView(root, route) {
     h('div', { class: 'card' },
       h('div', { class: 'filters' },
         h('div', { class: 'field grow' }, textInput({
-          placeholder: `${t('search')} — ${t('document')}, ${t('invoice')}, ${t('customer')}`,
+          placeholder: `${t('searchNameOrCode')}, ${t('invoice')}, ${t('customer')}`,
           oninput: debounce((e) => { state.search = e.target.value; state.page = 1; load(); }, 280),
         })),
         h('div', { class: 'field' }, selectInput({

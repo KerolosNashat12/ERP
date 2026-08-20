@@ -3,7 +3,7 @@
  * Keeping this deliberately small avoids a build step: the app runs straight
  * from disk, which matters for an offline install.
  */
-import { t } from './i18n.js';
+import { t, pick } from './i18n.js';
 
 /** h('div', {class:'x', onclick}, child, child) */
 export function h(tag, attrs = {}, ...children) {
@@ -285,6 +285,24 @@ export function dataTable({ columns, rows, onRowClick, footer, emptyMessage, row
       h('thead', {}, head),
       h('tbody', {}, body),
       footer ? h('tfoot', {}, footer) : null));
+}
+
+/**
+ * "Why is this row here?"
+ *
+ * A document list can now be found by what is inside it — type a barcode on
+ * the Sales screen and you get the invoices that sold that item. A row that
+ * came back for that reason has to say so, or the list looks like it is
+ * ignoring what was typed. The server marks each row (`search_match`) and
+ * names the line that answered; this renders that, and renders nothing at all
+ * when the document itself was the match.
+ */
+export function matchNote(row) {
+  if (!row || row.search_match !== 'line') return null;
+  const name = pick(row, 'search_match_name');
+  const parts = [name, row.search_match_sku].filter(Boolean);
+  if (!parts.length) return null;
+  return h('small', { class: 'muted' }, `↳ ${t('containsItem')}: ${parts.join(' · ')}`);
 }
 
 export function pager({ page, pages, total, onPage }) {

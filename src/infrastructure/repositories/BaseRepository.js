@@ -7,6 +7,9 @@
  * network. See `database/connection.js`.
  */
 import { getDb } from '../database/connection.js';
+import {
+  likeParam, lineMatch, lineExact, normaliseTerm, rankExpression, worthLineSearch,
+} from '../database/productSearch.js';
 import { NotFoundError, ConflictError } from '../../shared/errors.js';
 
 const nowIso = () => new Date().toISOString();
@@ -18,13 +21,98 @@ export class BaseRepository {
    * @param {string[]} options.columns      writable columns
    * @param {string[]} [options.searchable] columns included in free-text search
    * @param {boolean} [options.timestamps]  maintain created_at / updated_at
+   * @param {{table: string, key: string}} [options.productScope]
+   *        For a table whose rows are documents with lines: the line table and
+   *        the column that points back here. Declaring it is what makes a
+   *        product name, code, SKU or barcode find the documents that contain
+   *        that product — see `searchPredicate` below.
+   * @param {string} [options.documentColumn]
+   *        The column that holds this document's own number, used to decide
+   *        whether a search term was the document or its contents. Defaults to
+   *        the first searchable column, which is that number on every document
+   *        table in this schema.
    */
-  constructor({ table, columns, searchable = [], timestamps = true, defaultSort = 'id DESC' }) {
+  constructor({
+    table, columns, searchable = [], timestamps = true, defaultSort = 'id DESC',
+    productScope = null, documentColumn = null,
+  }) {
     this.table = table;
     this.columns = columns;
     this.searchable = searchable;
     this.timestamps = timestamps;
     this.defaultSort = defaultSort;
+    this.productScope = productScope;
+    this.documentColumn = documentColumn || searchable[0] || null;
+  }
+
+  /**
+   * The free-text WHERE fragment for this table — the single place a search
+   * term becomes SQL, whether it arrives through the generic `list()` below or
+   * through a repository's own hand-written `listDetailed()`.
+   *
+   * Two halves:
+   *   - the table's own `searchable` columns, plus whatever a joined query
+   *     wants to add through `extra` (a customer's name, say);
+   *   - and, when the table declares a `productScope`, the documents whose
+   *     *lines* are for a matching product. A sales invoice is not a product,
+   *     so this is the only honest way it can answer a barcode.
+   *
+   * Returns `null` for an empty term so callers can skip the clause entirely.
+   *
+   * @param {string} term
+   * @param {{alias?: string, extra?: string[]}} [options]
+   *        `extra` entries are already-qualified column expressions.
+   * @returns {{sql: string, params: any[], documentSql: string,
+   *            documentParams: any[], scoped: boolean} | null}
+   */
+  searchPredicate(term, { alias = '', extra = [] } = {}) {
+    if (!normaliseTerm(term)) return null;
+    const qualify = (c) => (alias && !c.includes('.') ? `${alias}.${c}` : c);
+    const columns = [...this.searchable.map(qualify), ...extra];
+    const like = likeParam(term);
+
+    const documentSql = `(${columns.map((c) => `${c} LIKE ? ESCAPE '\\'`).join(' OR ')})`;
+    const documentParams = columns.map(() => like);
+
+    // The line half is skipped for a one-character term: it would match most of
+    // the catalogue and cost a full scan to say so. Document numbers still
+    // search on one character, exactly as before.
+    const scoped = Boolean(this.productScope) && worthLineSearch(term);
+    if (!scoped) {
+      return { sql: documentSql, params: documentParams, documentSql, documentParams, scoped: false };
+    }
+
+    const lines = lineMatch(term, { alias: alias || this.table, ...this.productScope });
+    return {
+      sql: `(${documentSql} OR ${lines.sql})`,
+      params: [...documentParams, ...lines.params],
+      documentSql,
+      documentParams,
+      scoped: true,
+    };
+  }
+
+  /**
+   * `0` when the term is exactly this document's number or exactly a code on
+   * one of its lines, `1` otherwise. First in an ORDER BY, so a scanned or
+   * pasted code is never beaten to the top by a row that merely contains it.
+   */
+  searchRank(term, { alias = '' } = {}) {
+    const value = normaliseTerm(term);
+    if (!value) return null;
+    const parts = [];
+    const params = [];
+    if (this.documentColumn) {
+      parts.push(`${alias ? `${alias}.` : ''}${this.documentColumn} = ? COLLATE NOCASE`);
+      params.push(value);
+    }
+    if (this.productScope && worthLineSearch(value)) {
+      const exact = lineExact(value, { alias: alias || this.table, ...this.productScope });
+      parts.push(exact.sql);
+      params.push(...exact.params);
+    }
+    if (!parts.length) return null;
+    return rankExpression({ sql: `(${parts.join(' OR ')})`, params });
   }
 
   get db() {
@@ -71,9 +159,10 @@ export class BaseRepository {
     const where = [];
     const params = [];
 
-    if (search && this.searchable.length) {
-      where.push(`(${this.searchable.map((c) => `${c} LIKE ?`).join(' OR ')})`);
-      this.searchable.forEach(() => params.push(`%${search}%`));
+    const predicate = this.searchable.length ? this.searchPredicate(search) : null;
+    if (predicate) {
+      where.push(predicate.sql);
+      params.push(...predicate.params);
     }
     for (const [col, value] of Object.entries(filters)) {
       if (value === undefined || value === null || value === '') continue;
@@ -83,9 +172,14 @@ export class BaseRepository {
     }
 
     const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
-    const orderSql = sort && this.columns.includes(sort)
-      ? `ORDER BY ${sort} ${order === 'ASC' ? 'ASC' : 'DESC'}`
-      : `ORDER BY ${this.defaultSort}`;
+    const explicitSort = sort && this.columns.includes(sort)
+      ? `${sort} ${order === 'ASC' ? 'ASC' : 'DESC'}`
+      : this.defaultSort;
+
+    // An exact code match leads, then whatever order the caller asked for.
+    const rank = predicate ? this.searchRank(search) : null;
+    const orderSql = rank ? `ORDER BY ${rank.sql}, ${explicitSort}` : `ORDER BY ${explicitSort}`;
+    const orderParams = rank ? rank.params : [];
 
     const total = (await this.db
       .prepare(`SELECT COUNT(*) AS n FROM ${this.table} ${whereSql}`)
@@ -95,7 +189,7 @@ export class BaseRepository {
     const current = Math.max(Number(page) || 1, 1);
     const rows = await this.db
       .prepare(`SELECT * FROM ${this.table} ${whereSql} ${orderSql} LIMIT ? OFFSET ?`)
-      .all(...params, size, (current - 1) * size);
+      .all(...params, ...orderParams, size, (current - 1) * size);
 
     return { rows, total, page: current, pageSize: size, pages: Math.ceil(total / size) || 1 };
   }

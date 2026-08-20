@@ -44,6 +44,10 @@
  */
 import repositories from '../infrastructure/repositories/index.js';
 import { getDb, transaction } from '../infrastructure/database/connection.js';
+import {
+  likeParam, lineExact, lineMatch, matchReasonColumns, normaliseTerm, rankExpression,
+  worthLineSearch,
+} from '../infrastructure/database/productSearch.js';
 import { BusinessRuleError, NotFoundError, ValidationError } from '../shared/errors.js';
 import { calculateLine, round2, round3 } from '../shared/money.js';
 import { deliveryFor } from '../shared/delivery.js';
@@ -306,9 +310,40 @@ export class WebOrderService {
 
   // ------------------------------------------------------------------- staff
 
-  async list({ status = '', page = 1, pageSize = 25 } = {}) {
+  /**
+   * The staff list.
+   *
+   * `search` follows the same rule as every other document screen: the order's
+   * own identity (its number, the customer who placed it) OR the products it is
+   * for. `web_orders` is one of the two tables that predate `BaseRepository`
+   * here, so the predicate is assembled from the same shared parts by hand
+   * rather than being re-invented — `search_match` on each row still says which
+   * half answered.
+   */
+  async list({ search = '', status = '', page = 1, pageSize = 25 } = {}) {
     const where = ['1 = 1'];
     const params = [];
+    const term = normaliseTerm(search);
+    const scope = { alias: 'o', table: 'web_order_lines', key: 'order_id' };
+    const ownColumns = ['o.order_no', 'o.customer_name', 'o.customer_phone'];
+    const documentSql = `(${ownColumns.map((c) => `${c} LIKE ? ESCAPE '\\'`).join(' OR ')})`;
+    const documentParams = ownColumns.map(() => likeParam(term));
+
+    let reason = null;
+    let rank = null;
+    if (term) {
+      const lines = worthLineSearch(term) ? lineMatch(term, scope) : null;
+      where.push(lines ? `(${documentSql} OR ${lines.sql})` : documentSql);
+      params.push(...documentParams, ...(lines ? lines.params : []));
+      reason = matchReasonColumns(term, {
+        ...scope, documentSql, documentParams, scoped: Boolean(lines),
+      });
+      const exact = worthLineSearch(term) ? lineExact(term, scope) : null;
+      rank = rankExpression({
+        sql: `(o.order_no = ? COLLATE NOCASE${exact ? ` OR ${exact.sql}` : ''})`,
+        params: [term, ...(exact ? exact.params : [])],
+      });
+    }
     if (status && STATUSES.includes(status)) { where.push('o.status = ?'); params.push(status); }
     const whereSql = `WHERE ${where.join(' AND ')}`;
 
@@ -324,12 +359,14 @@ export class WebOrderService {
              s.invoice_no AS invoice_no,
              u.full_name  AS confirmed_by_name,
              (SELECT COUNT(*) FROM web_order_lines l WHERE l.order_id = o.id) AS line_count
+             ${reason ? `, ${reason.sql}` : ''}
       FROM web_orders o
       LEFT JOIN sales s ON s.id = o.sale_id
       LEFT JOIN users u ON u.id = o.confirmed_by
       ${whereSql}
-      ORDER BY o.id DESC LIMIT ? OFFSET ?
-    `).all(...params, size, (current - 1) * size);
+      ORDER BY ${rank ? `${rank.sql}, ` : ''}o.id DESC LIMIT ? OFFSET ?
+    `).all(...(reason ? reason.params : []), ...params, ...(rank ? rank.params : []),
+      size, (current - 1) * size);
 
     return {
       rows,

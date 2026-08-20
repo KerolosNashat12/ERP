@@ -6,6 +6,7 @@ import repositories from '../infrastructure/repositories/index.js';
 import { CrudService, referencedBy, referencedByAny } from './CrudService.js';
 import { BusinessRuleError, ValidationError } from '../shared/errors.js';
 import { transaction } from '../infrastructure/database/connection.js';
+import { likeParam } from '../infrastructure/database/productSearch.js';
 import auditService from './AuditService.js';
 
 export class SupplierService extends CrudService {
@@ -137,14 +138,23 @@ export class CustomerService extends CrudService {
     };
   }
 
+  /**
+   * Customer type-ahead at the till. A customer is not a product, so this keeps
+   * its own three columns — but it shares the escaping, and an exact code or
+   * phone number now leads, because a cashier who typed a whole phone number
+   * meant that customer.
+   */
   async search(term, limit = 15) {
-    const like = `%${term}%`;
+    const like = likeParam(term);
+    const exact = String(term ?? '').trim();
     return this.repository.db.prepare(`
       SELECT id, code, name, phone, customer_group, balance, loyalty_points, credit_limit
       FROM customers
-      WHERE is_active = 1 AND (name LIKE ? OR phone LIKE ? OR code LIKE ?)
-      ORDER BY name LIMIT ?
-    `).all(like, like, like, limit);
+      WHERE is_active = 1 AND (name LIKE ? ESCAPE '\\' OR phone LIKE ? ESCAPE '\\'
+                               OR code LIKE ? ESCAPE '\\')
+      ORDER BY CASE WHEN phone = ? OR code = ? COLLATE NOCASE THEN 0 ELSE 1 END, name
+      LIMIT ?
+    `).all(like, like, like, exact, exact, limit);
   }
 
   /** Manual receipt against an outstanding balance (credit customers). */

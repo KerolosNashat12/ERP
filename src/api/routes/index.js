@@ -433,7 +433,9 @@ router.post('/sales/:id/payment', requirePermission('sales.create'), validate(v.
 // in `shopOrders.js`; everything that decides an order's fate is here, behind a
 // session, because delivering one issues stock and raises a paid invoice.
 router.get('/web-orders', requirePermission('weborders.view'), asyncHandler(async (req, res) => {
-  res.json(await webOrderService.list({ status: req.query.status, page: req.query.page }));
+  res.json(await webOrderService.list({
+    search: req.query.search, status: req.query.status, page: req.query.page,
+  }));
 }));
 
 // Registered before `/:id`, which would otherwise swallow the word "count".

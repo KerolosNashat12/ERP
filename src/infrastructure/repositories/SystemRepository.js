@@ -1,6 +1,7 @@
 /** Users, roles/permissions, audit trail, settings and document sequences. */
 import { BaseRepository } from './BaseRepository.js';
 import { getDb } from '../database/connection.js';
+import { likeParam } from '../database/productSearch.js';
 import { ALL_PERMISSIONS } from '../../shared/permissions.js';
 import { ValidationError } from '../../shared/errors.js';
 
@@ -27,8 +28,8 @@ export class UserRepository extends BaseRepository {
     const where = ['1 = 1'];
     const params = [];
     if (search) {
-      where.push('(u.username LIKE ? OR u.full_name LIKE ? OR u.email LIKE ?)');
-      const like = `%${search}%`;
+      where.push("(u.username LIKE ? ESCAPE '\\' OR u.full_name LIKE ? ESCAPE '\\' OR u.email LIKE ? ESCAPE '\\')");
+      const like = likeParam(search);
       params.push(like, like, like);
     }
     if (roleId) { where.push('u.role_id = ?'); params.push(roleId); }
@@ -183,8 +184,14 @@ export class AuditRepository {
     const where = ['1 = 1'];
     const params = [];
     if (search) {
-      where.push('(a.entity_label LIKE ? OR a.message LIKE ? OR a.username LIKE ? OR a.entity_id LIKE ?)');
-      const like = `%${search}%`;
+      // Deliberately NOT widened to product codes. An audit row records what
+      // was true when it was written, so matching it against today's catalogue
+      // would hide a deleted product's history and surface a renamed one under
+      // a name it never had. It shares only the escaping, so a typed '%' is a
+      // character here as well.
+      where.push("(a.entity_label LIKE ? ESCAPE '\\' OR a.message LIKE ? ESCAPE '\\' "
+        + "OR a.username LIKE ? ESCAPE '\\' OR a.entity_id LIKE ? ESCAPE '\\')");
+      const like = likeParam(search);
       params.push(like, like, like, like);
     }
     if (userId) { where.push('a.user_id = ?'); params.push(userId); }
