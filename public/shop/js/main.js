@@ -24,6 +24,7 @@ import checkoutView from './views/checkout.js';
 import successView from './views/success.js';
 import trackView from './views/track.js';
 import contactView from './views/contact.js';
+import favoritesView from './views/favorites.js';
 
 const headerSlot = el('div');
 const main = el('main#main.site-main', { tabindex: '-1' });
@@ -96,6 +97,10 @@ async function boot() {
     'brand/:id': guard(listingView('brand')),
     search: guard(listingView('search')),
     'product/:id': guard(productView),
+    // The header has linked here since the hearts landed; this is the page.
+    // Guarded like every other catalogue route — the list is a list of this
+    // shop's products, and a shop switched off in the ERP serves none of them.
+    favorites: guard(favoritesView),
     cart: guard(cartView),
     checkout: guard(checkoutView),
     'order/:orderNo': guard(successView),

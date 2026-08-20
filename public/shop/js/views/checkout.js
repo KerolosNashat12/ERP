@@ -90,9 +90,10 @@ export default function checkoutView(root) {
       el('h2.panel-title', icon(ICONS.truck, { size: 18 }), t('paymentTitle')),
       el('div.cod-badge', icon(ICONS.check, { size: 16 }), el('strong', t('cashOnDelivery'))),
       el('p.prose.muted', t('codLong'))),
-    el('section.panel',
-      el('h2.panel-title', t('orderNote')),
-      note.node));
+    // No `.panel-title` on this one: it holds a single field whose own label is
+    // that same sentence, and the page was printing "Anything you want us to
+    // know" twice, one line above itself.
+    el('section.panel', note.node));
 
   async function place(event) {
     event.preventDefault();

@@ -89,6 +89,16 @@ export const ICONS = {
   bag: 'M6 8h12l-1 12H7L6 8Zm3 0V6a3 3 0 0 1 6 0v2',
   globe: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Zm-9-9h18M12 3c2.5 2.6 3.7 5.6 3.7 9S14.5 18.4 12 21c-2.5-2.6-3.7-5.6-3.7-9S9.5 5.6 12 3Z',
   truck: 'M3 7h11v9H3V7Zm11 3h4l3 3v3h-7v-6ZM7 19.5a1.6 1.6 0 1 0 0-3.2 1.6 1.6 0 0 0 0 3.2Zm10 0a1.6 1.6 0 1 0 0-3.2 1.6 1.6 0 0 0 0 3.2Z',
+  /*
+   * One closed outline, so the same path can be FILLED by a stylesheet when a
+   * product is favourited (see `.card-fav[aria-pressed="true"]` in shop.css)
+   * rather than swapped for a second drawing.
+   */
+  heart: 'M12 20.4 4.6 13a4.6 4.6 0 0 1 0-6.6 4.6 4.6 0 0 1 6.6 0l.8.8.8-.8a4.6 4.6 0 0 1 6.6 0 4.6 4.6 0 0 1 0 6.6Z',
+  // Cash on delivery: a wallet with the clasp as a dot (a round-capped
+  // zero-length stroke), not a card — this shop takes no cards.
+  wallet: 'M4 8V6.6A1.6 1.6 0 0 1 5.6 5H16M3 8h15a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8Zm13.5 5.5h.01',
+  gift: 'M3 11h18v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-9Zm-1-4h20v4H2V7Zm10 0v14M12 7S10.5 3 8.5 3a2 2 0 0 0 0 4H12Zm0 0s1.5-4 3.5-4a2 2 0 0 1 0 4H12Z',
   check: 'm5 13 4 4 10-10',
   chevron: 'm9 6 6 6-6 6',
   plus: 'M12 5v14M5 12h14',

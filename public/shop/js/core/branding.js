@@ -104,7 +104,7 @@ export function applyBranding() {
   // same way the colours do rather than as a second element to position.
   document.documentElement.style.setProperty('--brand-monogram', JSON.stringify(monogramText()));
   document.querySelector('meta[name="theme-color"]')
-    ?.setAttribute('content', chromeColor(b.dark !== false));
+    ?.setAttribute('content', chromeColor(b.dark !== false, b.accent));
   applyFavicon();
 }
 

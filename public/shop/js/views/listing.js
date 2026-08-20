@@ -80,7 +80,7 @@ function sortControl(state) {
 function pagination(state, result) {
   if (result.pages <= 1) return null;
   const prev = result.page > 1
-    ? el('a.btn.btn-ghost.btn-back', { href: buildHref(state, { page: result.page - 1 }) },
+    ? el('a.btn.btn-ghost', { href: buildHref(state, { page: result.page - 1 }) },
       t('previous'))
     : el('span.btn.btn-ghost.is-disabled', { 'aria-disabled': 'true' }, t('previous'));
   const next = result.page < result.pages

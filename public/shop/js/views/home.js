@@ -1,11 +1,12 @@
 /** The landing page: one request, four shelves. */
-import { el, fill, chevron } from '../core/dom.js';
+import { el, fill, icon, chevron, ICONS } from '../core/dom.js';
 import { api, assetUrl } from '../core/api.js';
 import { t, pick } from '../core/i18n.js';
 import { shopName, tagline, bilingual } from '../core/branding.js';
 import { href } from '../core/router.js';
 import { setPageMeta } from '../core/seo.js';
-import { shop } from '../core/store.js';
+import { shop, deliverySettings } from '../core/store.js';
+import { money, number } from '../core/format.js';
 import { productGrid, taxonomyTile, sectionHead } from '../ui/cards.js';
 import { skeletonGrid, errorState, emptyState } from '../ui/states.js';
 
@@ -106,7 +107,64 @@ function hero() {
         !image && el('p.hero-eyebrow', shopName()),
         el('h1.hero-title', heading),
         el('p.hero-body', body),
-        cta && el('a.btn.btn-primary.hero-cta', { href: cta.href }, cta.label, chevron(16)))));
+        // The design's two-button rhythm, and only where it can be trusted to
+        // read: over the shop's OWN gradient, where this file knows what the
+        // ink is. Over an uploaded photograph the banner keeps exactly the one
+        // configured button it has always had — an outline button whose colour
+        // this file chose could land white-on-white on somebody's photo.
+        (cta || !image) && el('div.hero-actions',
+          cta && el('a.btn.btn-primary', { href: cta.href }, cta.label, chevron(16)),
+          !image && el('a.btn.btn-outline', { href: href('products') }, t('heroCta'))))));
+}
+
+/**
+ * What this shop actually charges to deliver, in one sentence.
+ *
+ * Every shape here exists because it is a different promise: a flat fee, a
+ * percentage, and a percentage with a floor and/or a cap are four things a
+ * customer would plan differently around. Nothing is concatenated — the
+ * sentences live in core/i18n.js in both languages, and the money goes
+ * through core/format.js so it carries this shop's own currency.
+ */
+function deliveryPromise(delivery) {
+  if (delivery.mode === 'percent' && delivery.percent > 0) {
+    const percent = number(delivery.percent);
+    if (delivery.min !== null && delivery.max !== null) {
+      return t('trustDeliveryPercentMinMax', percent, money(delivery.min), money(delivery.max));
+    }
+    if (delivery.min !== null) return t('trustDeliveryPercentMin', percent, money(delivery.min));
+    if (delivery.max !== null) return t('trustDeliveryPercentMax', percent, money(delivery.max));
+    return t('trustDeliveryPercent', percent);
+  }
+  /*
+   * One fixed amount, whatever the basket. That is a flat fee — and it is also
+   * what "0% of your order, minimum 50" comes out as, so it is worded the same
+   * way rather than told as a percentage that would always be wrong.
+   *
+   * A shop that charges nothing says so. "Delivery 0 to every governorate" is
+   * a price tag on something that is free, and it reads as a bug.
+   */
+  const flat = delivery.mode === 'percent' ? (delivery.min || 0) : delivery.fee;
+  return t('trustDeliveryFlat', flat > 0 ? money(flat) : t('free'));
+}
+
+/**
+ * The three promises under the shelves. Real numbers or nothing: the free
+ * delivery card only exists for a shop that has actually set a threshold.
+ */
+function trustRow() {
+  const delivery = deliverySettings();
+  const card = (glyph, title, note) => el('div.trust-card',
+    el('span.trust-icon', icon(glyph, { size: 24 })),
+    el('h3.trust-title', title),
+    el('p.trust-note', note));
+
+  return el('section.section',
+    el('div.trust-row',
+      card(ICONS.truck, t('trustDeliveryTitle'), deliveryPromise(delivery)),
+      card(ICONS.wallet, t('trustCodTitle'), t('trustCodNote')),
+      delivery.freeOver !== null
+        && card(ICONS.gift, t('trustFreeTitle'), t('trustFreeNote', money(delivery.freeOver)))));
 }
 
 export default async function homeView(root) {
@@ -116,7 +174,9 @@ export default async function homeView(root) {
   setPageMeta({});
 
   const shelves = el('div.wrap.stack');
-  root.append(hero(), shelves);
+  // The banner is a rounded block inside the page's column, not a full-bleed
+  // strip — see `.hero-wrap` in shop.css.
+  root.append(el('div.wrap.hero-wrap', hero()), shelves);
   fill(shelves, el('div.section', skeletonGrid(4)), el('div.section', skeletonGrid(8)));
 
   let data;
@@ -127,7 +187,7 @@ export default async function homeView(root) {
     return;
   }
 
-  const { newest = [], featured = [], categories = [], brands = [] } = data;
+  const { newest = [], featured = [], categories = [], brands = [], featuredFromSales = false } = data;
   shop.categories = categories;
   shop.brands = brands;
 
@@ -139,8 +199,10 @@ export default async function homeView(root) {
       el('div.tiles', categories.map((row) => taxonomyTile(row, 'category')))));
   }
 
+  // The white band. The design alternates paper and white full-bleed bands
+  // down the page, and the brands and the best sellers are the white ones.
   if (brands.length) {
-    sections.push(el('section.section',
+    sections.push(el('section.section.section-band',
       sectionHead(t('ourBrands')),
       el('div.brand-strip', brands.map((row) => el('a.brand-pill',
         { href: href(`brand/${row.id}`) }, pick(row, 'name'))))));
@@ -153,13 +215,22 @@ export default async function homeView(root) {
       productGrid(newest)));
   }
 
-  // Best sellers is the shop's own sales record, so on a quiet week the API
-  // tops it up with new arrivals. If that makes it identical to the shelf
-  // above, showing it twice is just noise — so it is dropped.
+  /*
+   * Best sellers is the shop's own sales record, topped up with new arrivals
+   * so a quiet week does not leave a gap. `featuredFromSales` is the API
+   * saying whether there is any sales record in there at all.
+   *
+   * With one — the owner asked for this shelf and it is telling the truth, so
+   * it always shows, on its own white band. Without one, the shelf is made
+   * entirely of the newest arrivals, and printing "الأكثر مبيعًا" over the
+   * eight products that are already on the shelf above would be a brand-new
+   * shop lying about what its customers bought. So the old dedupe stands and
+   * the shelf disappears when it would only repeat itself.
+   */
   const sameAsNewest = featured.length
     && featured.every((card, index) => card.id === newest[index]?.id);
-  if (featured.length && !sameAsNewest) {
-    sections.push(el('section.section',
+  if (featured.length && (featuredFromSales || !sameAsNewest)) {
+    sections.push(el('section.section.section-band',
       sectionHead(t('bestSellers'), t('bestSellersNote'),
         { href: href('products'), label: t('viewAll') }),
       productGrid(featured, { eagerCount: 0 })));
@@ -169,5 +240,7 @@ export default async function homeView(root) {
     fill(shelves, emptyState({ title: t('nothingHere'), body: t('nothingHereBody') }));
     return;
   }
+  // The trust row closes the page, under whatever shelves the shop has.
+  sections.push(trustRow());
   fill(shelves, sections);
 }

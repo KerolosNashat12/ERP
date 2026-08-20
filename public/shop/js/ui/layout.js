@@ -10,8 +10,11 @@ import { shop, isOpen } from '../core/store.js';
 import { href, navigate, parseHash } from '../core/router.js';
 import { brandMark, shopName, tagline, about, searchPlaceholder } from '../core/branding.js';
 import * as cart from '../core/cart.js';
+import * as favorites from '../core/favorites.js';
 
 let cartCountNode = null;
+let favCountNode = null;
+let favButtonNode = null;
 let searchInput = null;
 
 const whatsappHref = () => {
@@ -96,11 +99,33 @@ function languageToggle() {
 }
 
 function cartButton() {
-  cartCountNode = el('span.cart-count', { hidden: cart.count() === 0 }, String(cart.count()));
+  cartCountNode = el('span.count-badge.cart-count', { hidden: cart.count() === 0 }, String(cart.count()));
   return el('a.icon-btn.cart-btn', { href: href('cart'), 'aria-label': t('cart') },
     icon(ICONS.bag, { size: 19 }),
     el('span.btn-label', t('cart')),
     cartCountNode);
+}
+
+/**
+ * The favourites button, beside the cart and wearing the same count badge.
+ *
+ * `#/favorites` is a real route on the router's side of this — the page itself
+ * is built elsewhere; what belongs to the header is only the way in and the
+ * number on it. The heart fills once the shopper has saved anything, so an
+ * empty list is an outline and never a "0".
+ */
+function favoritesButton() {
+  const n = favorites.count();
+  favCountNode = el('span.count-badge.fav-count', { hidden: n === 0 }, String(n));
+  favButtonNode = el('a.icon-btn.fav-btn', {
+    href: href('favorites'),
+    'aria-label': t('favorites'),
+    class: n ? 'has-any' : '',
+  },
+  icon(ICONS.heart, { size: 19 }),
+  el('span.btn-label', t('favorites')),
+  favCountNode);
+  return favButtonNode;
 }
 
 /**
@@ -144,6 +169,7 @@ export function buildHeader() {
           icon(ICONS.mail, { size: 19 }), el('span.btn-label', t('contactUs'))),
         isOpen() && el('a.icon-btn.track-btn', { href: href('track') },
           icon(ICONS.truck, { size: 19 }), el('span.btn-label', t('trackOrder'))),
+        isOpen() && favoritesButton(),
         isOpen() && cartButton()))),
     categoryNav());
 }
@@ -175,6 +201,7 @@ export function buildFooter() {
         el('h3', t('footerHelp')),
         el('a', { href: href('contact') }, t('contactUs')),
         isOpen() && el('a', { href: href('track') }, t('trackOrder')),
+        isOpen() && el('a', { href: href('favorites') }, t('footerFavorites')),
         isOpen() && el('a', { href: href('cart') }, t('cart')),
         isOpen() && el('span.foot-note', t('payWithCash')))),
     el('div.wrap.foot-base',
@@ -189,6 +216,28 @@ export function refreshCartCount() {
   cartCountNode.textContent = String(n);
   cartCountNode.hidden = n === 0;
 }
+
+/**
+ * The same, for the favourites badge — and the heart itself, which fills once
+ * there is anything in the list.
+ *
+ * Exported in the shape `refreshCartCount` has, because that is the shape
+ * `main.js` wires the cart up in. It does not NEED wiring, though: the
+ * subscription below lives here, so a heart tapped on a product card updates
+ * the header without anything outside this file knowing that favourites exist.
+ */
+export function refreshFavCount() {
+  if (!favCountNode) return;
+  const n = favorites.count();
+  favCountNode.textContent = String(n);
+  favCountNode.hidden = n === 0;
+  favButtonNode?.classList.toggle('has-any', n > 0);
+}
+
+// Subscribed once, when this module is first imported. `favorites.onChange`
+// also fires for a change made in ANOTHER TAB of the same shop, so a heart
+// emptied on the favourites page next door takes the header's count down here.
+favorites.onChange(refreshFavCount);
 
 /**
  * Keep the header's search box in step with the URL, so landing on

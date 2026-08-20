@@ -13,13 +13,37 @@
    ========================================================================== */
 
 :root {
-  --ink: #111827;              /* near-black, the ERP's own */
-  --ink-2: #4b5563;
-  --ink-3: #7c8695;
-  --line: #e7e2d9;
-  --line-2: #f2efe9;
-  --bg: #faf8f4;               /* warm paper, not grey */
-  --surface: #ffffff;
+  /* --------------------------------------------------------------------
+     THE NEUTRALS — the shop's own colour, wrung out.
+
+     `public/shared/brandTheme.js` derives every one of these from the ONE
+     accent hex and sets them on `<html>`: the paper, the ink, the hairlines
+     and the tint a shadow is coloured with are the accent's own hue,
+     desaturated and turned 15° along the wheel, so a coral shop gets
+     coral-cream paper under brown ink and a violet shop gets violet-cream
+     under plum ink. There is no cream and no near-black written down here
+     that belongs to one shop.
+
+     The literals below are ONLY the pre-config fallback — what the page
+     wears for the few hundred milliseconds before `/api/shop/config` lands.
+     They are not a second design and they were not typed by eye: they are
+     exactly what `themeVariables()` answers for the platform's default
+     accent, so the first paint and the second are the same picture and
+     nothing flashes.
+     -------------------------------------------------------------------- */
+  --bg: #f9f8f0;               /* the page: paper, never white */
+  --surface: #ffffff;          /* a card, in both modes */
+  --ink: #383724;              /* headings and body */
+  --ink-2: #575637;            /* body copy beside a heading */
+  --ink-3: #9a9765;            /* a card's brand line, a section note */
+  --line: #ebead5;             /* hairline */
+  --line-2: #f1f1e6;           /* the fainter hairline */
+  /*
+   * Not a colour — three channels. Every shadow on the site is this one tint
+   * at one of two alphas, which is what makes them read as coloured-but-
+   * almost-invisible rather than as grey smudges under a warm card.
+   */
+  --shadow-rgb: 184 180 116;
 
   /* --------------------------------------------------------------------
      THE SHOP'S OWN COLOUR.
@@ -28,9 +52,8 @@
      them on `<html>` from the ONE hex in `config.branding.accent` (see
      public/shared/brandTheme.js, which the ERP's live preview derives them
      with too, so a preview cannot disagree with the site). The literals
-     below are the default gold — what a shop that has never opened the
-     colour control gets, and what the page wears for the few hundred
-     milliseconds before the config lands.
+     below are the platform's default — what a shop that has never opened
+     the colour control gets.
 
      Nothing else in this file may name a colour that belongs to a shop.
      One accent, one mode, and every rule under them derives.
@@ -39,70 +62,118 @@
   --accent-strong: #8c6e2a;    /* the same colour, dark enough to be words */
   --accent-bright: #c8a24a;    /* on the dark chrome band */
   --accent-soft: #f6f0e2;      /* a wash for badges and soft panels */
-  --accent-deep: #745c23;      /* pressed / hovered solid fills */
+  --accent-deep: #745c23;      /* the far end of the gradient, pressed fills */
   --accent-ink: #10131a;       /* ink ON a solid fill of the accent */
   --accent-rgb: 179 141 54;    /* for rgb(... / alpha) scrims */
+
+  /*
+   * The one gradient the design is built on: the accent falling towards its
+   * own deep sibling at 135°. 135° rather than a `to right` on purpose — a
+   * diagonal reads the same in Arabic and English, and this same gradient
+   * fills the primary button, the cart button and the empty hero.
+   *
+   * The `240%` is the reason this is a token and not three copies. The far
+   * stop sits beyond the end of the gradient line, so the corner of the box
+   * only travels about 40% of the way to `--accent-deep` — and 40% is
+   * measured, not chosen: `--accent-deep` is derived as a PRESSED fill (6:1
+   * against white), which is much darker than the short hop the source design
+   * makes, and `--accent-ink` on the full depth of it drops to about 3:1 for
+   * every pale accent — a gold shop, a coral shop, a butter-yellow shop.
+   * Stopping at 40% keeps that ink past 4.5:1 for all of them while a deep
+   * accent, whose ink is white, is unaffected either way.
+   */
+  --accent-grad: linear-gradient(135deg, var(--accent), var(--accent-deep) 240%);
 
   /* --------------------------------------------------------------------
      THE MODE. `branding.dark` (default true) picks between the two blocks
      below by setting `data-theme` on `<html>`.
 
-     "Dark" is the shop this platform started as: a paper page banded with
-     near-black — the announcement strip, the cart button, the footer — and
-     the accent used bright on top of it. "Light" is the same shop with the
-     bands lifted: pale surfaces, ink text, and the accent itself carrying
-     the solid fills. Both are DESIGNED; the light one is not the dark one
-     with its colours inverted, which is how a light shop ends up with grey
-     text on a grey footer.
+     Both modes share the paper and share the cards: what a mode decides is
+     what the BANDS are — the promo strip, the footer, the toast, the order
+     card. "Dark" bands the page with the ink itself, which is what the
+     design's deep footer is; "light" bands it with a pale wash of the same
+     hue and puts the page's own ink back on top. The values are handed in
+     by `brandTheme.js` for both, so neither is the other inverted.
 
-     Three families, and every band on the site is one of them:
-       --chrome*   a filled band (announcement, footer, toast, order card)
-       --solid*    a filled control (primary button, cart button, chip)
+       --chrome*    a filled band (promo strip, footer, toast, order card)
+       --solid*     a filled control (cart button, an active chip)
        --hero-fill* the banner a shop has uploaded no photo for
      -------------------------------------------------------------------- */
   --chrome: var(--ink);
   --on-chrome: #ffffff;
-  --on-chrome-2: #c9d1de;
-  --on-chrome-3: #9aa4b4;
-  --on-chrome-4: #7f8a9c;
-  --chrome-line: #33405a;
-  --chrome-line-2: #263043;
+  --on-chrome-2: #dadacc;
+  --on-chrome-3: #b0af9e;
+  --on-chrome-4: #979684;
+  --chrome-line: #545239;
+  --chrome-line-2: #3e3d2b;
   --on-chrome-accent: var(--accent-bright);
 
-  --solid: var(--ink);
-  --solid-hover: #1f2937;
-  --on-solid: #ffffff;
-  --on-solid-hover: var(--accent-bright);
-  --badge: var(--accent-bright);
-  --badge-ink: var(--ink);
+  /*
+   * A filled control is the shop's own colour in BOTH modes now. The design
+   * has one strong colour and this is it: a near-black cart button beside an
+   * accent-gradient buy button was two primaries arguing on one header.
+   */
+  --solid: var(--accent);
+  --on-solid: var(--accent-ink);
+  /* The count badge on a filled control: the ink of that fill, carrying the
+     accent — so it stays legible whether the fill went white-on-deep or
+     black-on-pale. */
+  --badge: var(--accent-ink);
+  --badge-ink: var(--accent);
 
+  /*
+   * The empty banner: the design's gradient blob. The accent falling into its
+   * deep sibling at 135°, with a white wash across the near corner standing
+   * in for the design's lighter, warmer third stop — a wash rather than a
+   * fourth colour, because a lighter-and-warmer accent is not something one
+   * hex can be asked for and a literal here would be one shop's coral.
+   */
   --hero-fill:
-    radial-gradient(120% 130% at 100% 0%, rgb(var(--accent-rgb) / .18), transparent 55%),
-    linear-gradient(160deg, #111827 0%, #1b2333 60%, #232c40 100%);
-  --hero-fill-ink: #ffffff;
-  --hero-fill-body: #c9d1de;
-  --hero-fill-accent: var(--accent-bright);
-  --hero-fill-mark: rgb(var(--accent-rgb) / .16);
+    linear-gradient(135deg, rgb(255 255 255 / .42) 0%, rgb(255 255 255 / .06) 42%, transparent 70%),
+    var(--accent-grad);
+  --hero-fill-ink: var(--accent-ink);
+  --hero-fill-body: var(--accent-ink);
+  --hero-fill-accent: var(--accent-ink);
+
+  /* Semantic, and nobody's brand: stock, delivery status, form errors. These
+     mean the same thing in every shop, so they are the one family that does
+     not derive from the accent. */
   --ok: #1a7a4c;
   --ok-soft: #e8f6ee;
   --warn: #a4630a;
   --warn-soft: #fdf3e2;
   --danger: #b42318;
   --danger-soft: #fdeceb;
+  --danger-line: #f3c9c5;
+  --danger-ink: #8a1c14;
+  --info: #1f5fd0;
+  --info-soft: #eaf1fe;
 
-  --radius: 14px;
-  --radius-sm: 9px;
-  --shadow-sm: 0 1px 2px rgba(17, 24, 39, .05);
-  --shadow: 0 2px 6px rgba(17, 24, 39, .05), 0 14px 34px rgba(17, 24, 39, .06);
+  /*
+   * 20px corners and a pill. The design is soft everywhere: cards, panels and
+   * photo frames at 20, the small inner things at 12, and every control —
+   * button, chip, badge, search box, stepper — fully round.
+   */
+  --radius: 20px;
+  --radius-sm: 12px;
+  --radius-pill: 50px;
+  /*
+   * Two shadows and a third for the header, all of them the SAME tint at
+   * different alphas (see `--shadow-rgb`). A card rests on the first and
+   * lifts 4px onto the second.
+   */
+  --shadow: 0 4px 20px rgb(var(--shadow-rgb) / .06);
+  --shadow-lift: 0 12px 36px rgb(var(--shadow-rgb) / .14);
+  --shadow-head: 0 2px 14px rgb(var(--shadow-rgb) / .10);
   --wrap: 1180px;
 
   /* --------------------------------------------------------------------
      Card geometry. Photographs arrive from a phone camera in whatever shape
      the person holding it chose — a tall clutch, a wide wallet, a square
      ring — and a grid whose rows are as tall as their tallest picture looks
-     broken. So the SHAPE is fixed here and the photo is cropped into it,
+     broken. So the SHAPE is fixed here and the photo is fitted into it,
      rather than the stored image being re-cropped on upload: the original
-     bytes stay whole and the crop is a decision this sheet can change.
+     bytes stay whole and the framing is a decision this sheet can change.
 
      Everything below adds up to a card height that does not depend on its
      contents at all: ratio-locked photo + a body of fixed rows. Two cards
@@ -124,50 +195,48 @@
     + var(--card-name-h) + var(--card-body-gap) + var(--card-price-h)
     + var(--card-body-pad-end));
 
+  /*
+   * Cairo first for Arabic — the design's own face, used if the device has
+   * it and quietly skipped if it has not. Nothing is downloaded: a webfont
+   * would be a third-party request on the critical path of a shop most of
+   * whose customers are on mobile data.
+   *
+   * `--font-display` is no longer a serif. The design sets its headings in
+   * the same face as its body, heavy — a Georgia heading over a Cairo
+   * paragraph was two typefaces where the design has one.
+   */
   --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  --font-ar: "Segoe UI", "Noto Naskh Arabic", "Dubai", Tahoma, sans-serif;
-  --font-display: Georgia, "Times New Roman", "Noto Naskh Arabic", serif;
+  --font-ar: "Cairo", "Segoe UI", "Noto Naskh Arabic", "Dubai", Tahoma, sans-serif;
+  --font-display: var(--font);
 }
 
+html[lang="ar"] { --font-display: var(--font-ar); }
+
 /*
- * A light shop. Not an inversion: the page under both modes is paper (this
- * site has always been light where the products are), and what changes is the
- * banding — near-black bands become pale ones, white ink becomes the page's
- * own ink, and the solid fills stop being near-black and become the shop's own
- * colour, which is the only strong colour a light design has left to use.
+ * A light shop. Not an inversion, and — since brandTheme.js began deriving the
+ * neutrals — barely a palette at all: the paper, the cards, the ink and the
+ * hairlines are the same in both modes, because they are the same accent's own
+ * hue either way. What a mode decides is what the BANDS are.
  *
- * The neutrals go cool here on purpose: the warm paper above was chosen to sit
- * under gold, and a shop that picked pink is not a warm-paper shop.
+ * Dark bands the page with the ink itself (the design's deep footer). Light
+ * bands it with a pale wash of the shop's hue and puts the page's own ink back
+ * on top, re-measured against that band rather than against the paper.
+ *
+ * The literals below are the pre-config fallback for the platform's default
+ * accent, exactly as in `:root` above — `themeVariables(accent, false)`
+ * overwrites all of them the moment the config lands. Everything the two modes
+ * used to disagree about (the fills, the hero, the badge) is now decided once
+ * in `:root` from the accent, so this block is only the band.
  */
 html[data-theme="light"] {
-  --bg: #fbfbfc;
-  --surface: #ffffff;
-  --line: #e6e7eb;
-  --line-2: #f2f3f5;
-
-  --chrome: #f4f5f7;
+  --chrome: #f2f2e8;
   --on-chrome: var(--ink);
   --on-chrome-2: var(--ink-2);
   --on-chrome-3: var(--ink-2);
   --on-chrome-4: var(--ink-3);
-  --chrome-line: #dfe1e6;
-  --chrome-line-2: #e6e7eb;
+  --chrome-line: #e8e6d2;
+  --chrome-line-2: #eeede0;
   --on-chrome-accent: var(--accent-strong);
-
-  --solid: var(--accent);
-  --solid-hover: var(--accent-deep);
-  --on-solid: var(--accent-ink);
-  --on-solid-hover: var(--accent-ink);
-  --badge: var(--accent-ink);
-  --badge-ink: var(--accent);
-
-  --hero-fill:
-    radial-gradient(120% 130% at 100% 0%, rgb(var(--accent-rgb) / .30), transparent 60%),
-    linear-gradient(160deg, #ffffff 0%, #f6f6f8 55%, #eceef2 100%);
-  --hero-fill-ink: var(--ink);
-  --hero-fill-body: var(--ink-2);
-  --hero-fill-accent: var(--accent-strong);
-  --hero-fill-mark: rgb(var(--accent-rgb) / .13);
 }
 
 *, *::before, *::after { box-sizing: border-box; }
@@ -187,7 +256,7 @@ body {
 
 html[lang="ar"] body { font-family: var(--font-ar); }
 
-h1, h2, h3 { margin: 0; font-weight: 600; line-height: 1.25; letter-spacing: -.01em; }
+h1, h2, h3 { margin: 0; font-weight: 700; line-height: 1.25; letter-spacing: -.01em; }
 p { margin: 0; }
 ul, ol, dl, dd { margin: 0; padding: 0; }
 li { list-style: none; }
@@ -196,6 +265,20 @@ img { max-width: 100%; display: block; }
 button, input, select, textarea { font: inherit; color: inherit; }
 .muted { color: var(--ink-3); }
 .icon { flex: none; }
+
+/*
+ * `hidden` has to mean hidden.
+ *
+ * The browser's own `[hidden] { display: none }` is a UA rule, and ANY author
+ * `display` in this file outranks it — so a node that carries the attribute and
+ * happens to be a `grid` or a `flex` here stays on screen. That is not a
+ * hypothetical: an empty error bar sat under the checkout heading on every
+ * visit, because `.form-error` is a grid. Said once, for every such element,
+ * rather than a `[hidden]` companion rule beside each one; `!important` is what
+ * it takes to beat a class from a bare attribute selector, and "the author said
+ * this is not here" is the one place that is the right tool.
+ */
+[hidden] { display: none !important; }
 
 :focus-visible {
   outline: 2px solid var(--accent);
@@ -247,31 +330,92 @@ body:not(.is-booting) .boot-screen { display: none; }
 .stack { display: grid; gap: 26px; padding-block-start: 22px; }
 .section { display: grid; gap: 16px; }
 
+/*
+ * The alternating bands. The source design lays its shelves on paper and
+ * white in turn — the brands and the best sellers sit on white — and that
+ * alternation is most of what stops a long home page reading as one flat
+ * sheet.
+ *
+ * It is a MODIFIER on the section rather than a wrapper around it: a shelf
+ * lives inside `.wrap`, which is a fixed column with page padding, so a band
+ * has to escape its own container. `box-shadow` with a huge spread paints the
+ * colour out to both sides without contributing anything to layout or to the
+ * scrollable area, and the `clip-path` trims that paint to the viewport.
+ * Both are symmetric — no inline direction anywhere — so the band mirrors
+ * itself for free.
+ */
+.section-band {
+  background: var(--surface);
+  padding-block: 26px;
+  box-shadow: 0 0 0 100vmax var(--surface);
+  clip-path: inset(0 -100vmax);
+}
+
 .page-title {
   font-family: var(--font-display);
-  font-size: clamp(24px, 6vw, 32px);
-  font-weight: 400;
+  font-size: clamp(24px, 6vw, 30px);
+  font-weight: 700;
 }
 .page-note { font-size: 14px; }
 
 /* ------------------------------------------------------------- header ---- */
+/*
+ * The promo strip: the accent gradient at twice the width, sweeping.
+ *
+ * The gradient is a palindrome (accent → deep → accent) so the sweep has no
+ * beginning and no end to arrive at, and so the band looks identical in
+ * Arabic and English — a `to right` fade from light to dark would land on the
+ * opposite side of the screen in the two languages, which is exactly the kind
+ * of thing this sheet exists to avoid.
+ */
 .announce {
-  background: var(--chrome);
-  color: var(--on-chrome-accent);
+  /*
+   * Two declarations, not a mistake: the strip's middle stop wants to be a
+   * PART of the way to `--accent-deep` for the same measured reason as
+   * `--accent-grad` above, and a palindrome cannot say that with a stop
+   * position. A browser that does not know `color-mix` drops the second line
+   * at parse time and keeps the first, which is the same strip a shade deeper.
+   */
+  background: linear-gradient(90deg, var(--accent), var(--accent-deep), var(--accent));
+  background: linear-gradient(90deg,
+    var(--accent),
+    color-mix(in srgb, var(--accent-deep) 40%, var(--accent)),
+    var(--accent));
+  background-size: 200% 100%;
+  color: var(--accent-ink);
   font-size: 13px;
+  font-weight: 600;
   letter-spacing: .01em;
-  padding-block: 8px;
+  padding-block: 9px;
   text-align: center;
 }
 .announce p { margin: 0; }
+/*
+ * Opted INTO rather than out of. A shop's announcement is decoration; someone
+ * who has told their operating system they want stillness gets a strip that
+ * is simply a gradient, and nothing about the shop is lost.
+ */
+@media (prefers-reduced-motion: no-preference) {
+  .announce { animation: shimmer 4s linear infinite; }
+}
+@keyframes shimmer { from { background-position: 0 0; } to { background-position: 200% 0; } }
 
 .site-head {
   position: sticky;
   inset-block-start: 0;
   z-index: 40;
-  background: rgba(255, 255, 255, .96);
-  backdrop-filter: blur(8px);
-  border-block-end: 1px solid var(--line);
+  /*
+   * The surface, very slightly see-through, over a blur — so the page's own
+   * paper and the top of a card show through as the customer scrolls under
+   * it. `color-mix` is a normal declaration here rather than a custom
+   * property on purpose: a browser that does not know it drops this line at
+   * parse time and keeps the opaque surface above it, which is the correct
+   * fallback and not a missing background.
+   */
+  background: var(--surface);
+  background: color-mix(in srgb, var(--surface) 95%, transparent);
+  backdrop-filter: blur(10px);
+  box-shadow: var(--shadow-head);
 }
 .head-main { padding-block: 10px; }
 .head-inner {
@@ -298,6 +442,7 @@ body:not(.is-booting) .boot-screen { display: none; }
 }
 .brand-mark {
   font-family: var(--font-display);
+  font-weight: 700;
   font-size: 24px;
   line-height: 1;
   letter-spacing: .03em;
@@ -321,6 +466,7 @@ body:not(.is-booting) .boot-screen { display: none; }
 .brand-text { display: grid; min-width: 0; }
 .brand-name {
   font-family: var(--font-display);
+  font-weight: 700;
   font-size: 16px;
   line-height: 1.25;
   color: var(--ink);
@@ -344,11 +490,11 @@ html[lang="ar"] .brand-word { letter-spacing: 0; text-transform: none; font-size
   display: flex;
   align-items: center;
   gap: 6px;
-  background: var(--line-2);
-  border: 1px solid transparent;
-  border-radius: 999px;
-  padding-inline: 12px;
-  min-height: 42px;
+  background: var(--bg);
+  border: 1.5px solid var(--line);
+  border-radius: var(--radius-pill);
+  padding-inline: 14px;
+  min-height: 44px;
 }
 .search:focus-within { background: var(--surface); border-color: var(--accent); }
 .search-input {
@@ -390,26 +536,39 @@ html[lang="ar"] .brand-word { letter-spacing: 0; text-transform: none; font-size
   color: var(--ink);
   cursor: pointer;
   padding: 9px 10px;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-pill);
   font-size: 14px;
+  font-weight: 600;
   min-height: 42px;
+  transition: background .15s, color .15s;
 }
-.icon-btn:hover { background: var(--line-2); color: var(--accent); }
+.icon-btn:hover { background: var(--accent-soft); color: var(--accent-strong); }
 .btn-label, .lang-label { display: none; }
 .lang-btn .lang-label { display: inline; font-size: 13px; letter-spacing: .02em; }
 .track-btn { display: none; }
 .contact-btn { display: none; }
 
-.cart-btn { background: var(--solid); color: var(--on-solid); padding-inline: 12px; }
-.cart-btn:hover { background: var(--solid-hover); color: var(--on-solid-hover); }
-.cart-count {
+.cart-btn { background: var(--accent-grad); color: var(--on-solid); padding-inline: 14px; }
+.cart-btn:hover { opacity: .92; }
+/*
+ * The favourites button sits beside the cart and wears the same count badge.
+ * It is a quiet control, not a second primary — the cart is where the money
+ * is — so it keeps the plain `.icon-btn` treatment and only its heart fills.
+ */
+.fav-btn .icon { color: var(--ink-3); transition: color .15s; }
+.fav-btn:hover .icon,
+.fav-btn.has-any .icon { color: var(--accent); }
+.fav-btn.has-any .icon path { fill: currentColor; }
+
+/* One badge, two counts: the cart's and the favourites'. */
+.count-badge {
   position: absolute;
   inset-block-start: 2px;
   inset-inline-end: 2px;
   min-width: 19px;
   height: 19px;
   padding-inline: 5px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--badge);
   color: var(--badge-ink);
   font-size: 11px;
@@ -418,7 +577,9 @@ html[lang="ar"] .brand-word { letter-spacing: 0; text-transform: none; font-size
   place-items: center;
   line-height: 1;
 }
-.cart-count[hidden] { display: none; }
+/* The favourites badge sits on the page's own paper rather than on a filled
+   control, so it carries the accent itself instead of the fill's ink. */
+.fav-btn .count-badge { background: var(--accent); color: var(--accent-ink); }
 
 .cat-nav { border-block-start: 1px solid var(--line-2); }
 .cat-nav-inner {
@@ -430,18 +591,27 @@ html[lang="ar"] .brand-word { letter-spacing: 0; text-transform: none; font-size
   -webkit-overflow-scrolling: touch;
 }
 .cat-nav-inner::-webkit-scrollbar { display: none; }
+/*
+ * The pill. `.chip` and `.brand-pill` are the same object with two names —
+ * white, a 1.5px hairline, fully round — and both light up the same way: the
+ * accent for the border and the words, a wash of it behind them. An active
+ * chip is not a solid fill; a strip of eight solid accent chips under the
+ * header is a colour chart, not a navigation.
+ */
 .chip {
   flex: none;
-  padding: 6px 14px;
-  border-radius: 999px;
+  padding: 7px 15px;
+  border-radius: var(--radius-pill);
   font-size: 14px;
+  font-weight: 600;
   color: var(--ink-2);
-  border: 1px solid var(--line);
+  border: 1.5px solid var(--line);
   background: var(--surface);
   white-space: nowrap;
+  transition: border-color .15s, color .15s, background .15s;
 }
-.chip:hover { border-color: var(--accent); color: var(--accent); }
-.chip.is-active { background: var(--solid); border-color: var(--solid); color: var(--on-solid); }
+.chip:hover { border-color: var(--accent); color: var(--accent-strong); background: var(--accent-soft); }
+.chip.is-active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-strong); }
 
 /* --------------------------------------------------------------- hero ---- */
 /*
@@ -452,13 +622,46 @@ html[lang="ar"] .brand-word { letter-spacing: 0; text-transform: none; font-size
  * gradient/monogram fill (`.hero:not(.has-image)`), so an empty banner still
  * reads as a finished page.
  */
+/* The banner is a rounded block inside the page's own column, not a
+   full-bleed strip: 20px corners, like every other card on the page. */
+.hero-wrap { padding-block-start: 16px; }
 .hero {
   position: relative;
   overflow: hidden;
   aspect-ratio: 4 / 3;
+  border-radius: var(--radius);
   color: var(--hero-fill-ink);
 }
 .hero:not(.has-image) { background: var(--hero-fill); }
+/*
+ * The design's two soft blurred circles, drawn from the accent's own fill
+ * rather than from a colour of their own — a white wash at two alphas over
+ * the gradient, which is a lighter tint of whatever hue the shop picked.
+ * Decoration only, and placed with logical insets so the composition mirrors
+ * itself in Arabic along with everything else.
+ */
+.hero:not(.has-image)::before,
+.hero:not(.has-image)::after {
+  content: "";
+  position: absolute;
+  border-radius: 50%;
+  background: rgb(255 255 255 / .30);
+  filter: blur(42px);
+  pointer-events: none;
+}
+.hero:not(.has-image)::before {
+  inline-size: 46%;
+  aspect-ratio: 1;
+  inset-block-start: -14%;
+  inset-inline-end: -8%;
+}
+.hero:not(.has-image)::after {
+  inline-size: 34%;
+  aspect-ratio: 1;
+  inset-block-end: -16%;
+  inset-inline-start: 6%;
+  background: rgb(255 255 255 / .18);
+}
 /* A filled base under the photo while it decodes, rather than the paper `--bg`
    flashing through for a frame. */
 .hero.has-image { background: var(--chrome); }
@@ -538,11 +741,19 @@ html[dir="rtl"] .hero-inner { direction: rtl; }
   inset-inline-end: 2%;
   transform: translateY(-50%);
   font-family: var(--font-display);
+  font-weight: 700;
   font-size: 170px;
   line-height: 1;
   letter-spacing: .04em;
   direction: ltr;
-  color: var(--hero-fill-mark);
+  /*
+   * The ink of the banner itself at a whisper, not a colour of its own. The
+   * text box can be dragged over this corner by the owner, so the mark has to
+   * be quiet enough to sit UNDER a sentence — and inheriting the ink is the
+   * only way to stay quiet on both a near-black fill and a coral one.
+   */
+  color: inherit;
+  opacity: .09;
   pointer-events: none;
   user-select: none;
 }
@@ -559,7 +770,7 @@ html[lang="ar"] .hero-eyebrow { letter-spacing: .06em; text-transform: none; fon
    at every size. */
 .hero-title {
   font-family: var(--font-display);
-  font-weight: 400;
+  font-weight: 700;
   font-size: clamp(calc(27px * var(--hero-scale, 1)), calc(8vw * var(--hero-scale, 1)), calc(46px * var(--hero-scale, 1)));
   max-width: 16ch;
   line-height: 1.2;
@@ -569,6 +780,11 @@ html[lang="ar"] .hero-eyebrow { letter-spacing: .06em; text-transform: none; fon
   overflow: hidden;
 }
 html[lang="ar"] .hero-title { max-width: 20ch; }
+/* On the accent fill the body copy is the same ink as the heading, one step
+   quieter — there is no second ink to reach for on a coloured ground, and a
+   grey would be the one shade that looks like a mistake there. */
+.hero:not(.has-image) .hero-body { opacity: .88; }
+.hero:not(.has-image) .hero-eyebrow { opacity: .78; }
 .hero-body {
   color: var(--hero-fill-body);
   max-width: 46ch;
@@ -578,7 +794,21 @@ html[lang="ar"] .hero-title { max-width: 20ch; }
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
-.hero-cta { margin-block-start: 8px; }
+/* The design's two-button rhythm. Both sit on one row that wraps on a narrow
+   banner rather than stretching either button to the box's width. */
+.hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-block-start: 8px;
+}
+/* Over the shop's own gradient there is one legible ink and the outline
+   button borrows it, rather than drawing an accent border on the accent. */
+.hero:not(.has-image) .btn-outline { border-color: currentColor; color: inherit; }
+.hero:not(.has-image) .btn-outline:hover:not(:disabled) {
+  background: var(--hero-fill-ink);
+  color: var(--accent);
+}
 /*
  * Colour only changes over a real photo — the no-photo gradient fill is a
  * fixed dark-navy design element the shop owner never sees or edits, so
@@ -600,63 +830,149 @@ html[lang="ar"] .hero-title { max-width: 20ch; }
 }
 
 /* ------------------------------------------------------------ sections --- */
+/*
+ * A heading, a quiet note under it, and "view all" with an arrow on the far
+ * inline end. No rule under it any more — the design separates a shelf from
+ * the one above with a band or with space, not with a line.
+ */
 .section-head {
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
   gap: 14px;
-  border-block-end: 1px solid var(--line);
-  padding-block-end: 10px;
 }
 .section-title {
   font-family: var(--font-display);
-  font-weight: 400;
-  font-size: clamp(20px, 5vw, 26px);
+  font-weight: 700;
+  font-size: clamp(20px, 5vw, 24px);
+  letter-spacing: -.015em;
 }
-.section-note { font-size: 13.5px; color: var(--ink-3); margin-block-start: 2px; }
+.section-note { font-size: 14px; color: var(--ink-3); margin-block-start: 3px; }
+/* The gap grows on hover, so the arrow steps away from the words in whichever
+   direction the line is running — `gap` has no side, which is why it can. */
 .link-more {
   display: inline-flex;
   align-items: center;
   gap: 4px;
   color: var(--accent-strong);
   font-size: 14px;
+  font-weight: 600;
   white-space: nowrap;
   padding-block-end: 2px;
+  transition: gap .15s;
 }
-.link-more:hover { text-decoration: underline; }
+.link-more:hover { gap: 9px; }
 
 /* --------------------------------------------------------------- tiles --- */
+/*
+ * A category card: a round badge, the name, how many pieces are in it, and a
+ * "view all" line. Centred, because the badge is the thing the eye lands on
+ * and a badge with its caption off to one side is neither a tile nor a card.
+ *
+ * The badge holds a LETTER, not an icon. We have no per-category artwork and
+ * inventing an icon set would mean guessing what "أساور" looks like for every
+ * shop on the platform; an emoji would be worse, since the same codepoint is
+ * a different drawing on every Android in Egypt. So it wears the same
+ * monogram treatment a photoless product card already uses.
+ */
 .tiles {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-  gap: 10px;
+  gap: 12px;
 }
 .tile {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+  display: grid;
+  justify-items: center;
+  align-content: start;
+  gap: 4px;
   background: var(--surface);
-  border: 1px solid var(--line);
   border-radius: var(--radius);
-  padding: 14px 16px;
-  box-shadow: var(--shadow-sm);
-  transition: border-color .15s, transform .15s;
+  padding: 20px 14px 18px;
+  text-align: center;
+  box-shadow: var(--shadow);
+  transition: box-shadow .18s, transform .18s;
 }
-.tile:hover { border-color: var(--accent); transform: translateY(-1px); }
-.tile-name { font-weight: 600; flex: 1; }
+.tile:hover { transform: translateY(-4px); box-shadow: var(--shadow-lift); }
+.tile-badge {
+  inline-size: 56px;
+  block-size: 56px;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  display: grid;
+  place-items: center;
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1;
+  margin-block-end: 8px;
+  transition: background .18s, color .18s;
+}
+.tile:hover .tile-badge { background: var(--accent-grad); color: var(--accent-ink); }
+.tile-name { font-weight: 700; font-size: 15px; }
 .tile-count { font-size: 12.5px; color: var(--ink-3); }
-.tile .icon { color: var(--ink-3); }
-
-.brand-strip { display: flex; flex-wrap: wrap; gap: 8px; }
-.brand-pill {
-  border: 1px solid var(--line);
-  background: var(--surface);
-  border-radius: 999px;
-  padding: 8px 16px;
-  font-size: 14px;
-  color: var(--ink-2);
+.tile-more {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-block-start: 6px;
+  color: var(--accent-strong);
+  font-size: 13px;
+  font-weight: 600;
+  transition: gap .15s;
 }
-.brand-pill:hover { border-color: var(--accent); color: var(--accent); }
+.tile:hover .tile-more { gap: 9px; }
+
+/* The brand row: the same pill as `.chip`, centred on its own band. */
+.brand-strip { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; }
+.brand-pill {
+  border: 1.5px solid var(--line);
+  background: var(--surface);
+  border-radius: var(--radius-pill);
+  padding: 9px 18px;
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--ink-2);
+  transition: border-color .15s, color .15s, background .15s;
+}
+.brand-pill:hover { border-color: var(--accent); color: var(--accent-strong); background: var(--accent-soft); }
+
+/* --------------------------------------------------------------- trust --- */
+/*
+ * The three promises at the foot of the home page. Every word of them is
+ * either translated copy or a number out of the shop's own delivery settings
+ * — there is no "free shipping over 500" written down here, because the shop
+ * next door charges for delivery and this page is theirs too.
+ */
+.trust-row {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: 1fr;
+}
+.trust-card {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  text-align: center;
+  background: var(--surface);
+  border-radius: var(--radius);
+  padding: 24px 18px;
+  box-shadow: var(--shadow);
+  transition: box-shadow .18s, transform .18s;
+}
+.trust-card:hover { transform: translateY(-4px); box-shadow: var(--shadow-lift); }
+.trust-icon {
+  inline-size: 54px;
+  block-size: 54px;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  display: grid;
+  place-items: center;
+  margin-block-end: 6px;
+}
+.trust-title { font-size: 16px; font-weight: 700; }
+.trust-note { font-size: 14px; color: var(--ink-3); max-width: 30ch; }
 
 /* --------------------------------------------------------------- cards --- */
 .grid {
@@ -664,21 +980,101 @@ html[lang="ar"] .hero-title { max-width: 20ch; }
   grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
   gap: 12px;
 }
+/*
+ * A card is no border and one soft shadow, and it lifts 4px on hover. The
+ * shadow's tint is the shop's own (see `--shadow-rgb`), which is why it reads
+ * as depth on cream rather than as grey dirt.
+ *
+ * `.card` is a CONTAINER, not a link. The whole of its content is wrapped in
+ * one anchor — so a thumb anywhere on the card still opens the product — and
+ * the favourite button is that anchor's SIBLING, laid over its corner. A
+ * `<button>` inside an `<a>` is invalid HTML and browsers disagree about what
+ * to do with the click; a sibling has no such argument to lose.
+ */
 .card {
+  position: relative;
   display: flex;
   flex-direction: column;
   background: var(--surface);
-  border: 1px solid var(--line);
   border-radius: var(--radius);
   overflow: hidden;
-  box-shadow: var(--shadow-sm);
-  transition: box-shadow .18s, transform .18s, border-color .18s;
+  box-shadow: var(--shadow);
+  transition: box-shadow .18s, transform .18s;
 }
-.card:hover { box-shadow: var(--shadow); transform: translateY(-2px); border-color: rgb(var(--accent-rgb) / .35); }
-/* The photo holds its own shape and never shrinks to make room for a long name. */
-.card-photo { position: relative; flex: none; aspect-ratio: var(--photo-ratio); }
+.card:hover { box-shadow: var(--shadow-lift); transform: translateY(-4px); }
+.card-link { display: flex; flex-direction: column; flex: 1 1 auto; min-block-size: 0; }
+/* The photo holds its own shape and never shrinks to make room for a long
+   name. Its ground is the PAPER, not the card's white — that one step of
+   separation between the frame and the body is most of what makes this
+   design read. */
+.card-photo {
+  position: relative;
+  flex: none;
+  aspect-ratio: var(--photo-ratio);
+  background: var(--bg);
+}
 .card.is-out .photo { opacity: .55; }
-.card-badge { position: absolute; inset-block-end: 8px; inset-inline-start: 8px; z-index: 1; }
+/* Availability and any "new" marker on the inline END; the heart on the
+   inline START. Both mirror themselves in English without a second rule. */
+.card-badge { position: absolute; inset-block-start: 10px; inset-inline-end: 10px; z-index: 1; }
+
+/*
+ * The favourite toggle. Sits over the anchor rather than inside it, stops the
+ * click before it can reach either the card or the browser's own navigation,
+ * and says what it is with `aria-pressed` rather than with a colour alone.
+ */
+.card-fav {
+  position: absolute;
+  inset-block-start: 8px;
+  inset-inline-start: 8px;
+  z-index: 2;
+  inline-size: 34px;
+  block-size: 34px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--ink-3);
+  cursor: pointer;
+  box-shadow: var(--shadow);
+  transition: color .15s, transform .15s, background .15s;
+}
+.card-fav:hover { color: var(--accent); transform: scale(1.08); }
+
+/*
+ * EVERY favourite toggle on the site, wherever it sits: the corner of a card
+ * and the labelled pill on a product page are the same control from the same
+ * function (`favoriteButton()` in js/ui/cards.js), and both carry `data-fav`.
+ *
+ * The class each one is given is its GEOMETRY — where it sits, how big it is,
+ * what shape it is. What a saved piece LOOKS like is decided here, once, off
+ * the attribute they share, so the two can never drift into two accents or two
+ * ideas of a filled heart.
+ */
+[data-fav][aria-pressed="true"] { color: var(--accent); }
+/* The outline is drawn by an attribute on the path (see `icon()` in
+   core/dom.js) and a stylesheet beats a presentation attribute, so filling
+   the heart is one declaration rather than a second SVG. */
+[data-fav][aria-pressed="true"] .icon path { fill: currentColor; }
+
+/*
+ * A card leaving the favourites page. Un-hearting there takes the card off the
+ * page — a filled grid with an empty heart in the corner of it is a page
+ * arguing with itself — and this is the difference between "removed" and a
+ * card vanishing out from under a thumb. Own transition rather than a fourth
+ * property on `.card` above, because nothing else on the site fades a card
+ * out. `prefers-reduced-motion` already kills it with everything else, and the
+ * page detaches the node on a timer rather than on `transitionend`, so the
+ * card still leaves when the transition never runs.
+ */
+.card.is-leaving {
+  transition: opacity .2s, transform .2s;
+  opacity: 0;
+  transform: scale(.94);
+  pointer-events: none;
+}
 
 /*
  * Named rows, not auto-placement: the brand line is OPTIONAL in the markup, and
@@ -699,6 +1095,7 @@ html[lang="ar"] .hero-title { max-width: 20ch; }
   gap: var(--card-body-gap);
   flex: 1 1 auto;
   min-block-size: var(--card-body-h);
+  text-align: center;
 }
 .card-brand {
   grid-area: brand;
@@ -719,7 +1116,7 @@ html[lang="ar"] .card-brand { letter-spacing: 0; text-transform: none; font-size
 .card-name {
   grid-area: name;
   font-size: var(--card-name-size);
-  font-weight: 500;
+  font-weight: 600;
   line-height: var(--card-name-leading);
   block-size: var(--card-name-h);
   display: -webkit-box;
@@ -731,7 +1128,7 @@ html[lang="ar"] .card-brand { letter-spacing: 0; text-transform: none; font-size
 .card-price {
   grid-area: price;
   align-self: end;
-  font-weight: 600;
+  font-weight: 700;
   color: var(--ink);
   font-size: 15px;
   line-height: var(--card-price-h);
@@ -747,7 +1144,7 @@ html[lang="ar"] .card-brand { letter-spacing: 0; text-transform: none; font-size
   position: relative;
   aspect-ratio: var(--photo-ratio);
   inline-size: 100%;
-  background: linear-gradient(150deg, #f6f3ee, #eae4da);
+  background: var(--bg);
   display: grid;
   place-items: center;
   overflow: hidden;
@@ -765,10 +1162,26 @@ html[lang="ar"] .card-brand { letter-spacing: 0; text-transform: none; font-size
 .photo-empty { aspect-ratio: var(--photo-ratio); }
 .photo-mark {
   font-family: var(--font-display);
+  font-weight: 700;
   font-size: 22px;
   color: rgb(var(--accent-rgb) / .45);
   letter-spacing: .05em;
 }
+
+/*
+ * In a GRID CARD the picture is fitted, not cropped: the design frames a
+ * product on paper with air around it, which is what tells the eye the frame
+ * is a backdrop and not the product's own background.
+ *
+ * The box is still ratio-locked, so this changes nothing about the grid's
+ * evenness — that is the frame's job, not the picture's. `padding` on the
+ * image works because `object-fit` fits to the CONTENT box; the element still
+ * fills its frame, so the absolute positioning above is untouched.
+ *
+ * The product page's gallery is deliberately left cropping: there the photo
+ * IS the subject and filling the frame is what a shopper wants.
+ */
+.card-photo .photo > img { object-fit: contain; padding: 14px; }
 
 /* ------------------------------------------------------------- badges ---- */
 .badge {
@@ -776,9 +1189,9 @@ html[lang="ar"] .card-brand { letter-spacing: 0; text-transform: none; font-size
   align-items: center;
   gap: 5px;
   font-size: 12px;
-  font-weight: 600;
-  padding: 3px 9px;
-  border-radius: 999px;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: var(--radius-pill);
   white-space: nowrap;
 }
 .badge::before {
@@ -790,33 +1203,63 @@ html[lang="ar"] .card-brand { letter-spacing: 0; text-transform: none; font-size
 }
 .badge-ok { background: var(--ok-soft); color: var(--ok); }
 .badge-low { background: var(--warn-soft); color: var(--warn); }
-.badge-out { background: #f1f2f4; color: #5b6472; }
+.badge-out { background: var(--line-2); color: var(--ink-3); }
 
 /* ------------------------------------------------------------ buttons ---- */
+/*
+ * Three buttons and one rule for all of them: a pill, weight 600, and a 1px
+ * lift on hover.
+ *
+ *   .btn-primary  the accent gradient — the only gradient fill on a control
+ *   .btn-outline  2px of the accent, filling in on hover (the hero's second)
+ *   .btn-ghost    a plain surface with a hairline, for "back" and "cancel"
+ */
 .btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  border: 1px solid transparent;
-  border-radius: 999px;
-  padding: 11px 20px;
+  border: 1.5px solid transparent;
+  border-radius: var(--radius-pill);
+  padding: 11px 22px;
   font-size: 15px;
   font-weight: 600;
   cursor: pointer;
   min-height: 46px;
-  transition: background .15s, color .15s, border-color .15s;
+  transition: background .15s, color .15s, border-color .15s, opacity .15s, transform .15s;
 }
-.btn-primary { background: var(--solid); color: var(--on-solid); }
-.btn-primary:hover:not(:disabled) { background: var(--solid-hover); color: var(--on-solid-hover); }
+.btn:hover:not(:disabled):not(.is-disabled) { transform: translateY(-1px); }
+.btn-primary { background: var(--accent-grad); color: var(--accent-ink); border-color: transparent; }
+.btn-primary:hover:not(:disabled) { opacity: .92; }
+.btn-outline { background: none; border: 2px solid var(--accent); color: var(--accent-strong); }
+.btn-outline:hover:not(:disabled) { background: var(--accent); color: var(--accent-ink); }
 .btn-ghost { background: var(--surface); border-color: var(--line); color: var(--ink); }
-.btn-ghost:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.btn-ghost:hover:not(:disabled) { border-color: var(--accent); color: var(--accent-strong); }
 .btn-block { width: 100%; }
 .btn-lg { min-height: 52px; font-size: 16px; }
-.btn:disabled, .btn.is-disabled, .is-disabled {
-  opacity: .45;
+/*
+ * The favourite control on a product page: a `.btn.btn-ghost`, because the
+ * sheet already draws a secondary pill and a second way to draw one is exactly
+ * what a design system exists to prevent. All this modifier owns is that it
+ * hugs its own words instead of stretching to the column it was dropped into —
+ * a full-width "save to favourites" under a full-width "add to cart" is two
+ * primaries arguing — and what a saved piece does to its outline. The accent
+ * and the filled heart come from the shared `[data-fav]` rules above.
+ */
+.btn-fav { justify-self: start; }
+.btn-fav[aria-pressed="true"] { border-color: var(--accent); color: var(--accent-strong); }
+.fav-label { white-space: nowrap; }
+/* A control that cannot be used is a FLAT muted fill, not a faded gradient:
+   a translucent accent still reads as "the button", only dirtier. */
+.is-disabled { opacity: .45; cursor: not-allowed; pointer-events: none; }
+.btn:disabled, .btn.is-disabled {
+  background: var(--line);
+  color: var(--ink-3);
+  border-color: transparent;
+  opacity: 1;
   cursor: not-allowed;
   pointer-events: none;
+  transform: none;
 }
 
 .link-danger {
@@ -885,8 +1328,8 @@ html[lang="ar"] .card-brand { letter-spacing: 0; text-transform: none; font-size
   aspect-ratio: var(--photo-ratio);
   border-radius: var(--radius);
   overflow: hidden;
-  border: 1px solid var(--line);
   background: var(--surface);
+  box-shadow: var(--shadow);
 }
 .gallery-main .photo { aspect-ratio: var(--photo-ratio); block-size: 100%; }
 .gallery-main.skeleton { aspect-ratio: var(--photo-ratio); }
@@ -933,7 +1376,7 @@ html[lang="ar"] .card-brand { letter-spacing: 0; text-transform: none; font-size
 html[lang="ar"] .product-brand { letter-spacing: 0; text-transform: none; font-size: 14px; }
 .product-name {
   font-family: var(--font-display);
-  font-weight: 400;
+  font-weight: 700;
   font-size: clamp(23px, 6vw, 31px);
 }
 /* The one price on the page a shopper is deciding on: in the shop's own
@@ -1019,14 +1462,16 @@ html[lang="ar"] .product-brand { letter-spacing: 0; text-transform: none; font-s
   font-weight: 600;
   color: var(--warn);
 }
-.stock-note[hidden] { display: none; }
 .btn-add { width: 100%; }
 
 /* -------------------------------------------------------------- panels --- */
+/* Every raised surface on the site is the same object as a card: white, 20px,
+   no border, one soft shadow in the shop's own tint. */
 .panel {
   background: var(--surface);
-  border: 1px solid var(--line);
+  border: 0;
   border-radius: var(--radius);
+  box-shadow: var(--shadow);
   padding: 18px;
   display: grid;
   gap: 12px;
@@ -1074,8 +1519,8 @@ a.contact-value:hover { color: var(--accent-strong); }
   grid-template-areas: "photo detail" "photo controls" "total total";
   gap: 4px 14px;
   background: var(--surface);
-  border: 1px solid var(--line);
   border-radius: var(--radius);
+  box-shadow: var(--shadow);
   padding: 12px;
 }
 .cart-photo { grid-area: photo; width: 84px; border-radius: var(--radius-sm); overflow: hidden; }
@@ -1171,14 +1616,14 @@ a.contact-value:hover { color: var(--accent-strong); }
   display: grid;
   gap: 4px;
   background: var(--danger-soft);
-  border: 1px solid #f3c9c5;
-  color: #8a1c14;
+  border: 1px solid var(--danger-line);
+  color: var(--danger-ink);
   border-radius: var(--radius-sm);
   padding: 12px 14px;
   font-size: 14.5px;
 }
 
-.panel-cod { background: rgb(var(--accent-rgb) / .06); border-color: rgb(var(--accent-rgb) / .35); }
+.panel-cod { background: rgb(var(--accent-rgb) / .06); }
 .cod-badge {
   display: inline-flex;
   align-items: center;
@@ -1208,7 +1653,7 @@ a.contact-value:hover { color: var(--accent-strong); }
 /* ------------------------------------------------------------- success --- */
 .success {
   background: var(--surface);
-  border: 1px solid var(--line);
+  border: 0;
   border-radius: var(--radius);
   padding: 30px 20px;
   display: grid;
@@ -1226,7 +1671,7 @@ a.contact-value:hover { color: var(--accent-strong); }
   display: grid;
   place-items: center;
 }
-.success-title { font-family: var(--font-display); font-weight: 400; font-size: clamp(22px, 6vw, 28px); }
+.success-title { font-family: var(--font-display); font-weight: 700; font-size: clamp(22px, 6vw, 28px); }
 .success-sub { color: var(--ink-2); max-width: 42ch; }
 .order-no-card {
   width: 100%;
@@ -1247,6 +1692,7 @@ a.contact-value:hover { color: var(--accent-strong); }
 html[lang="ar"] .order-no-label { letter-spacing: .04em; text-transform: none; font-size: 13px; }
 .order-no {
   font-family: var(--font-display);
+  font-weight: 700;
   font-size: clamp(28px, 9vw, 44px);
   color: var(--on-chrome-accent);
   letter-spacing: .04em;
@@ -1280,7 +1726,7 @@ html[lang="ar"] .order-no-label { letter-spacing: .04em; text-transform: none; f
   white-space: nowrap;
 }
 .status-pending { background: var(--warn-soft); color: var(--warn); }
-.status-accepted { background: #eaf1fe; color: #1f5fd0; }
+.status-accepted { background: var(--info-soft); color: var(--info); }
 .status-out-for-delivery { background: var(--accent-soft); color: var(--accent-strong); }
 .status-delivered { background: var(--ok-soft); color: var(--ok); }
 .status-not-received { background: var(--danger-soft); color: var(--danger); }
@@ -1371,8 +1817,8 @@ html[lang="ar"] .order-no-label { letter-spacing: .04em; text-transform: none; f
   text-align: center;
   padding: 46px 20px;
   background: var(--surface);
-  border: 1px dashed var(--line);
   border-radius: var(--radius);
+  box-shadow: var(--shadow);
 }
 .state-mark {
   width: 52px;
@@ -1385,18 +1831,22 @@ html[lang="ar"] .order-no-label { letter-spacing: .04em; text-transform: none; f
   font-size: 22px;
 }
 .state-mark-warn { background: var(--warn-soft); color: var(--warn); font-weight: 700; }
-.state-title { font-family: var(--font-display); font-weight: 400; font-size: 22px; }
+.state-title { font-family: var(--font-display); font-weight: 700; font-size: 22px; }
 .state-body { color: var(--ink-3); max-width: 44ch; }
 .state-closed { padding-block: 66px; }
 
 .skeleton {
-  background: linear-gradient(100deg, var(--line-2) 30%, #fbf9f5 45%, var(--line-2) 60%);
+  background: linear-gradient(100deg, var(--line-2) 30%, var(--surface) 45%, var(--line-2) 60%);
   background-size: 300% 100%;
-  animation: shimmer 1.4s linear infinite;
+  animation: sheen 1.4s linear infinite;
   border-radius: var(--radius-sm);
 }
-@keyframes shimmer { from { background-position: 150% 0; } to { background-position: -50% 0; } }
-.skeleton-card { border-color: var(--line-2); }
+/* Named apart from the promo strip's `shimmer`: one sweeps a band's fill
+   forwards, the other pulls a placeholder's highlight the other way. */
+@keyframes sheen { from { background-position: 150% 0; } to { background-position: -50% 0; } }
+/* A placeholder rests on the paper the same way a real card does — it is the
+   card's own box, waiting. */
+.skeleton-card { box-shadow: var(--shadow); }
 .skeleton-photo { aspect-ratio: var(--photo-ratio); border-radius: 0; }
 /*
  * The placeholder's body is three loose bars rather than a brand/name/price, so
@@ -1432,7 +1882,7 @@ html[lang="ar"] .order-no-label { letter-spacing: .04em; text-transform: none; f
   align-items: center;
   gap: 10px;
   font-size: 14.5px;
-  box-shadow: 0 12px 30px rgba(17, 24, 39, .25);
+  box-shadow: 0 12px 30px rgb(var(--shadow-rgb) / .30);
   opacity: 0;
   transform: translateY(14px);
   transition: opacity .22s, transform .22s;
@@ -1440,6 +1890,11 @@ html[lang="ar"] .order-no-label { letter-spacing: .04em; text-transform: none; f
 .toast.is-in { opacity: 1; transform: translateY(0); }
 .toast .icon { color: var(--on-chrome-accent); }
 .toast-link { margin-inline-start: auto; color: var(--on-chrome-accent); font-weight: 600; white-space: nowrap; }
+/* The same link, as the undo on the favourites page. Undo is an action and not
+   a destination, so it is a real `<button>` — this only takes the chrome off
+   one so it can look like the anchor beside it in the cart's toast. */
+button.toast-link { border: 0; background: none; padding: 0; font: inherit; cursor: pointer; }
+button.toast-link:hover { text-decoration: underline; }
 
 /* -------------------------------------------------------------- footer --- */
 .site-foot {
@@ -1456,7 +1911,7 @@ html[lang="ar"] .order-no-label { letter-spacing: .04em; text-transform: none; f
 .foot-mark .brand-mark { color: var(--on-chrome); font-size: 26px; }
 .foot-mark .brand-mark::first-letter { color: var(--on-chrome-accent); }
 .foot-mark .brand-logo { height: 40px; max-width: 170px; }
-.foot-name { font-family: var(--font-display); font-size: 18px; color: var(--on-chrome); }
+.foot-name { font-family: var(--font-display); font-weight: 700; font-size: 18px; color: var(--on-chrome); }
 .foot-about { color: var(--on-chrome-3); max-width: 40ch; font-size: 14px; }
 .wa-link {
   display: inline-flex;
@@ -1510,8 +1965,9 @@ html[lang="ar"] .foot-col h3 { letter-spacing: .04em; text-transform: none; font
    ========================================================================== */
 @media (min-width: 560px) {
   .wrap { padding-inline: 22px; }
-  .grid { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 18px; }
-  .tiles { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
+  .grid { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px; }
+  .tiles { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 14px; }
+  .trust-row { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
   .buy-row { grid-template-columns: auto 1fr; }
   .btn-add { width: auto; min-width: 220px; }
   .field-row { grid-template-columns: 1fr 1fr; }
@@ -1535,6 +1991,8 @@ html[lang="ar"] .foot-col h3 { letter-spacing: .04em; text-transform: none; font
 
 @media (min-width: 900px) {
   .head-main { padding-block: 12px; }
+  .section-band { padding-block: 34px; }
+  .hero-wrap { padding-block-start: 22px; }
   .head-inner {
     grid-template-areas: "brand search actions";
     grid-template-columns: auto minmax(0, 1fr) auto;
@@ -1543,6 +2001,14 @@ html[lang="ar"] .foot-col h3 { letter-spacing: .04em; text-transform: none; font
   .brand-logo { height: 38px; max-width: 190px; }
   .brand-name { font-size: 18px; }
   .btn-label { display: inline; }
+  /*
+   * With its label showing, the button is a word and not a glyph, and a count
+   * pinned to the corner of it lands on the last letter — "Favourites" wearing
+   * a 3 across the "s". So above this width the badge stops being a superscript
+   * and becomes the last item on the line, which is where a count belongs once
+   * there is a line to put it at the end of.
+   */
+  .count-badge { position: static; }
   .track-btn { display: inline-flex; }
   .contact-btn { display: inline-flex; }
   .head-actions { gap: 6px; }

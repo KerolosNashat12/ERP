@@ -19,7 +19,8 @@ export function skeletonGrid(count = 8) {
 }
 
 export function skeletonBlock(height = 200) {
-  return el('div.skeleton', { style: `height:${height}px;border-radius:14px` });
+  // The sheet's own corner radius, not a number this file remembered.
+  return el('div.skeleton', { style: `height:${height}px;border-radius:var(--radius)` });
 }
 
 /** The product page's own skeleton — a gallery beside a column of text. */
@@ -38,10 +39,15 @@ export function skeletonProduct() {
  * Empty is not an error, so it does not look like one: a quiet mark, a plain
  * sentence and — always — a way onward. A dead end with no link out is how a
  * shopper leaves.
+ *
+ * `glyph` is an optional path from `ICONS`, for a page whose emptiness has a
+ * shape of its own — an empty favourites list is a heart, not a star. It
+ * stays optional because most empty pages have no such shape and a wrong icon
+ * is worse than the neutral mark.
  */
-export function emptyState({ title, body, action } = {}) {
+export function emptyState({ title, body, action, glyph } = {}) {
   return el('div.state',
-    el('div.state-mark', el('span', '✦')),
+    el('div.state-mark', glyph ? icon(glyph, { size: 24 }) : el('span', '✦')),
     el('h2.state-title', title || t('nothingHere')),
     body && el('p.state-body', body),
     action);

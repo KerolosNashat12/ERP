@@ -66,6 +66,18 @@ export const api = {
   categories: () => request('/api/shop/categories'),
   brands: () => request('/api/shop/brands'),
   products: (query) => request('/api/shop/products', { query }),
+  /**
+   * The favourites page: exactly these products, in exactly this order.
+   *
+   * The empty list is answered here rather than on the wire. `request` drops
+   * empty query values, so `ids: ''` would leave the parameter off altogether
+   * and `/api/shop/products` would helpfully return the shop's entire first
+   * page — every product in the shop, presented to the customer as the things
+   * they personally saved. A shopper with no favourites gets an empty page.
+   */
+  productsByIds: (ids) => (ids.length
+    ? request('/api/shop/products', { query: { ids: ids.join(',') } })
+    : Promise.resolve({ rows: [], total: 0, page: 1, pageSize: 0, pages: 1 })),
   product: (id) => request(`/api/shop/products/${encodeURIComponent(id)}`),
   placeOrder: (body) => request('/api/shop/orders', { method: 'POST', body }),
   trackOrder: (orderNo, phone) => request(`/api/shop/orders/${encodeURIComponent(orderNo)}`, { query: { phone } }),

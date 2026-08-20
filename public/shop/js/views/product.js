@@ -11,9 +11,9 @@ import { money, number, priceRange } from '../core/format.js';
 import { href } from '../core/router.js';
 import { setPageMeta } from '../core/seo.js';
 import { shopName } from '../core/branding.js';
-import { deliveryFee, freeDeliveryOver, deliverySettings } from '../core/store.js';
+import { freeDeliveryOver, deliverySettings } from '../core/store.js';
 import * as cart from '../core/cart.js';
-import { availabilityBadge, productPhoto } from '../ui/cards.js';
+import { availabilityBadge, productPhoto, favoriteButton } from '../ui/cards.js';
 import { skeletonProduct, errorState, emptyState, toast } from '../ui/states.js';
 
 /** Breadcrumbs back to the shelf this came from, built from what the card carries. */
@@ -239,18 +239,38 @@ function percentDeliveryLine(delivery) {
   return t('deliveryPercent', pct);
 }
 
+/**
+ * What delivery costs, in one line, for every shape the setting comes in.
+ *
+ * The shapes are decided exactly as `deliveryPromise()` in views/home.js
+ * decides them for the trust row — same three facts, same settings, so the
+ * home page and this page cannot end up telling a customer two different
+ * things. Only the wording differs, and both wordings already exist in
+ * core/i18n.js: `trustDelivery*` is a promise under a heading, `delivery*` is
+ * a term in a list. Nothing new is written here.
+ */
+function deliveryLine(delivery) {
+  if (delivery.mode === 'percent' && delivery.percent > 0) return percentDeliveryLine(delivery);
+  // A percentage of zero with a floor under it is a flat fee wearing the wrong
+  // setting, and it is charged as one (see `deliveryFor` in core/store.js), so
+  // it is said as one.
+  const flat = delivery.mode === 'percent' ? (delivery.min || 0) : delivery.fee;
+  // A shop that charges nothing says so rather than saying nothing: "Delivery 0
+  // anywhere in Egypt" is a price tag on something free, and a missing line is
+  // a term the customer never learns. The home page's own free-delivery
+  // sentence, because it is the one that reads correctly with no figure in it.
+  return flat > 0 ? t('deliveryFlat', money(flat)) : t('trustDeliveryFlat', t('free'));
+}
+
 /** The small print that answers "and how much is delivery" without leaving the page. */
 function deliveryNote() {
   const threshold = freeDeliveryOver();
   const delivery = deliverySettings();
-  const feeLine = delivery.mode === 'percent'
-    ? (delivery.percent > 0 && el('li', percentDeliveryLine(delivery)))
-    : (deliveryFee() > 0 && el('li', t('deliveryFlat', money(deliveryFee()))));
   return el('div.panel.delivery-note',
     el('h2.panel-title', icon(ICONS.truck, { size: 18 }), t('deliveryTitle')),
     el('ul.note-list',
       el('li', t('codShort')),
-      feeLine,
+      el('li', deliveryLine(delivery)),
       threshold && el('li', t('deliveryFreeOver', money(threshold)))));
 }
 
@@ -306,6 +326,20 @@ export default async function productView(root, route) {
 
   const addButton = el('button.btn.btn-primary.btn-add', { type: 'button' },
     icon(ICONS.bag, { size: 18 }), el('span', t('addToCart')));
+
+  /*
+   * The same heart as the one on every card in the grid — literally the same
+   * function, so the two can never disagree about whether this piece is saved.
+   * Here it carries its words: a corner of a thumbnail has no room for them and
+   * does not need them, but this column has both, and "احفظ في المفضلة" beside
+   * "أضف إلى السلة" is one less icon for a shopper to interpret at the moment
+   * they are deciding. It is a `.btn.btn-ghost` for the same reason — the
+   * sheet already draws a secondary pill, and a second way to draw one is what
+   * a design system is for avoiding.
+   */
+  const favButton = favoriteButton(product.id, {
+    className: 'btn btn-ghost btn-fav', label: true, size: 19,
+  });
 
   function syncButton() {
     const variant = selected();
@@ -369,6 +403,12 @@ export default async function productView(root, route) {
             el('span.field-label', t('quantity')),
             stepper.node),
           addButton),
+        // Its own line under the buy row rather than a third control inside it:
+        // the row is quantity-then-buy, and a wide "Save to favourites" wedged
+        // beside a 220px "Add to cart" is what pushes that row over the width of
+        // this column on a desktop. Underneath it hugs its own words at every
+        // width and never competes with the primary.
+        favButton,
         description && el('section.panel',
           el('h2.panel-title', t('aboutThisPiece')),
           el('p.prose', description)),

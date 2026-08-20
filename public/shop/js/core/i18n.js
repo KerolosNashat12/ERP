@@ -25,6 +25,7 @@ const dictionary = {
     searchPlaceholder: 'Search products…',
     searchClose: 'Close search',
     cart: 'Cart',
+    favorites: 'Favourites',
     trackOrder: 'Track order',
     menu: 'Menu',
     language: 'العربية',
@@ -49,6 +50,23 @@ const dictionary = {
     bestSellersNote: 'What our customers are buying most',
     viewAll: 'View all',
     itemsCount: (n) => `${n} ${n === 1 ? 'piece' : 'pieces'}`,
+
+    // --- home: the trust row.
+    // Three promises the shop is actually making, so every number in them comes
+    // from the shop's own settings and none of them is written down here. The
+    // delivery note has one wording per mode because a flat fee and a
+    // percentage are different promises — the same split, and the same reason,
+    // as the product page's `deliveryFlat` / `deliveryPercent*` above.
+    trustDeliveryTitle: 'Delivery across Egypt',
+    trustDeliveryFlat: (fee) => `${fee} to every governorate.`,
+    trustDeliveryPercent: (percent) => `${percent}% of your order, to every governorate.`,
+    trustDeliveryPercentMin: (percent, min) => `${percent}% of your order, ${min} minimum.`,
+    trustDeliveryPercentMax: (percent, max) => `${percent}% of your order, ${max} at most.`,
+    trustDeliveryPercentMinMax: (percent, min, max) => `${percent}% of your order, ${min} to ${max}.`,
+    trustCodTitle: 'Cash on delivery',
+    trustCodNote: 'You pay the courier at your door. No card, no transfer.',
+    trustFreeTitle: 'Free delivery',
+    trustFreeNote: (amount) => `On any order over ${amount}, delivery is on us.`,
 
     // --- listing
     sortBy: 'Sort by',
@@ -111,6 +129,27 @@ const dictionary = {
     goToCheckout: 'Checkout',
     eachPrice: 'each',
     cartAdjusted: 'We have fewer of something than when you added it, so we have adjusted your cart to what is left.',
+
+    // --- favourites
+    // The list itself is only product ids in this browser's storage — nothing
+    // is saved to an account, because there are no accounts. The wording says
+    // "saved", never "your account".
+    yourFavorites: 'Your favourites',
+    addToFavorites: 'Save to favourites',
+    removeFromFavorites: 'Remove from favourites',
+    favoritesEmptyTitle: 'Nothing saved yet',
+    favoritesEmptyBody: 'Tap the heart on anything you like and it will be waiting for you here.',
+    footerFavorites: 'Favourites',
+    // Un-hearting on the favourites page takes the card off the page, so it is
+    // said out loud and it is undoable — a heart is one tap, and one tap is
+    // the easiest thing in the world to do by accident on a phone.
+    favoriteRemoved: 'Removed from your favourites',
+    undo: 'Undo',
+    // What the shop has taken down since it was hearted. Said plainly, because
+    // a list that quietly shrinks between two visits looks like a bug in us.
+    favoritesGone: (n) => (n === 1
+      ? 'One of your saved pieces is no longer available, so we have taken it off the list.'
+      : `${n} of your saved pieces are no longer available, so we have taken them off the list.`),
 
     // --- checkout
     checkout: 'Checkout',
@@ -220,6 +259,7 @@ const dictionary = {
     searchPlaceholder: 'ابحث عن المنتجات…',
     searchClose: 'إغلاق البحث',
     cart: 'السلة',
+    favorites: 'المفضلة',
     trackOrder: 'تتبّع طلبك',
     menu: 'القائمة',
     language: 'English',
@@ -241,6 +281,21 @@ const dictionary = {
     bestSellersNote: 'اللي عملاؤنا بيشتروه أكتر',
     viewAll: 'اعرض الكل',
     itemsCount: (n) => (n === 1 ? 'قطعة واحدة' : n === 2 ? 'قطعتان' : n <= 10 ? `${n} قطع` : `${n} قطعة`),
+
+    // --- الصف اللي تحت المنتجات: وعود المحل التلاتة. كل رقم فيها جاي من
+    // إعدادات المحل نفسه — مفيش رقم واحد مكتوب هنا. ونوتة التوصيل ليها صيغة
+    // لكل وضع، لأن الرسم الثابت غير النسبة، بنفس منطق `deliveryFlat` /
+    // `deliveryPercent*` اللي فوق.
+    trustDeliveryTitle: 'توصيل لكل مصر',
+    trustDeliveryFlat: (fee) => `${fee} لكل المحافظات.`,
+    trustDeliveryPercent: (percent) => `${percent}٪ من قيمة طلبك، لكل المحافظات.`,
+    trustDeliveryPercentMin: (percent, min) => `${percent}٪ من قيمة طلبك، بحد أدنى ${min}.`,
+    trustDeliveryPercentMax: (percent, max) => `${percent}٪ من قيمة طلبك، بحد أقصى ${max}.`,
+    trustDeliveryPercentMinMax: (percent, min, max) => `${percent}٪ من قيمة طلبك، من ${min} لحد ${max}.`,
+    trustCodTitle: 'الدفع عند الاستلام',
+    trustCodNote: 'بتدفع للمندوب على الباب. من غير بطاقة ولا تحويل.',
+    trustFreeTitle: 'توصيل مجاني',
+    trustFreeNote: (amount) => `أي طلب فوق ${amount} والتوصيل علينا.`,
 
     // --- listing
     sortBy: 'الترتيب',
@@ -303,6 +358,25 @@ const dictionary = {
     goToCheckout: 'إتمام الطلب',
     eachPrice: 'للقطعة',
     cartAdjusted: 'الكمية المتاحة قلّت من ساعة ما ضفت، فظبطنا السلة على اللي متبقي.',
+
+    // --- المفضلة
+    // القايمة نفسها مجرد أرقام منتجات محفوظة في المتصفح ده — مفيش حساب ولا
+    // تسجيل دخول، فالكلام كله عن "حفظت" مش عن "حسابك".
+    yourFavorites: 'المفضلة بتاعتك',
+    addToFavorites: 'ضيفه للمفضلة',
+    removeFromFavorites: 'شيله من المفضلة',
+    favoritesEmptyTitle: 'لسه مفيش حاجة في المفضلة',
+    favoritesEmptyBody: 'دوس على القلب اللي على أي قطعة تعجبك وهتلاقيها مستنياك هنا.',
+    footerFavorites: 'المفضلة',
+    favoriteRemoved: 'اتشالت من المفضلة',
+    undo: 'رجّعها',
+    // العدد بيغيّر الجملة نفسها في العربي، مش بس الرقم اللي جواها.
+    favoritesGone: (n) => {
+      if (n === 1) return 'فيه قطعة من اللي حافظها ما بقتش متاحة، فشِلناها من القايمة.';
+      if (n === 2) return 'فيه قطعتين من اللي حافظهم ما بقوش متاحين، فشِلناهم من القايمة.';
+      if (n <= 10) return `فيه ${n} قطع من اللي حافظهم ما بقوش متاحين، فشِلناهم من القايمة.`;
+      return `فيه ${n} قطعة من اللي حافظهم ما بقوش متاحين، فشِلناهم من القايمة.`;
+    },
 
     // --- checkout
     checkout: 'إتمام الطلب',

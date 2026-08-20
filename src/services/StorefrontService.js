@@ -134,6 +134,20 @@ const DEFAULT_PAGE_SIZE = 24;
 const MAX_PAGE_SIZE = 48;
 const HOME_SIZE = 8;
 
+/**
+ * How many ids one `products({ ids })` call will look up.
+ *
+ * The favourites page hands us a list the customer built themselves, so the
+ * length is theirs to decide and this is the only thing stopping one request
+ * from turning into a thousand bound parameters and a table scan per id. 60 is
+ * a little over two full screens of cards — more than any real favourites list
+ * and still comfortably inside SQLite's default 999-parameter limit once the
+ * card query has bound them all. `core/favorites.js` caps the browser's own
+ * list at the same number, so a shopper never quietly loses a card they can
+ * see in their list: the client stops adding before the server starts cutting.
+ */
+const MAX_IDS = 60;
+
 /** How far back "featured" looks for best sellers. */
 const FEATURED_DAYS = 90;
 
@@ -210,6 +224,37 @@ const toInt = (value, fallback) => {
   const n = Number.parseInt(value, 10);
   return Number.isFinite(n) ? n : fallback;
 };
+
+/**
+ * The `ids` option, turned into a clean list of product ids.
+ *
+ * Returns null when the caller did not ask for a by-id lookup at all — that is
+ * the ONLY thing that distinguishes "browse the catalogue" from "these exact
+ * products". `ids=` with nothing after it, or `ids=nonsense`, is a caller who
+ * asked for a specific set and gets an empty answer; it must never fall through
+ * to the whole shop, because a favourites page whose list failed to parse would
+ * then show the entire catalogue as the customer's favourites.
+ *
+ * Junk is dropped rather than refused: this list came out of somebody's
+ * localStorage, which is user input and has been through however many versions
+ * of the site. `Number.parseInt` is deliberately not used — it reads '12abc' as
+ * 12, and a value that is not a plain run of digits is not an id we wrote.
+ * Duplicates are collapsed so a doubled favourite cannot spend the cap twice or
+ * come back as two identical cards.
+ */
+function parseIds(raw) {
+  if (raw === undefined || raw === null) return null;
+  const list = Array.isArray(raw) ? raw : String(raw).split(',');
+  const seen = new Set();
+  for (const entry of list) {
+    const value = String(entry).trim();
+    if (!/^\d+$/.test(value)) continue;
+    const id = Number(value);
+    if (id > 0) seen.add(id);
+    if (seen.size >= MAX_IDS) break;
+  }
+  return [...seen];
+}
 
 const money = (value) => (value === null || value === undefined ? null : Number(value));
 
@@ -369,7 +414,28 @@ export class StorefrontService {
       this.categories(),
       this.brands(),
     ]);
-    return { newest, featured, categories, brands };
+    return {
+      newest,
+      featured: featured.rows,
+      /**
+       * Whether the "best sellers" shelf actually contains a best seller.
+       *
+       * The owner asked for the shelf and the shelf is topped up with new
+       * arrivals so a quiet week does not leave a gap — which means a shop that
+       * has never sold anything gets a shelf made ENTIRELY of its newest
+       * products with the words "الأكثر مبيعًا" printed over them. That is a
+       * lie, on the shop's own front page, about the one thing a shopper reads
+       * a best-seller shelf for: what other people bought.
+       *
+       * `#featured` is the only code that can tell the difference, and it used
+       * to throw the knowledge away. It is reported here instead of being acted
+       * on, because whether a half-real shelf is worth showing is a design
+       * decision and this file's job is only to stop the page from guessing.
+       */
+      featuredFromSales: featured.fromSales,
+      categories,
+      brands,
+    };
   }
 
   /**
@@ -401,7 +467,19 @@ export class StorefrontService {
         if (!ids.includes(row.id)) ids.push(row.id);
       }
     }
-    return this.#cardsByIds(ids);
+
+    /**
+     * `{ rows, fromSales }` rather than the bare array: the cards are unchanged,
+     * and `fromSales` is the one bit `home()` cannot work out for itself once
+     * the best sellers and the filler have been merged into one list.
+     *
+     * Measured against the cards that actually came back, not against `best`,
+     * so a product that sold and was unpublished in between — dropped by the
+     * publish gate inside `#cardsByIds` — cannot vouch for a shelf it is not on.
+     */
+    const soldIds = new Set(best.map((row) => row.id));
+    const rows = await this.#cardsByIds(ids);
+    return { rows, fromSales: rows.some((row) => soldIds.has(row.id)) };
   }
 
   // ------------------------------------------------------- categories, brands
@@ -461,8 +539,29 @@ export class StorefrontService {
    * N round trips of latency on the shop's busiest public page. So the page's
    * ids go into a single `WHERE product_id IN (...)` and the rows are stitched
    * together here.
+   *
+   * `ids` is the favourites page's lookup and it OUTRANKS everything else. When
+   * it is present, `category`, `brand`, `q`, `sort`, `page` and `pageSize` are
+   * all ignored — the caller named the exact products it wants, so there is
+   * nothing left to filter, nothing left to sort (the customer's own order IS
+   * the sort) and nothing left to page through (`MAX_IDS` is the whole answer).
+   * Silently ignoring them beats honouring them: `?ids=…&category=3` returning
+   * two of a customer's twelve favourites, with no way to tell that from a shop
+   * that unpublished ten, is the kind of half-answer a page would render as
+   * fact. One meaning per request.
    */
-  async products({ category, brand, q, sort, page, pageSize } = {}) {
+  async products({ category, brand, q, sort, page, pageSize, ids } = {}) {
+    const wanted = parseIds(ids);
+    if (wanted) {
+      // The publish gate lives inside `#cardsByIds`, so a product the shop has
+      // taken down since the customer favourited it is simply absent from the
+      // answer — the page shows it as removed rather than the shop leaking it.
+      const rows = await this.#cardsByIds(wanted);
+      return {
+        rows, total: rows.length, page: 1, pageSize: rows.length, pages: 1,
+      };
+    }
+
     const where = [PUBLISHED_PRODUCT];
     const params = [];
 

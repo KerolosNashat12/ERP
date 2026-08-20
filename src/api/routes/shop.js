@@ -65,8 +65,29 @@ router.get('/brands', asyncHandler(async (_req, res) => {
   res.json({ rows: await storefront.brands() });
 }));
 
+/**
+ * The catalogue listing, and — with `?ids=` — the favourites lookup.
+ *
+ * `ids` is a comma-separated list of product ids (`?ids=12,7,40`) and it takes
+ * PRECEDENCE over every other parameter: `category`, `brand`, `q`, `sort`,
+ * `page` and `pageSize` are ignored when it is present. The caller has named
+ * the exact products it wants, in the exact order it wants them back, so there
+ * is nothing left for a filter or a sort to do.
+ *
+ * Precedence is decided by PRESENCE, not by content. `?ids=` with nothing after
+ * it, and `?ids=nonsense`, both mean "these products, of which there are none" and
+ * answer with an empty page — not with the whole catalogue. A favourites page
+ * whose stored list arrived unreadable must show the customer an empty shelf,
+ * never every product in the shop relabelled as theirs.
+ *
+ * The service keeps the caller's order, drops ids that no longer resolve to a
+ * published product, ignores anything that is not a plain number, and caps the
+ * list. Nothing here validates: an unparseable id is not a bad request from a
+ * customer, it is an old entry in somebody's localStorage.
+ */
 router.get('/products', asyncHandler(async (req, res) => {
   res.json(await storefront.products({
+    ids: req.query.ids,
     category: req.query.category,
     brand: req.query.brand,
     q: req.query.q,
