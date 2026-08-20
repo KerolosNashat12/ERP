@@ -72,6 +72,29 @@ function paintHeart(node) {
   // The label says what the tap will DO, which is the only thing a screen
   // reader user can act on; `aria-pressed` carries the state itself.
   const label = t(on ? 'removeFromFavorites' : 'addToFavorites');
+  /*
+   * The one hook the stylesheet cannot reach for itself.
+   *
+   * Filling a heart is the most satisfying tap on this site and shop.css
+   * animates it (see `fav-beat` / `fav-ring` in the motion section), but a CSS
+   * animation keyed off `[aria-pressed="true"]` alone would also fire for
+   * every already-saved piece the moment the favourites page painted — a grid
+   * of hearts all popping at once on load, which is noise, not delight.
+   *
+   * `was` is null on the very first paint of a button and a string on every
+   * repaint after it, so this is true only when a heart is filled by a person
+   * who was looking at it. The class is removed and re-added with a reflow
+   * between, because re-adding a class the node already carries does not
+   * restart an animation.
+   */
+  const was = node.getAttribute('aria-pressed');
+  if (was === 'false' && on) {
+    node.classList.remove('is-saved');
+    void node.offsetWidth;
+    node.classList.add('is-saved');
+  } else if (!on) {
+    node.classList.remove('is-saved');
+  }
   node.setAttribute('aria-pressed', on ? 'true' : 'false');
   node.setAttribute('aria-label', label);
   // On a detail page the same words are also on screen (see `favoriteButton`

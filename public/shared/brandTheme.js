@@ -9,13 +9,16 @@
  * buttons, links, prices, active chips, the footer, the hero fill — derives
  * from it here, once, as CSS custom properties set on `<html>`.
  *
- * That includes the neutrals. The page, the ink, the hairlines and the tint a
- * card's shadow is coloured with are not a fixed cream this platform picked:
- * they are the accent's own hue, desaturated and moved along lightness, so
- * every shop gets the same warm design in its own colour — a coral shop on
- * coral-cream paper with brown-black ink, a violet shop on violet-cream with
- * plum ink. See the `neutrals` section below for the two constants that decide
- * it and what a shop that picks a greyscale accent gets.
+ * It does NOT include the neutrals, and that is a decision rather than an
+ * omission. They were the accent's hue desaturated for one release — coral
+ * gave cream paper, gold gives a pale yellow-green — and the owner, looking at
+ * the live site, asked for the opposite: "the background colour white solid
+ * and gray". So the page, the ink, the hairlines and the tint a shadow is
+ * coloured with are now one grey ramp that every shop shares, and the accent
+ * does accent work only. A shop is still recognisably its own — its colour is
+ * on every button, price, chip, link, hero and heart — it just is not on the
+ * paper. See the `neutrals` section below for the ramp and for what came out
+ * of this file when the hue did.
  *
  * It lives in `public/shared/` rather than in the storefront or the ERP
  * because BOTH need it and they must not disagree: the storefront paints the
@@ -129,186 +132,158 @@ function shiftUntilReadable(hex, against, minContrast, direction) {
 // -------------------------------------------------------------- neutrals
 
 /**
- * The paper, the ink and the hairlines — the shop's own colour, wrung out.
+ * The paper, the ink, the hairlines and the shadow — one grey ramp, no hue.
  *
- * The storefront used to write these down: a warm `#faf8f4` page, a near-black
- * `#111827` ink, a `#e7e2d9` rule. They were chosen to sit under gold, so a
- * shop that picked coral got coral buttons on somebody else's paper — the one
- * thing the design brief forbids ("nothing coral may be written down" cuts both
- * ways: nothing GOLD may be written down either). So every neutral below is the
- * accent's own hue, desaturated and moved along lightness, and shop.css keeps
- * its literals only as the pre-config default.
+ * These used to be the accent's own hue, turned 15° round the wheel and wrung
+ * out: a coral shop got cream paper under brown ink, a violet shop got violet
+ * cream under plum ink. The owner saw it live and asked for the opposite —
+ * "the background colour white solid and gray". His accent is gold, and gold
+ * turned and desaturated is a pale yellow-green page, which is exactly the
+ * thing he was looking at. So the neutrals stop carrying hue entirely. The
+ * accent lost nothing: it still decides every `--accent*` key, and those are
+ * still the buttons, the prices, the active chips, the links, the hero fill
+ * and the heart. What changed is that the paper underneath them is the same
+ * paper in every shop.
  *
- * TWO constants decide the whole family, and both were calibrated against the
- * source design (accent `#F07878`, a coral) until the derivation reproduced the
- * real values read off it:
+ * WHAT WAS DELETED, so nobody goes hunting for it: `NEUTRAL_TURN` (the 15°
+ * turn), `MIN_TINT` (the saturation floor that kept a greyscale accent off
+ * dead browser grey) and `settleContrast()` (the 1%-step walk that darkened an
+ * ink until it cleared its floor and pulled a hairline back under its ceiling).
+ * The first two took the accent's hue and saturation as their only input, and
+ * that input no longer exists. `settleContrast` is the subtler call: it would
+ * still run and it would still be correct — but every argument it takes is now
+ * a constant, so it is a loop run on every page load to arrive at a number
+ * that could have been written down. A search that cannot change its answer is
+ * not a safety net; it is a place a reader has to go and verify before they
+ * can trust a colour. The floors did NOT go with it. They moved to
+ * tests/brand-theme.test.js, which now measures the ramp itself rather than
+ * measuring whether a shift rescued it, and fails if a level below is edited
+ * into something illegible.
  *
- *   NEUTRAL_TURN — the neutrals do not sit on the accent's hue exactly, they
- *     sit 15° round the wheel from it, in the same direction and by about the
- *     same distance as the hero gradient's warm end (`#F4A87C` is +22° from
- *     `#F07878`). That is what makes the design's paper read as CREAM beside a
- *     coral rather than as pink, and its ink as BROWN rather than as maroon:
- *     measured, the source site's paper is +22°, its ink +24°, its hairline
- *     +15° and its shadow +12° off the accent. One turn of 15° lands every one
- *     of them within 2% per channel; a turn of 0° misses the ink by 5%.
+ * WHAT SURVIVED: the ramp. One value per role, still one table, still the only
+ * place a neutral is decided — it is just fed no hue now. The levels are
+ * written as 0–255 greys rather than as HSL lightnesses because with
+ * saturation at zero those are the same number, and the grey is the one a
+ * reader can compare across roles and against a hex in the sheet.
  *
- *   MIN_TINT — the least saturation a neutral may be derived from. A shop that
- *     types `#000000`, `#ffffff` or `#808080` has expressed no hue at all
- *     (HSL gives an achromatic colour hue 0, arbitrarily), and deriving from
- *     its saturation of zero would hand it a page of dead browser grey that
- *     reads as a stylesheet that failed to load. Hue 0 turned by NEUTRAL_TURN
- *     is 15° — the warm cream the source design itself wears — so a greyscale
- *     shop gets exactly that: this palette with nothing tinting it, which is
- *     the most honest answer to "no colour" there is. The floor is applied as a
- *     floor rather than a special case so a nearly-grey accent (a dusty rose, a
- *     slate) crosses it smoothly instead of jumping.
- */
-const NEUTRAL_TURN = 15 / 360;
-const MIN_TINT = 0.30;
-
-/**
- * `[lightness, share of the accent's saturation]` per role.
+ * The ramp, and what each level is for:
  *
- * The lightnesses are the source design's own, read off the live site: paper
- * .958 (`#FDF3ED`), hairline .878 (`#F0D8D0`), ink .180 (`#3D2B1F`), shadow
- * tint .588 (`rgba(200,120,100,…)`). The shares are what those same colours
- * measure against the accent's saturation — the paper keeps most of it (at 96%
- * lightness there is almost no chroma left to keep), the ink about four tenths.
+ *   surface 255  solid white. Cards, and the header. Not a near-white: the
+ *                owner's note is "white SOLID and gray" and 253 is a smudge.
+ *   bg      240  the page the white cards sit on. 1.14:1 against the surface —
+ *                the step is the whole design. Below about 1.10 the card edge
+ *                disappears on a phone in daylight and the page reads as one
+ *                flat sheet; much past 1.3 the page stops being paper and
+ *                starts being a filled panel with cards punched out of it.
+ *   bg-2    228  one step deeper again (1.12:1 under the page, 1.27:1 under a
+ *                white card): the ground for a photo frame, an inset well and
+ *                a skeleton — things that have to RECEDE from a white card,
+ *                which nothing at 240 can do while the card is 255.
+ *   line    224  a hairline: 1.16:1 on the page, 1.32:1 on a card. A rule that
+ *   line-2  235  contrasts is a rule demanding attention it has not earned, so
+ *                both are held under a ceiling rather than over a floor.
+ *   ink3    132  muted ink — a card's brand line, a section note. Never a
+ *                sentence somebody has to read, so it is allowed to sit at
+ *                2.94:1 on the deepest ground it lands on.
+ *   ink2     71  body copy beside a heading: 7.31:1 on that same ground.
+ *   ink      42  headings and body: 11.29:1. Near-black, not black — 42 keeps
+ *                the page from ringing the way #000 does on a bright screen.
+ *   shadow   20  not a colour, three channels: shop.css spends them as
+ *                `rgb(var(--shadow-rgb) / .06)`. Near-black, because a shadow
+ *                is an absence of light and a mid-grey one at 6% is nothing.
  *
- * `ink3` is the one place this table disagrees with the design. The site's
- * muted ink `#C4A090` measures 2.19:1 on its own paper, under the 2.8 floor
- * below, and a floor that every shop trips is not a floor. So the constant sits
- * a step darker than the design's — the darkest tone that passes without being
- * shifted — and a coral shop gets `#B68677`: the same tan, legible.
+ * Every ink is measured against `bg-2` — the DEEPEST neutral ground any of
+ * them is ever set on (the page is lighter, a card is lighter still, and in
+ * light mode the band IS `bg-2`). Clear the floor there and it is cleared
+ * everywhere, by construction rather than by search.
  */
 const NEUTRAL = {
-  bg:        [0.958, 0.82],   // the page
-  line:      [0.878, 0.65],   // hairline
-  line2:     [0.925, 0.55],   // the fainter hairline
-  ink3:      [0.600, 0.38],   // muted ink: a card's brand line, a section note
-  ink2:      [0.350, 0.42],   // mid ink: body copy beside a heading
-  ink:       [0.180, 0.41],   // headings and body
-  shadow:    [0.588, 0.60],   // the tint a card's shadow is coloured with
-  band:      [0.930, 0.55],   // a PALE band (light mode's footer, toast, strip)
-  bandLine:  [0.865, 0.60],
-  bandLine2: [0.905, 0.55],
-  onBand2:   [0.829, 0.30],   // on a DARK band: headings' body copy
-  onBand3:   [0.655, 0.19],   // …links and labels
-  onBand4:   [0.555, 0.16],   // …the base line, the quietest thing on it
-  bandRule:  [0.276, 0.35],   // the dark band's own hairlines
-  bandRule2: [0.206, 0.35],
+  bg: 240,
+  bg2: 228,
+  // The well a photograph sits in, INSIDE a white card. Deliberately far
+  // lighter than `bg2`: the design this was built from separates its photo
+  // area from its card body by about 1.06:1, and at `bg2` (1.27:1 against
+  // white) the top two thirds of every card read as a grey block with a white
+  // strip under it rather than as one white card holding a picture. It is a
+  // whisper on white and still lighter than the page, so a card on the grey
+  // page keeps its edge either way.
+  well: 247,
+  line: 224,
+  line2: 235,
+  ink3: 132,
+  ink2: 71,
+  ink: 42,
+  shadow: 20,
+  // On a DARK band: body copy (7:1 and over), links and labels (4.5:1), and
+  // the base line, the quietest thing on it (2.8:1).
+  onBand2: 211,
+  onBand3: 167,
+  onBand4: 142,
+  bandRule: 70,   // the dark band's own hairlines, under the same ceiling as
+  bandRule2: 53,  // the paper's
+  // …and on the PALE band, which is a lighter ground and so needs its own two.
+  bandLine: 210,
+  bandLine2: 218,
 };
 
-/**
- * Legibility is measured here, never assumed.
- *
- * 10:1 for ink and 7:1 for the mid ink are comfortably past WCAG AA for body
- * text and are what the design's own `#3D2B1F` on `#FDF3ED` already measures
- * (12.3:1) — a shop whose accent lands lighter than that gets its own hue
- * darkened until it reads, not a grey substituted for it. 2.8:1 for the muted
- * ink is the decorative-adjacent floor: it carries a brand line and a section
- * note, never a sentence somebody has to read. The hairlines are the opposite
- * problem — a rule that CONTRASTS is a rule that draws attention it has not
- * earned, so they are held UNDER their number rather than over it.
- */
-const INK_FLOOR = { ink: 10, ink2: 7, ink3: 2.8 };
-const HAIRLINE_CEILING = { line: 1.6, line2: 1.3 };
+/** A level from the ramp above, as a hex: the same ramp, with no hue in it. */
+const gray = (level) => hslToHex({ h: 0, s: 0, l: level / 255 });
 
 /**
- * The same hue, moved along lightness until it clears (`min`) or stays under
- * (`max`) a contrast against the ground it sits on.
+ * Every neutral. No argument but the mode — which is the point.
  *
- * The sibling of `shiftUntilReadable`, and different from it in two ways that
- * matter. It walks in 1% steps rather than 2% because neutrals live within a
- * couple of percent of each other and a coarse step turns a hairline into a
- * visible rule. And it works out its own direction from the ground: ink moves
- * away from the paper to become legible, a hairline moves towards it to become
- * quiet, and the same call does the right thing for a pale band and a dark one.
+ * Both modes share the paper and share the cards. That is the whole reason
+ * shop.css has a mode split rather than an invert filter, and it survives
+ * intact: "light" and "dark" do not swap the page for its opposite, they
+ * change what the BANDS are — the announcement strip, the footer, the toast,
+ * the order-number card. A dark shop bands the grey page with the ink itself
+ * and puts white on top. A light shop bands it with `bg-2`, one step deeper
+ * than the page, and puts the page's own inks back on top: the same grey a
+ * well or a photo frame uses, which is deliberate — "one step deeper than
+ * white" is one idea and it should not be two values. It has to be a step
+ * DOWN and not white, because `--chrome` fills the order-number card that
+ * sits inside a white `.success` card, and a white band on a white card is
+ * not a band.
  */
-function settleContrast(hex, ground, { min, max }) {
-  const hsl = rgbToHsl(hex);
-  const groundL = rgbToHsl(ground).l;
-  // Away from the ground raises contrast; towards it lowers contrast.
-  const away = groundL > hsl.l ? -0.01 : 0.01;
-  const step = min !== undefined ? away : -away;
-  let { l } = hsl;
-  let candidate = hex;
-  for (let i = 0; i < 60; i += 1) {
-    const ratio = contrast(candidate, ground);
-    if (min !== undefined ? ratio >= min : ratio <= max) return candidate;
-    l += step;
-    if (l <= 0.03 || l >= 0.995) break;
-    candidate = hslToHex({ ...hsl, l });
-  }
-  return candidate;
-}
-
-/**
- * Every neutral, from the same one hex the accent came from.
- *
- * Both modes share the paper. That is the whole point of the mode split in
- * shop.css and it survives here: "light" and "dark" do not invert the page,
- * they change what the BANDS are — the announcement strip, the footer, the
- * toast. A dark shop bands its cream page with the ink itself (which is
- * exactly what the design's deep-brown footer is, and what `--chrome` in
- * shop.css already resolved to); a light shop bands it with a pale wash of the
- * same hue and puts the page's own ink back on top.
- */
-function neutrals(accentRaw, dark) {
-  const { h, s } = rgbToHsl(accentRaw);
-  const hue = (h + NEUTRAL_TURN) % 1;
-  const tint = Math.max(s, MIN_TINT);
-  const shade = (role) => hslToHex({
-    h: hue, s: Math.min(1, tint * NEUTRAL[role][1]), l: NEUTRAL[role][0],
-  });
-
-  const bg = shade('bg');
-  const ink = settleContrast(shade('ink'), bg, { min: INK_FLOOR.ink });
-  const ink2 = settleContrast(shade('ink2'), bg, { min: INK_FLOOR.ink2 });
-  const ink3 = settleContrast(shade('ink3'), bg, { min: INK_FLOOR.ink3 });
-  const line = settleContrast(shade('line'), bg, { max: HAIRLINE_CEILING.line });
-  const line2 = settleContrast(shade('line2'), bg, { max: HAIRLINE_CEILING.line2 });
-
-  // The band. Dark: the ink itself, white on top. Light: a pale wash of the
-  // hue, with the page's inks re-measured against IT rather than against the
-  // paper — a band is a different ground and the floors are about grounds.
-  const chrome = dark ? ink : shade('band');
-  const band = dark
-    ? {
-      onChrome: '#ffffff',
-      onChrome2: settleContrast(shade('onBand2'), chrome, { min: 7 }),
-      onChrome3: settleContrast(shade('onBand3'), chrome, { min: 4.5 }),
-      onChrome4: settleContrast(shade('onBand4'), chrome, { min: 3 }),
-      chromeLine: settleContrast(shade('bandRule'), chrome, { max: HAIRLINE_CEILING.line }),
-      chromeLine2: settleContrast(shade('bandRule2'), chrome, { max: HAIRLINE_CEILING.line2 }),
-    }
-    : {
-      onChrome: settleContrast(shade('ink'), chrome, { min: INK_FLOOR.ink }),
-      onChrome2: settleContrast(shade('ink2'), chrome, { min: INK_FLOOR.ink2 }),
-      onChrome3: settleContrast(shade('ink2'), chrome, { min: INK_FLOOR.ink2 }),
-      onChrome4: settleContrast(shade('ink3'), chrome, { min: INK_FLOOR.ink3 }),
-      chromeLine: settleContrast(shade('bandLine'), chrome, { max: HAIRLINE_CEILING.line }),
-      chromeLine2: settleContrast(shade('bandLine2'), chrome, { max: HAIRLINE_CEILING.line2 }),
-    };
+function neutrals(dark) {
+  const ink = gray(NEUTRAL.ink);
+  const bg2 = gray(NEUTRAL.bg2);
+  const well = gray(NEUTRAL.well);
+  const chrome = dark ? ink : bg2;
 
   return {
-    bg,
-    // Cards are white paper in both modes: only the bands change, and a card
-    // is not a band. Written as a value rather than left to shop.css because
-    // everything else in this family is set on `<html>`, and an inline
-    // property beats a stylesheet — a half-set family is how a mode ends up
-    // with one stale colour in it.
+    bg: gray(NEUTRAL.bg),
+    bg2,
+    well,
+    // Written as a value rather than left to shop.css because everything else
+    // in this family is set on `<html>`, and an inline property beats a
+    // stylesheet — a half-set family is how a mode ends up with one stale
+    // colour in it.
     surface: '#ffffff',
     ink,
-    ink2,
-    ink3,
-    line,
-    line2,
-    // The shadow is not a colour, it is three channels: shop.css spends them
-    // as `rgb(var(--shadow-rgb) / .06)`, one tint at several alphas.
-    shadowRgb: toRgb(shade('shadow')).join(' '),
+    ink2: gray(NEUTRAL.ink2),
+    ink3: gray(NEUTRAL.ink3),
+    line: gray(NEUTRAL.line),
+    line2: gray(NEUTRAL.line2),
+    shadowRgb: toRgb(gray(NEUTRAL.shadow)).join(' '),
     chrome,
-    ...band,
+    ...(dark
+      ? {
+        onChrome: '#ffffff',
+        onChrome2: gray(NEUTRAL.onBand2),
+        onChrome3: gray(NEUTRAL.onBand3),
+        onChrome4: gray(NEUTRAL.onBand4),
+        chromeLine: gray(NEUTRAL.bandRule),
+        chromeLine2: gray(NEUTRAL.bandRule2),
+      }
+      : {
+        onChrome: ink,
+        onChrome2: gray(NEUTRAL.ink2),
+        onChrome3: gray(NEUTRAL.ink2),
+        onChrome4: gray(NEUTRAL.ink3),
+        chromeLine: gray(NEUTRAL.bandLine),
+        chromeLine2: gray(NEUTRAL.bandLine2),
+      }),
   };
 }
 
@@ -323,9 +298,12 @@ function neutrals(accentRaw, dark) {
  * a darker shade of ITS colour for the text and its own colour everywhere the
  * shade would not matter — never a palette some default decided for it.
  *
- * The neutrals ride along in the same object (see `neutrals` above). They are
- * additive: every accent key below keeps the name and the value it has always
- * had, because the ERP preview, the favicon and shop.css all read them.
+ * The neutrals ride along in the same object (see `neutrals` above), and they
+ * ride along independently: not one line below reads them and not one of them
+ * reads `accentRaw`, which is what "the shop's colour still decides the
+ * accents and nothing else" means as code. Every accent key below keeps the
+ * name and the value it has always had, because the ERP preview, the favicon
+ * and shop.css all read them.
  */
 export function palette(accentInput, dark = true) {
   const accentRaw = normalizeHex(accentInput) || DEFAULT_ACCENT;
@@ -346,7 +324,7 @@ export function palette(accentInput, dark = true) {
 
   return {
     accentRaw, accent, strong, bright, soft, solidInk, deep, rgb: toRgb(accent).join(' '),
-    ...neutrals(accentRaw, dark),
+    ...neutrals(dark),
   };
 }
 
@@ -356,16 +334,17 @@ export function palette(accentInput, dark = true) {
  * storefront palette is the values below plus a `data-theme` attribute.
  *
  * The names are shop.css's own. That is the mechanism, not a coincidence: the
- * sheet declares every one of them in `:root` as the default gold-on-cream a
+ * sheet declares every one of them in `:root` as the pre-config fallback a
  * shop wears before its config lands, and an inline custom property on `<html>`
  * beats a stylesheet, so setting them here replaces the default in place — no
- * second sheet, no `!important`, nothing to keep in sync but a name.
+ * second sheet, no `!important`, nothing to keep in sync but a name. The
+ * neutral half of that fallback should be these exact greys, so the first
+ * paint and the second are the same picture.
  *
  * Which is also why the band family below is mode-aware rather than always
  * dark. These properties OVERRIDE `html[data-theme="light"]`, so a light shop
- * has to be handed the light band's values or it would get white text on a pale
- * strip. Same two families the sheet has always had; the difference is that
- * they are now the shop's hue instead of a blue-grey somebody typed once.
+ * has to be handed the light band's values or it would get white text on a
+ * pale strip.
  */
 export function themeVariables(accentInput, dark = true) {
   const p = palette(accentInput, dark);
@@ -379,6 +358,11 @@ export function themeVariables(accentInput, dark = true) {
     '--accent-rgb': p.rgb,
 
     '--bg': p.bg,
+    // New with the "white solid and gray" note: a photo frame, an inset well
+    // and a skeleton all need a ground that recedes from a white card, and
+    // the page itself cannot be it once the cards are pure white.
+    '--bg-2': p.bg2,
+    '--photo-well': p.well,
     '--surface': p.surface,
     '--ink': p.ink,
     '--ink-2': p.ink2,
@@ -414,11 +398,13 @@ export function applyTheme(node, { accent, dark = true } = {}) {
  * What the phone paints its own address bar with — `<meta name="theme-color">`.
  *
  * It has to be the colour of the strip the page actually starts with, which
- * since the neutrals became the accent's own is this shop's paper, not a
- * near-black that belonged to the platform's first shop. Called with no accent
- * (the ERP, a caller from before this file derived neutrals) it still answers
- * the old pair, so nothing that has not been told about a shop's colour gets a
- * colour a shop chose.
+ * is the page itself — the grey the header sits on, not a near-black that
+ * belonged to the platform's first shop. That grey is now the same in every
+ * shop, so this answers the same value for every accent; it still takes one
+ * because the caller is a page painting a shop and should not have to know
+ * which half of the palette a phone's address bar lands in. Called with no
+ * accent at all (the ERP, a caller from before this file derived neutrals) it
+ * still answers the old pair.
  */
 export const chromeColor = (dark, accent) => (
   accent === undefined
