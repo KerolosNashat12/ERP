@@ -76,6 +76,31 @@ export function createApp() {
   });
 
   /**
+   * The marketing page — the one address here that belongs to neither a shop
+   * nor the owner's console.
+   *
+   * Registered before the platform block and before the single-shop mounts
+   * below, because both of those end in a catch-all that would otherwise
+   * answer `/kj` with a shop's index. It is deliberately outside every tenant
+   * prefix: it sells the platform, so it is nobody's tenant and must read the
+   * same whichever shop this deployment was started for.
+   *
+   * `/shared` is mounted with it. Vercel serves `public/` statically ahead of
+   * this app, so in production `/shared/brandTheme.js` resolves without help —
+   * but in platform mode there is no static mount at the root locally, and a
+   * page that works live and 404s on the shop PC is a page nobody can check.
+   */
+  app.use('/kj', express.static(path.join(config.paths.public, 'kj'), {
+    index: false, redirect: false, maxAge: '1h',
+  }));
+  app.use('/shared', express.static(path.join(config.paths.public, 'shared'), {
+    index: false, redirect: false, maxAge: '1h',
+  }));
+  app.get(['/kj', '/kj/*'], (_req, res) => {
+    res.sendFile(path.join(config.paths.public, 'kj', 'index.html'));
+  });
+
+  /**
    * The platform is entirely additive: with `config.platform.enabled` false,
    * not one of these routes exists and everything below is the single-shop
    * build, untouched — `server.js` behaves byte-for-byte as it did before

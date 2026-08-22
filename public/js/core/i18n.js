@@ -108,6 +108,10 @@ const dictionary = {
     openPurchaseOrders: 'Open purchase orders', receivables: 'Customer receivables',
     averageBasket: 'Average basket', salesTrend: 'Sales — last 30 days', topProducts: 'Top products',
     recentSales: 'Recent invoices', needsAttention: 'Needs attention', allClear: 'Everything looks healthy',
+    // The four things "Needs attention" can be about. The API sends the type
+    // as a code (`low_stock`), so these are the camelCase form of each one.
+    lowStock: 'Low stock', overdueReceivables: 'Overdue receivables',
+    promotionsExpiring: 'Promotions ending', lateDeliveries: 'Late deliveries',
     unitsSold: 'Units', quickActions: 'Quick actions', newSale: 'New sale',
     catalogueSize: 'Catalogue', activePromotions: 'Live promotions',
 
@@ -117,7 +121,8 @@ const dictionary = {
     applyCode: 'Apply', codeApplied: 'Code applied', manualDiscount: 'Manual discount',
     loyaltyPoints: 'Loyalty points', redeemPoints: 'Redeem points', pointsAvailable: 'points available',
     paymentMethod: 'Payment method', cash: 'Cash', card: 'Card', transfer: 'Bank transfer',
-    wallet: 'Mobile wallet', credit: 'On account', amountPaid: 'Amount received',
+    wallet: 'Mobile wallet', credit: 'On account', mixed: 'Split payment',
+    amountPaid: 'Amount received',
     change: 'Change due', charge: 'Charge', completeSale: 'Complete sale', clearCart: 'Clear basket',
     saleCompleted: 'Sale completed', printReceipt: 'Print receipt', newSaleAfter: 'Start a new sale',
     lineDiscount: 'Line discount', inStock: 'in stock', outOfStock: 'Out of stock',
@@ -145,6 +150,10 @@ const dictionary = {
     loadCountSheet: 'Load count sheet', countPosted: 'Stock count posted',
     stockTake: 'Stock take', damage: 'Damaged', loss: 'Lost', theft: 'Theft',
     correction: 'Correction', expiry: 'Expired', other: 'Other',
+    // The ledger's movement types, as stored in `stock_movements.movement_type`.
+    purchaseReceipt: 'Goods received', sale: 'Sale', saleReturn: 'Sales return',
+    purchaseReturn: 'Returned to supplier', adjustment: 'Adjustment',
+    openingBalance: 'Opening balance', writeOff: 'Write-off',
     draft: 'Draft', completed: 'Completed', cancelled: 'Cancelled', posted: 'Posted',
 
     // purchasing
@@ -220,6 +229,8 @@ const dictionary = {
     restockingFeePolicyHint: 'Suggested default; never applied when the fault is ours',
     noFeeShopFault: 'No fee — this one is on the shop',
     storeCredit: 'Store credit', creditToAccount: 'Credit to account',
+    // `refund_method = 'account'`, the code the returns filter renders.
+    account: 'Customer account',
     storeCreditHint: 'A single-use voucher code is issued and printed on the credit note',
     storeCreditIssued: 'Store credit issued',
     selectItemsToReturn: 'Set a quantity on at least one line',
@@ -609,6 +620,8 @@ const dictionary = {
     openPurchaseOrders: 'أوامر شراء مفتوحة', receivables: 'مديونيات العملاء',
     averageBasket: 'متوسط الفاتورة', salesTrend: 'المبيعات — آخر ٣٠ يومًا', topProducts: 'الأكثر مبيعًا',
     recentSales: 'أحدث الفواتير', needsAttention: 'يحتاج انتباهك', allClear: 'كل شيء على ما يرام',
+    lowStock: 'نقص في المخزون', overdueReceivables: 'مديونيات متأخرة',
+    promotionsExpiring: 'عروض قربت تخلص', lateDeliveries: 'توريدات متأخرة',
     unitsSold: 'القطع', quickActions: 'إجراءات سريعة', newSale: 'بيع جديد',
     catalogueSize: 'الكتالوج', activePromotions: 'عروض سارية',
 
@@ -617,7 +630,8 @@ const dictionary = {
     applyCode: 'تطبيق', codeApplied: 'تم تطبيق الكود', manualDiscount: 'خصم يدوي',
     loyaltyPoints: 'نقاط الولاء', redeemPoints: 'استبدال النقاط', pointsAvailable: 'نقطة متاحة',
     paymentMethod: 'طريقة الدفع', cash: 'نقدًا', card: 'بطاقة', transfer: 'تحويل بنكي',
-    wallet: 'محفظة إلكترونية', credit: 'آجل', amountPaid: 'المبلغ المستلم',
+    wallet: 'محفظة إلكترونية', credit: 'آجل', mixed: 'دفع مقسّم',
+    amountPaid: 'المبلغ المستلم',
     change: 'الباقي', charge: 'تحصيل', completeSale: 'إتمام البيع', clearCart: 'إفراغ السلة',
     saleCompleted: 'تم إتمام البيع', printReceipt: 'طباعة الإيصال', newSaleAfter: 'بدء بيع جديد',
     lineDiscount: 'خصم السطر', inStock: 'متاح', outOfStock: 'غير متوفر',
@@ -643,6 +657,9 @@ const dictionary = {
     loadCountSheet: 'تحميل كشف الجرد', countPosted: 'تم ترحيل الجرد',
     stockTake: 'جرد', damage: 'تالف', loss: 'فاقد', theft: 'سرقة',
     correction: 'تصحيح', expiry: 'منتهي الصلاحية', other: 'أخرى',
+    purchaseReceipt: 'استلام بضاعة', sale: 'بيع', saleReturn: 'مرتجع بيع',
+    purchaseReturn: 'مرتجع للمورّد', adjustment: 'تسوية',
+    openingBalance: 'رصيد افتتاحي', writeOff: 'إهلاك',
     draft: 'مسودة', completed: 'مكتمل', cancelled: 'ملغي', posted: 'مُرحَّل',
 
     newPurchaseOrder: 'أمر شراء جديد', poNumber: 'رقم الأمر', orderDate: 'تاريخ الأمر',
@@ -712,6 +729,7 @@ const dictionary = {
     restockingFeePolicyHint: 'القيمة الافتراضية؛ لا تُطبق إذا كان الخطأ من المتجر',
     noFeeShopFault: 'بدون رسوم — الخطأ من المتجر',
     storeCredit: 'رصيد متجر', creditToAccount: 'إضافة لحساب العميل',
+    account: 'حساب العميل',
     storeCreditHint: 'يتم إصدار كود قسيمة يُستخدم مرة واحدة ويُطبع على إشعار الدائن',
     storeCreditIssued: 'تم إصدار رصيد متجر',
     selectItemsToReturn: 'حدد كمية لصنف واحد على الأقل',
@@ -1021,6 +1039,27 @@ export function setLanguage(next) {
 export function t(key, fallback) {
   return dictionary[language]?.[key] ?? dictionary.en[key] ?? fallback ?? key;
 }
+
+/**
+ * The same lookup, for a code that arrives from the API in snake_case.
+ *
+ * Statuses, alert types and enum values are sent the way they are stored —
+ * `out_for_delivery`, `low_stock` — while the dictionary above is camelCase
+ * throughout. Calling `t()` with the raw code silently returns the code, and
+ * because `t()`'s last resort is the key itself the failure looks like a
+ * label rather than a miss: the web-orders tiles read OUT_FOR_DELIVERY and
+ * NOT_RECEIVED, in Arabic as well as in English, and the dashboard's alerts
+ * printed `low stock` under an otherwise perfectly translated title. Nobody
+ * noticed for months because a missing translation that prints the key is
+ * indistinguishable from a translation somebody wrote badly.
+ *
+ * So: one conversion, in the one place that owns lookups, and no call site
+ * that has to remember the two spellings.
+ */
+export const tCode = (code, fallback) => t(
+  String(code ?? '').replace(/_([a-z])/g, (_, c) => c.toUpperCase()),
+  fallback,
+);
 
 /** Choose a record's localised column: pick(row, 'name') -> name_ar || name_en */
 export function pick(row, base = 'name') {

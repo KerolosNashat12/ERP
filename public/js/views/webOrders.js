@@ -21,7 +21,7 @@ import {
   h, mount, dataTable, pager, spinner, toast, toastError, textInput, selectInput,
   field, modal, statusTag, tag, debounce, matchNote,
 } from '../core/ui.js';
-import { t, pick } from '../core/i18n.js';
+import { t, tCode, pick } from '../core/i18n.js';
 import { money, number, dateTime } from '../core/format.js';
 import { can, setBadge } from '../core/store.js';
 import { navigate } from '../core/router.js';
@@ -72,7 +72,7 @@ export async function webOrdersView(root, route) {
     // as well be right rather than waiting for the next shell refresh.
     setBadge('pendingWebOrders', data.counts.pending);
 
-    mount(kpiHost, ...STATUSES.map((status) => kpi(t(status), number(data.counts[status]))));
+    mount(kpiHost, ...STATUSES.map((status) => kpi(tCode(status), number(data.counts[status]))));
 
     mount(listHost, dataTable({
       columns: [
@@ -133,7 +133,7 @@ export async function webOrdersView(root, route) {
           input: selectInput({
             placeholder: t('all'),
             value: state.status,
-            options: STATUSES.map((status) => ({ value: status, label: t(status) })),
+            options: STATUSES.map((status) => ({ value: status, label: tCode(status) })),
             onchange: (event) => { state.status = event.target.value; state.page = 1; load(); },
           }),
         })),

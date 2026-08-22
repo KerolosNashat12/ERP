@@ -71,7 +71,7 @@ if exist "hosted-db-setup.txt" del /f /q "hosted-db-setup.txt" >> "%LOG%" 2>&1
 echo.
 echo   Committing...
 git add -A >> "%LOG%" 2>&1
-git -c user.email="kerolosnashatestfanous@gmail.com" -c user.name="KerolosNashat12" commit -m "White and grey, one scale for everything, and a page that answers the cursor: the neutrals stop borrowing the accent hue, radius, spacing and heading sizes collapse onto three ladders, and every hover, press and focus state comes from one set of motion tokens" >> "%LOG%" 2>&1
+git -c user.email="kerolosnashatestfanous@gmail.com" -c user.name="KerolosNashat12" commit -m "A landing page that sells the platform at /kj - the approved Arabic and English copy, KJ indigo derived from the same one hex the shops use, and sixteen real captures of the running product instead of mockups. Photographing it found three screens printing raw API codes as labels in both languages, so codes now go through one tCode() conversion and the Arabic sales chart stops clipping its own dates" >> "%LOG%" 2>&1
 if errorlevel 1 echo   Nothing new to commit - pushing whatever is outstanding.
 
 echo   Pushing (your connection to GitHub drops sometimes, so this retries)...

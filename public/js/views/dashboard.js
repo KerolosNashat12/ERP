@@ -1,7 +1,7 @@
 /** Home screen: KPIs, 30-day trend, alerts, top products, recent invoices. */
 import api from '../core/api.js';
 import { h, mount, dataTable, spinner, statusTag, tag } from '../core/ui.js';
-import { t, pick, getLanguage } from '../core/i18n.js';
+import { t, tCode, pick, getLanguage } from '../core/i18n.js';
 import { money, number, date, dateTime } from '../core/format.js';
 import { session, can } from '../core/store.js';
 import { navigate } from '../core/router.js';
@@ -62,7 +62,11 @@ export async function dashboardView(root) {
             },
             h('div', {},
               h('div', { class: 'strong small' }, getLanguage() === 'ar' ? alert.titleAr : alert.titleEn),
-              h('div', { class: 'muted small' }, alert.type.replace(/_/g, ' ')))))
+              // The alert's own kind, translated. It used to be
+              // `alert.type.replace(/_/g, ' ')`, which printed `low stock` in
+              // English underneath a title the API had already localised —
+              // the one line on the Arabic dashboard that was not in Arabic.
+              h('div', { class: 'muted small' }, tCode(alert.type)))))
             : h('div', { class: 'muted small' }, '✓ ' + t('allClear')))))
     ,
 
@@ -138,6 +142,14 @@ function trendChart(series) {
   svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
   svg.setAttribute('class', 'chart');
   svg.setAttribute('preserveAspectRatio', 'none');
+  // The chart is drawn left-to-right by `x(i)` in both languages, so its own
+  // text has to read that way too. Without this it inherits the page's `rtl`
+  // and two things break at once on the Arabic dashboard: `text-anchor="end"`
+  // starts meaning the LEFT edge, so the last date is laid out off the canvas
+  // and clipped to `20`; and the date itself is bidi-reordered, because a
+  // hyphenated numeric string in an RTL run is not the string you wrote.
+  // Dates and amounts are LTR content wherever they appear.
+  svg.setAttribute('direction', 'ltr');
   svg.innerHTML = `
     <defs>
       <linearGradient id="chartFill" x1="0" y1="0" x2="0" y2="1">

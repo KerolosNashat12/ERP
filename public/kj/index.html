@@ -1,0 +1,516 @@
+<!doctype html>
+<!--
+  KJ — the page that sells the platform.
+
+  ONE FILE, WRITTEN OUT IN ARABIC. Every word of the offer, all three prices
+  and the phone number are in this document as text, not fetched and not
+  rendered by a script: a shop owner opening this from a WhatsApp message on
+  Egyptian mobile data gets the whole page on the first paint, and gets it even
+  if `kj.js` never arrives. The script adds English, the derived palette, the
+  reveal and the WhatsApp composer on top of a page that already works.
+
+  `lang="ar" dir="rtl"` is set HERE, before anything runs, so a slow connection
+  never shows a flash of left-to-right layout. `kj.css` has no `left`, no
+  `right` and no `[dir=rtl]` block: flipping this one attribute mirrors the
+  entire page.
+-->
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <!-- The strip at the very top of the page is the sticky header, and it is white. -->
+  <meta name="theme-color" content="#ffffff">
+
+  <title>KJ — نظام إدارة محلات وموقع بيع أونلاين في مصر</title>
+  <meta name="description" content="امسك مخزنك ومبيعاتك وافتح موقع بيع أونلاين باسم محلك، من منصة واحدة بالعربي. باقات من ٢٬٠٠٠ جنيه شهريًا.">
+
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="KJ">
+  <meta property="og:locale" content="ar_EG">
+  <meta property="og:title" content="KJ — نظام إدارة محلات وموقع بيع أونلاين في مصر">
+  <meta property="og:description" content="امسك مخزنك ومبيعاتك وافتح موقع بيع أونلاين باسم محلك، من منصة واحدة بالعربي. باقات من ٢٬٠٠٠ جنيه شهريًا.">
+  <!-- The share card is a real screen from the product, like everything else
+       on this page. Root-relative: this repo ships to one host and the page is
+       always at /kj on it. -->
+  <meta property="og:image" content="/kj/shots/dashboard-ar.webp">
+  <meta property="og:image:width" content="1280">
+  <meta property="og:image:height" content="706">
+  <meta property="og:image:alt" content="لوحة تحكم KJ: مبيعات اليوم وإيرادات الشهر ورسم بياني لمبيعات آخر ٣٠ يومًا.">
+  <meta name="twitter:card" content="summary_large_image">
+
+  <link rel="stylesheet" href="/kj/kj.css">
+  <!--
+    KJ's monogram, drawn rather than fetched: this is the exact output of
+    `monogramFavicon('KJ', { accent: '#4f46e5', dark: true })` from
+    public/shared/brandTheme.js. It is written out here so the tab has its mark
+    before any module loads; `kj.js` calls that function and sets the same
+    value again, which is what keeps the two from ever disagreeing.
+  -->
+  <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2032%2032%22%3E%3Crect%20width%3D%2232%22%20height%3D%2232%22%20rx%3D%227%22%20fill%3D%22%23111827%22%2F%3E%3Ctext%20x%3D%2216%22%20y%3D%2221.76%22%20font-family%3D%22Georgia%2C%20'Noto%20Naskh%20Arabic'%2C%20serif%22%20font-size%3D%2216%22%20fill%3D%22%23827ced%22%20text-anchor%3D%22middle%22%3EKJ%3C%2Ftext%3E%3C%2Fsvg%3E">
+
+  <script type="module" src="/kj/kj.js"></script>
+</head>
+
+<body>
+  <a class="skip-link" href="#main" data-i18n="skipToContent">تخطَّ إلى المحتوى</a>
+
+  <!-- Every icon on the page, once. `aria-hidden` throughout: not one of them
+       carries meaning that is not already in the words beside it. -->
+  <svg class="sprite" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg">
+    <symbol id="i-till" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="3" y="4" width="18" height="12" rx="2"></rect>
+      <path d="M6.5 7.5v5M9 7.5v5M11.5 7.5v5M14.5 7.5v5M17.5 7.5v5"></path>
+      <path d="M3 19.5h18"></path>
+    </symbol>
+    <symbol id="i-boxes" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="3" y="3.5" width="8" height="7" rx="1.5"></rect>
+      <rect x="13" y="3.5" width="8" height="7" rx="1.5"></rect>
+      <rect x="8" y="13.5" width="8" height="7" rx="1.5"></rect>
+      <path d="M6 3.5v3M16 3.5v3M11 13.5v3"></path>
+    </symbol>
+    <symbol id="i-globe-bag" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M4.5 8h15l-1.2 11.2a1.5 1.5 0 0 1-1.5 1.3H7.2a1.5 1.5 0 0 1-1.5-1.3Z"></path>
+      <path d="M8.5 8V6.2a3.5 3.5 0 1 1 7 0V8"></path>
+      <circle cx="12" cy="14.5" r="3.5"></circle>
+      <path d="M8.5 14.5h7M12 11c1.6 1.9 1.6 5.1 0 7M12 11c-1.6 1.9-1.6 5.1 0 7"></path>
+    </symbol>
+    <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M4.5 12.5 9.5 17.5 19.5 6.5"></path>
+    </symbol>
+    <symbol id="i-phone" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M6.2 3.5h3l1.5 4-2 1.4a12 12 0 0 0 6.4 6.4l1.4-2 4 1.5v3a2 2 0 0 1-2.2 2A17.5 17.5 0 0 1 4.2 5.7a2 2 0 0 1 2-2.2Z"></path>
+    </symbol>
+    <symbol id="i-whatsapp" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M12.04 2A9.9 9.9 0 0 0 2.1 11.9a9.8 9.8 0 0 0 1.36 4.99L2 22l5.25-1.4a9.9 9.9 0 0 0 4.79 1.22h.01A9.9 9.9 0 0 0 22 11.92 9.9 9.9 0 0 0 12.04 2Zm0 18.02h-.01a8.2 8.2 0 0 1-4.19-1.15l-.3-.18-3.11.83.83-3.04-.2-.31a8.19 8.19 0 1 1 6.98 3.85Zm4.5-6.13c-.24-.13-1.45-.72-1.68-.8-.22-.08-.39-.12-.55.12-.16.25-.63.8-.77.96-.14.17-.28.19-.52.06a6.7 6.7 0 0 1-1.97-1.22 7.4 7.4 0 0 1-1.37-1.7c-.14-.25-.01-.38.11-.5.11-.11.25-.29.37-.44.12-.14.16-.25.24-.41.08-.17.04-.31-.02-.44-.06-.12-.55-1.33-.76-1.82-.2-.48-.4-.41-.55-.42h-.47c-.16 0-.42.06-.64.3-.22.25-.84.83-.84 2.01s.86 2.33.98 2.5c.12.16 1.7 2.6 4.13 3.64.58.25 1.03.4 1.38.51.58.19 1.11.16 1.53.1.47-.07 1.45-.6 1.65-1.17.2-.58.2-1.07.14-1.17-.06-.11-.22-.17-.46-.29Z"></path>
+    </symbol>
+    <symbol id="i-mail" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="3" y="5" width="18" height="14" rx="2"></rect>
+      <path d="m3.5 7 8.5 6 8.5-6"></path>
+    </symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="9"></circle>
+      <path d="M12 7v5.2l3.2 2"></path>
+    </symbol>
+  </svg>
+
+  <header class="site-head">
+    <div class="wrap head-inner">
+      <a class="brand" href="#top">
+        <span class="brand-mark" aria-hidden="true">KJ</span>
+        <span class="brand-word">KJ</span>
+      </a>
+
+      <nav class="head-nav" data-i18n-label="navLabel" aria-label="روابط الصفحة">
+        <a href="#packages" data-i18n="navPackages">الباقات</a>
+        <a href="#demo" data-i18n="navDemo">اطلب عرض توضيحي</a>
+        <a href="#contact" data-i18n="navContact">كلّمنا</a>
+      </nav>
+
+      <div class="head-actions">
+        <!--
+          Hidden until `kj.js` unhides it: with no script there is no second
+          language to switch to, and a dead control is worse than none. Its
+          label is the language it switches TO, which is what it announces.
+        -->
+        <button class="lang-btn" type="button" data-lang-toggle hidden
+                data-i18n-label="langSwitchLabel" aria-label="Switch to English">
+          <span class="lang-globe" aria-hidden="true">🌐</span>
+          <span data-i18n="langSwitch">English</span>
+        </button>
+        <a class="btn btn-primary head-cta" href="#demo" data-i18n="heroPrimary">اطلب عرض توضيحي</a>
+        <a class="btn btn-icon head-wa" href="https://wa.me/201552526142"
+           data-i18n-label="contactWa" aria-label="كلّمنا على واتساب">
+          <svg class="icon" width="20" height="20" aria-hidden="true"><use href="#i-whatsapp"></use></svg>
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <main id="main">
+
+    <!-- ============================================================ 1 · HERO -->
+    <section class="hero" id="top">
+      <div class="wrap hero-inner">
+        <div class="hero-copy">
+          <p class="eyebrow" data-i18n="heroEyebrow">نظام إدارة محلات وبيع أونلاين — مصري ١٠٠٪</p>
+          <h1 class="hero-title" data-i18n="heroTitle">إدارة محلك ومبيعاتك من مكان واحد</h1>
+          <p class="hero-sub" data-i18n="heroSub">مخزن، كاشير، فواتير، تقارير، وموقع بيع أونلاين — كله في منصة واحدة بتشتغل بالعربي، وسهلة لدرجة إن أي حد في المحل يقدر يستخدمها من أول يوم.</p>
+
+          <div class="hero-actions">
+            <a class="btn btn-primary btn-lg" href="#demo" data-i18n="heroPrimary">اطلب عرض توضيحي</a>
+            <a class="btn btn-ghost btn-lg" href="#packages" data-i18n="heroSecondary">شوف الباقات والأسعار</a>
+          </div>
+
+          <ul class="trust">
+            <li><span class="tick" aria-hidden="true">✔</span><span data-i18n="trust1">بيشتغل من غير نت في المحل</span></li>
+            <li><span class="tick" aria-hidden="true">✔</span><span data-i18n="trust2">عربي وإنجليزي بالكامل</span></li>
+            <li><span class="tick" aria-hidden="true">✔</span><span data-i18n="trust3">تركيب وتدريب من غير أي رسوم إضافية</span></li>
+          </ul>
+        </div>
+
+        <!-- The one image above the fold, and the only one that is not lazy. -->
+        <div class="hero-shot">
+          <figure class="frame">
+            <div class="frame-bar" aria-hidden="true"><span></span><span></span><span></span></div>
+            <img data-shot="pos" src="/kj/shots/pos-ar.webp" width="1280" height="821"
+                 fetchpriority="high" decoding="async" data-i18n-alt="altPos"
+                 alt="شاشة نقطة البيع في النظام: خانة الباركود فوق، وسلة فيها أربع قطع بأسعارها، والإجمالي ٥٬٤٤٩٫٢٠ جنيه، وزر إتمام البيع تحته.">
+          </figure>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================================================ 2 · BUSINESS OVERVIEW -->
+    <section class="section" id="overview" aria-labelledby="overview-title">
+      <div class="wrap">
+        <div class="section-head" data-reveal>
+          <h2 class="section-title" id="overview-title" data-i18n="overviewTitle">محلك شغّال… بس شغلك مش متجمّع في مكان واحد</h2>
+          <p class="section-lede" data-i18n="overviewIntro">أغلب أصحاب المحلات في مصر بيمسكوا المخزن في كشكول، المبيعات في تليفون، والطلبات أونلاين في رسايل واتساب. كل حاجة شغالة، بس محدش يعرف بالظبط باع كام، ولا فاضل كام، ولا إيه اللي بيجيب فلوس فعلًا. KJ بيجمع ده كله في منصة واحدة.</p>
+        </div>
+
+        <ul class="blocks">
+          <li class="block" data-reveal>
+            <span class="block-icon" aria-hidden="true">
+              <svg class="icon" width="28" height="28"><use href="#i-till"></use></svg>
+            </span>
+            <h3 class="block-title" data-i18n="block1Title">بِع واحسب في ثانية</h3>
+            <p class="block-body" data-i18n="block1Body">افتح شاشة الكاشير، امسح الباركود، والفاتورة تطلع. المخزون بيتخصم لوحده، والوردية بتتقفل في آخر اليوم بأرقام صح من غير حسبة على ورق.</p>
+          </li>
+          <li class="block" data-reveal>
+            <span class="block-icon" aria-hidden="true">
+              <svg class="icon" width="28" height="28"><use href="#i-boxes"></use></svg>
+            </span>
+            <h3 class="block-title" data-i18n="block2Title">اعرف مخزنك بالظبط</h3>
+            <p class="block-body" data-i18n="block2Body">كل صنف بمقاساته وألوانه وسعره وباركود خاص بيه. اطبع ملصقات باركود بنفسك، اعمل جرد، وشوف اللي قرب يخلص قبل ما العميل يسألك عليه.</p>
+          </li>
+          <li class="block" data-reveal>
+            <span class="block-icon" aria-hidden="true">
+              <svg class="icon" width="28" height="28"><use href="#i-globe-bag"></use></svg>
+            </span>
+            <h3 class="block-title" data-i18n="block3Title">وسّع وابيع أونلاين</h3>
+            <p class="block-body" data-i18n="block3Body">بضغطة واحدة يبقى عندك موقع بيع باسم محلك، بلوجو وألوانك، والدفع عند الاستلام. الطلب اللي بييجي من الموقع بيدخل على نفس النظام — نفس المخزون، نفس الفواتير، نفس التقارير.</p>
+          </li>
+        </ul>
+
+        <p class="section-close" data-reveal data-i18n="overviewClose">محل واحد أو خمسة، وأونلاين وأوفلاين — نفس الأرقام، ومكان واحد بتتفرج منه على كل حاجة.</p>
+      </div>
+    </section>
+
+    <!-- ======================================================= 3 · PACKAGES -->
+    <section class="section section-band" id="packages" aria-labelledby="packages-title">
+      <div class="wrap">
+        <div class="section-head" data-reveal>
+          <h2 class="section-title" id="packages-title" data-i18n="packagesTitle">باقات واضحة، من غير مفاجآت</h2>
+          <p class="section-lede" data-i18n="packagesSub">كل الباقات شاملة التركيب والتدريب والتحديثات. من غير عقد سنة، تقدر تغيّر باقتك أو توقف في أي وقت.</p>
+        </div>
+
+        <ul class="plans">
+          <li class="plan" data-reveal>
+            <h3 class="plan-name" data-i18n="p1Name">البداية</h3>
+            <p class="plan-price">
+              <span class="plan-amount" data-i18n="p1Price">٢٬٠٠٠ جنيه</span>
+              <span class="plan-period" data-i18n="p1Period">/ شهريًا</span>
+            </p>
+            <p class="plan-line" data-i18n="p1Line">للمحل الواحد اللي عايز يمسك مخزنه ومبيعاته صح</p>
+            <ul class="plan-features">
+              <li><svg class="icon tick-icon" width="16" height="16" aria-hidden="true"><use href="#i-check"></use></svg><span data-i18n="p1f1">شاشة كاشير كاملة مع دعم قارئ الباركود</span></li>
+              <li><svg class="icon tick-icon" width="16" height="16" aria-hidden="true"><use href="#i-check"></use></svg><span data-i18n="p1f2">إدارة المخزون: أصناف، مقاسات وألوان، وتنبيه لما الكمية تقرب تخلص</span></li>
+              <li><svg class="icon tick-icon" width="16" height="16" aria-hidden="true"><use href="#i-check"></use></svg><span data-i18n="p1f3">فواتير ومرتجعات وتقفيل وردية يومي</span></li>
+              <li><svg class="icon tick-icon" width="16" height="16" aria-hidden="true"><use href="#i-check"></use></svg><span data-i18n="p1f4">تقارير المبيعات الأساسية: إيه اللي بيتباع وإيه اللي واقف</span></li>
+              <li><svg class="icon tick-icon" width="16" height="16" aria-hidden="true"><use href="#i-check"></use></svg><span data-i18n="p1f5">مستخدمين اتنين (صاحب المحل + كاشير)</span></li>
+            </ul>
+            <a class="btn btn-ghost plan-cta" href="#demo" data-i18n="p1Cta">ابدأ بالبداية</a>
+          </li>
+
+          <li class="plan plan-featured" data-reveal>
+            <p class="plan-badge" data-i18n="p2Badge">الأكثر طلبًا</p>
+            <h3 class="plan-name" data-i18n="p2Name">التوسّع</h3>
+            <p class="plan-price">
+              <span class="plan-amount" data-i18n="p2Price">٣٬٥٠٠ جنيه</span>
+              <span class="plan-period" data-i18n="p2Period">/ شهريًا</span>
+            </p>
+            <p class="plan-line" data-i18n="p2Line">لما تبقى عايز تبيع أونلاين من غير ما تسيب المحل</p>
+            <ul class="plan-features">
+              <li class="feature-lead"><span data-i18n="p2f1">كل اللي في باقة البداية، وكمان:</span></li>
+              <li><svg class="icon tick-icon" width="16" height="16" aria-hidden="true"><use href="#i-check"></use></svg><span data-i18n="p2f2">موقع بيع أونلاين باسم محلك، بلوجو وألوانك، عربي وإنجليزي</span></li>
+              <li><svg class="icon tick-icon" width="16" height="16" aria-hidden="true"><use href="#i-check"></use></svg><span data-i18n="p2f3">الدفع عند الاستلام وشحن بتحدده إنت (مبلغ ثابت أو نسبة من الطلب)</span></li>
+              <li><svg class="icon tick-icon" width="16" height="16" aria-hidden="true"><use href="#i-check"></use></svg><span data-i18n="p2f4">طلبات الموقع بتدخل على نفس النظام وبتخصم من نفس المخزون</span></li>
+              <li><svg class="icon tick-icon" width="16" height="16" aria-hidden="true"><use href="#i-check"></use></svg><span data-i18n="p2f5">طباعة ملصقات باركود بنفسك</span></li>
+              <li><svg class="icon tick-icon" width="16" height="16" aria-hidden="true"><use href="#i-check"></use></svg><span data-i18n="p2f6">٥ مستخدمين بصلاحيات مختلفة</span></li>
+            </ul>
+            <a class="btn btn-primary plan-cta" href="#demo" data-i18n="p2Cta">ابدأ التوسّع</a>
+          </li>
+
+          <li class="plan" data-reveal>
+            <h3 class="plan-name" data-i18n="p3Name">الاحترافية</h3>
+            <p class="plan-price">
+              <span class="plan-amount" data-i18n="p3Price">٦٬٠٠٠ جنيه</span>
+              <span class="plan-period" data-i18n="p3Period">/ شهريًا</span>
+            </p>
+            <p class="plan-line" data-i18n="p3Line">لأكتر من فرع، ولما تحب تشوف كل محلاتك من شاشة واحدة</p>
+            <ul class="plan-features">
+              <li class="feature-lead"><span data-i18n="p3f1">كل اللي في باقة التوسّع، وكمان:</span></li>
+              <li><svg class="icon tick-icon" width="16" height="16" aria-hidden="true"><use href="#i-check"></use></svg><span data-i18n="p3f2">فروع ومحلات متعددة، كل واحد ببياناته ولوجوه وموقعه</span></li>
+              <li><svg class="icon tick-icon" width="16" height="16" aria-hidden="true"><use href="#i-check"></use></svg><span data-i18n="p3f3">لوحة KJ Admin: كل محلاتك، مبيعاتها ومستخدميها، في شاشة واحدة</span></li>
+              <li><svg class="icon tick-icon" width="16" height="16" aria-hidden="true"><use href="#i-check"></use></svg><span data-i18n="p3f4">مستخدمين بلا حد، وصلاحيات بتحددها بالتفصيل لكل موظف</span></li>
+              <li><svg class="icon tick-icon" width="16" height="16" aria-hidden="true"><use href="#i-check"></use></svg><span data-i18n="p3f5">تقارير متقدمة: أرباح، موردين، حركة مخزون، ومقارنة بين الفروع</span></li>
+              <li><svg class="icon tick-icon" width="16" height="16" aria-hidden="true"><use href="#i-check"></use></svg><span data-i18n="p3f6">نسخة احتياطية تلقائية ودعم فني بأولوية</span></li>
+            </ul>
+            <a class="btn btn-ghost plan-cta" href="#demo" data-i18n="p3Cta">اطلب باقة الاحترافية</a>
+          </li>
+        </ul>
+
+        <p class="section-close" data-reveal data-i18n="packagesReassure">مش متأكد أنهي باقة تناسبك؟ احجز عرض توضيحي، نشوف محلك مع بعض ونقولك بصراحة إنت محتاج إيه.</p>
+      </div>
+    </section>
+
+    <!-- ==================================================== 4 · SCREENSHOTS -->
+    <section class="section" id="screens" aria-labelledby="screens-title">
+      <div class="wrap">
+        <div class="section-head" data-reveal>
+          <h2 class="section-title" id="screens-title" data-i18n="shotsTitle">شوفه شغّال قبل ما تقرر</h2>
+          <p class="section-lede" data-i18n="shotsSub">دي شاشات حقيقية من النظام، مش رسومات.</p>
+        </div>
+
+        <div class="shots">
+          <figure class="shot" data-reveal>
+            <div class="frame">
+              <div class="frame-bar" aria-hidden="true"><span></span><span></span><span></span></div>
+              <img data-shot="pos" src="/kj/shots/pos-ar.webp" width="1280" height="821"
+                   loading="lazy" decoding="async" data-i18n-alt="altPos"
+                   alt="شاشة نقطة البيع في النظام: خانة الباركود فوق، وسلة فيها أربع قطع بأسعارها، والإجمالي ٥٬٤٤٩٫٢٠ جنيه، وزر إتمام البيع تحته.">
+            </div>
+            <figcaption data-i18n="capPos">شاشة الكاشير — امسح الباركود والفاتورة جاهزة</figcaption>
+          </figure>
+
+          <figure class="shot" data-reveal>
+            <div class="frame">
+              <div class="frame-bar" aria-hidden="true"><span></span><span></span><span></span></div>
+              <img data-shot="dashboard" src="/kj/shots/dashboard-ar.webp" width="1280" height="706"
+                   loading="lazy" decoding="async" data-i18n-alt="altDashboard"
+                   alt="لوحة التحكم: مربعات بمبيعات اليوم وإيرادات الشهر وقيمة المخزون، ورسم بياني لمبيعات آخر ٣٠ يومًا، وتنبيه بأصناف قربت تخلص.">
+            </div>
+            <figcaption data-i18n="capDashboard">أرقام محلك في لمحة</figcaption>
+          </figure>
+
+          <figure class="shot" data-reveal>
+            <div class="frame">
+              <div class="frame-bar" aria-hidden="true"><span></span><span></span><span></span></div>
+              <img data-shot="products" src="/kj/shots/products-ar.webp" width="1280" height="693"
+                   loading="lazy" decoding="async" data-i18n-alt="altProducts"
+                   alt="شاشة المنتجات: جدول فيه كود كل صنف واسمه وعدد متغيراته وسعره وكميته في المخزن ومورده وحالته.">
+            </div>
+            <figcaption data-i18n="capProducts">كل صنف بمقاساته وكمياته</figcaption>
+          </figure>
+
+          <figure class="shot shot-phones" data-reveal>
+            <div class="phones phones-one">
+              <div class="phone">
+                <span class="phone-notch" aria-hidden="true"></span>
+                <img data-shot="shop-home" src="/kj/shots/shop-home-ar.webp" width="390" height="844"
+                     loading="lazy" decoding="async" data-i18n-alt="altShopHome"
+                     alt="الصفحة الرئيسية للمتجر الإلكتروني على موبايل: شريط شحن مجاني فوق، بانر التشكيلة، وأقسام المنتجات تحته.">
+              </div>
+            </div>
+            <figcaption data-i18n="capShopHome">موقعك باسمك وألوانك</figcaption>
+          </figure>
+
+          <figure class="shot shot-phones" data-reveal>
+            <div class="phones phones-two">
+              <div class="phone">
+                <span class="phone-notch" aria-hidden="true"></span>
+                <img data-shot="shop-product" src="/kj/shots/shop-product-ar.webp" width="390" height="844"
+                     loading="lazy" decoding="async" data-i18n-alt="altShopProduct"
+                     alt="صفحة منتج في المتجر على موبايل: صورة الشنطة، السعر ٢٬٤٥٠ جنيه، اختيار اللون، والكمية، وزر أضف إلى السلة.">
+              </div>
+              <div class="phone">
+                <span class="phone-notch" aria-hidden="true"></span>
+                <img data-shot="shop-checkout" src="/kj/shots/shop-checkout-ar.webp" width="390" height="844"
+                     loading="lazy" decoding="async" data-i18n-alt="altShopCheckout"
+                     alt="صفحة إتمام الطلب على موبايل: الدفع عند الاستلام مختار، ملخص الطلب بالمنتجات، والإجمالي ٥٬٥٦٣٫٢٠ جنيه، وزر أكّد الطلب.">
+              </div>
+            </div>
+            <figcaption data-i18n="capShopCheckout">الدفع عند الاستلام، زي ما عميلك متعوّد</figcaption>
+          </figure>
+
+          <figure class="shot" data-reveal>
+            <div class="frame">
+              <div class="frame-bar" aria-hidden="true"><span></span><span></span><span></span></div>
+              <img data-shot="weborders" src="/kj/shots/weborders-ar.webp" width="1280" height="688"
+                   loading="lazy" decoding="async" data-i18n-alt="altWebOrders"
+                   alt="شاشة طلبات الأونلاين في النظام: جدول بأرقام الطلبات وأسماء العملاء ومدنهم وإجمالي كل طلب وحالته — جديد، تم القبول، قيد التوصيل، تم التسليم.">
+            </div>
+            <figcaption data-i18n="capWebOrders">الطلب من الموقع بيوصلك في نفس النظام</figcaption>
+          </figure>
+
+          <!-- Last on purpose: the copy asks for KJ Admin directly above the
+               demo band, so the button follows the picture. -->
+          <figure class="shot" data-reveal>
+            <div class="frame">
+              <div class="frame-bar" aria-hidden="true"><span></span><span></span><span></span></div>
+              <img data-shot="admin" src="/kj/shots/admin-ar.webp" width="1280" height="856"
+                   loading="lazy" decoding="async" data-i18n-alt="altAdmin"
+                   alt="لوحة KJ Admin: جدول بخمس متاجر، كل واحد بخطته وعدد مستخدميه ومنتجاته وحالته وروابط النظام والمتجر بتاعه.">
+            </div>
+            <figcaption data-i18n="capAdmin">كل محلاتك في شاشة واحدة</figcaption>
+          </figure>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================================================== 5 · REQUEST A DEMO -->
+    <!--
+      One band, one offer, one button. No links out of it, no menu and no
+      second ask — the only thing that can happen in this section is a demo
+      request.
+    -->
+    <section class="demo" id="demo" aria-labelledby="demo-title">
+      <div class="wrap demo-inner">
+        <div class="demo-head" data-reveal>
+          <h2 class="section-title" id="demo-title" data-i18n="demoTitle">جرّب اللوحة بنفسك، من غير أي التزام</h2>
+          <p class="demo-body" data-i18n="demoBody">احجز نص ساعة معانا. هنفتحلك النظام بمنتجات شبه بتاعتك، ونوريك إزاي المحل والموقع بيشتغلوا مع بعض — وبعدها إنت اللي تقرر.</p>
+        </div>
+
+        <!--
+          A WhatsApp composer, not a form with a server behind it. `kj.js`
+          turns the answers into a message and opens WhatsApp with it already
+          written; the button carries the WhatsApp mark so what is about to
+          happen is on the button itself.
+
+          Not one field carries a `name`, which is deliberate: with the script
+          gone this is a plain GET to wa.me and it opens the same conversation
+          — empty, but open. It never silently swallows a lead.
+        -->
+        <form class="demo-form" data-demo-form method="get" action="https://wa.me/201552526142"
+              target="_blank" rel="noopener">
+          <p class="field">
+            <label for="demo-name" data-i18n="demoName">الاسم</label>
+            <input id="demo-name" type="text" autocomplete="name" required>
+          </p>
+          <p class="field">
+            <label for="demo-phone" data-i18n="demoPhone">رقم الموبايل</label>
+            <input id="demo-phone" type="tel" inputmode="tel" autocomplete="tel" required>
+          </p>
+          <p class="field">
+            <label for="demo-shop-type" data-i18n="demoShopType">نوع المحل (ملابس، عطور، إكسسوارات…)</label>
+            <input id="demo-shop-type" type="text">
+          </p>
+          <p class="field">
+            <label for="demo-branches" data-i18n="demoBranches">عدد الفروع</label>
+            <input id="demo-branches" type="number" inputmode="numeric" min="1" step="1">
+          </p>
+          <p class="field field-wide">
+            <label for="demo-message">
+              <span data-i18n="demoMessage">حابب تسألنا عن إيه؟</span>
+              <span class="field-optional" data-i18n="demoOptional">(اختياري)</span>
+            </label>
+            <textarea id="demo-message" rows="3"></textarea>
+          </p>
+
+          <div class="demo-submit">
+            <button class="btn btn-solid btn-lg" type="submit">
+              <svg class="icon" width="20" height="20" aria-hidden="true"><use href="#i-whatsapp"></use></svg>
+              <span data-i18n="demoCta">اطلب عرض توضيحي للوحة KJ Admin</span>
+            </button>
+            <p class="demo-note" data-i18n="demoNote">بنرد في نفس اليوم. من غير بيانات بنك ولا دفع مقدم.</p>
+          </div>
+        </form>
+      </div>
+    </section>
+
+    <!--
+      THE THREE OBJECTIONS, from the end of the copy file.
+
+      A plain container rather than a landmark, and with no heading of its own,
+      because the copy has no heading for it and one was not invented. An
+      unnamed `<section>` is not exposed as a region by assistive technology,
+      so the heading order on this page stays exactly h1 → h2 × 5.
+    -->
+    <div class="faq-band">
+      <div class="wrap faq" data-reveal>
+        <details class="faq-item">
+          <summary><span data-i18n="faq1Q">النت بيقطع عندي — هعمل إيه؟</span></summary>
+          <p data-i18n="faq1A">الكاشير بيشتغل على جهاز المحل نفسه، فلو النت راح البيع ما بيقفش.</p>
+        </details>
+        <details class="faq-item">
+          <summary><span data-i18n="faq2Q">موظفيني مش بيعرفوا كمبيوتر.</span></summary>
+          <p data-i18n="faq2A">الشاشة بالعربي وكبيرة، والتدريب داخل الباقة. أغلب الكاشيرات بيتعلموا في يوم.</p>
+        </details>
+        <details class="faq-item">
+          <summary><span data-i18n="faq3Q">بياناتي هتبقى فين؟</span></summary>
+          <p data-i18n="faq3A">بياناتك بتاعتك — نسخة احتياطية تلقائية، وتقدر تطلب نسخة منها في أي وقت.</p>
+        </details>
+      </div>
+    </div>
+
+    <!-- ======================================================== 6 · CONTACT -->
+    <section class="section" id="contact" aria-labelledby="contact-title">
+      <div class="wrap">
+        <div class="section-head" data-reveal>
+          <h2 class="section-title" id="contact-title" data-i18n="contactTitle">كلّمنا</h2>
+          <p class="section-lede" data-i18n="contactBody">لو عندك سؤال قبل ما تحجز، اتصل أو ابعتلنا واتساب — هنرد عليك بنفسنا، مش روبوت.</p>
+        </div>
+
+        <ul class="contacts" data-reveal>
+          <li>
+            <a class="contact-card" href="tel:+201552526142">
+              <span class="contact-icon" aria-hidden="true"><svg class="icon" width="22" height="22"><use href="#i-phone"></use></svg></span>
+              <span class="contact-label" data-i18n="contactPhone">تليفون</span>
+              <span class="contact-value" dir="ltr">01552526142</span>
+            </a>
+          </li>
+          <li>
+            <a class="contact-card" href="https://wa.me/201552526142">
+              <span class="contact-icon" aria-hidden="true"><svg class="icon" width="22" height="22"><use href="#i-whatsapp"></use></svg></span>
+              <span class="contact-label" data-i18n="contactWhatsapp">واتساب</span>
+              <span class="contact-value" dir="ltr">01552526142</span>
+            </a>
+          </li>
+          <li>
+            <a class="contact-card" href="mailto:kerolosnashatestfanous@gmail.com">
+              <span class="contact-icon" aria-hidden="true"><svg class="icon" width="22" height="22"><use href="#i-mail"></use></svg></span>
+              <span class="contact-label" data-i18n="contactEmail">البريد الإلكتروني</span>
+              <span class="contact-value contact-email" dir="ltr">kerolosnashatestfanous@gmail.com</span>
+            </a>
+          </li>
+        </ul>
+
+        <p class="hours" data-reveal>
+          <svg class="icon" width="18" height="18" aria-hidden="true"><use href="#i-clock"></use></svg>
+          <span data-i18n="contactHours">من السبت للخميس، من ١٠ ص لـ ٨ م</span>
+        </p>
+
+        <div class="contact-actions" data-reveal>
+          <a class="btn btn-primary btn-lg" href="tel:+201552526142">
+            <svg class="icon" width="20" height="20" aria-hidden="true"><use href="#i-phone"></use></svg>
+            <span data-i18n="contactCall">اتصل بينا دلوقتي</span>
+          </a>
+          <a class="btn btn-ghost btn-lg" href="https://wa.me/201552526142">
+            <svg class="icon" width="20" height="20" aria-hidden="true"><use href="#i-whatsapp"></use></svg>
+            <span data-i18n="contactWa">كلّمنا على واتساب</span>
+          </a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- =========================================================== FOOTER -->
+  <footer class="site-foot">
+    <div class="wrap foot-inner">
+      <div class="foot-brand">
+        <span class="brand-mark" aria-hidden="true">KJ</span>
+        <p class="foot-tagline" data-i18n="footTagline">KJ — إدارة محلات وبيع أونلاين</p>
+        <p class="foot-made" data-i18n="footMade">صُنع في مصر لأصحاب المحلات في مصر</p>
+      </div>
+
+      <nav class="foot-nav" data-i18n-label="footNavLabel" aria-label="روابط التذييل">
+        <a href="#packages" data-i18n="navPackages">الباقات</a>
+        <a href="#demo" data-i18n="navDemo">اطلب عرض توضيحي</a>
+        <a href="#contact" data-i18n="navContact">كلّمنا</a>
+      </nav>
+
+      <p class="foot-rights" data-i18n="footRights">© 2026 KJ. كل الحقوق محفوظة.</p>
+    </div>
+  </footer>
+</body>
+</html>
