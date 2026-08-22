@@ -24,7 +24,7 @@
   /* ====================================================================
      THE PALETTE — every value generated, not chosen.
 
-     KJ's colour is ONE hex, the indigo KJ Admin already wears: #4f46e5.
+     KJ's colour is ONE hex, the indigo the platform's own console wears: #4f46e5.
      Everything below is what `palette('#4f46e5', true)` in
      `public/shared/brandTheme.js` answers for it — the same function the
      storefront paints a shop with and the ERP previews a shop with. These
@@ -184,7 +184,7 @@ h1, h2, h3 { margin: 0; font-weight: 700; line-height: 1.25; letter-spacing: -.0
 p { margin: 0; }
 ul, ol { margin: 0; padding: 0; }
 li { list-style: none; }
-figure { margin: 0; }
+figure, blockquote { margin: 0; }
 a { color: inherit; text-decoration: none; }
 img { max-width: 100%; display: block; }
 button, input, select, textarea { font: inherit; color: inherit; }
@@ -221,7 +221,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 
 /* The two filled bands re-point the ring instead of drawing their own: the
    page accent is invisible on itself, and too deep to read on near-black. */
-.demo { --ring: #ffffff; }
+.demo, .closing { --ring: #ffffff; }
 .site-foot { --ring: var(--accent-bright); }
 
 /* The icon sprite. Not `display: none` — a hidden `<svg>` still has to be a
@@ -281,6 +281,9 @@ button, input, select, textarea { font: inherit; color: inherit; }
 /* On the accent band the roles swap: the page's surface becomes the fill and
    the accent becomes the ink. */
 .btn-solid { background: var(--surface); color: var(--accent-strong); }
+/* The second button on a filled band: the same shape, drawn in the band's own
+   ink rather than filled, so it reads as the quieter of the two. */
+.btn-outline { background: transparent; color: var(--accent-ink); border-color: rgb(255 255 255 / .55); }
 
 .btn-icon {
   min-width: var(--tap);
@@ -309,6 +312,8 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .brand { display: inline-flex; align-items: center; gap: var(--sp-3); }
 
 .brand-mark {
+  position: relative;
+  overflow: hidden;
   display: grid;
   place-items: center;
   width: var(--tap-sm);
@@ -322,17 +327,64 @@ button, input, select, textarea { font: inherit; color: inherit; }
   letter-spacing: .04em;
 }
 
+/* The owner's own logo, when he has uploaded one, in the box the monogram
+   otherwise fills. `contain`, so a wide wordmark is not cropped to a square,
+   and the tile loses its accent fill so the logo sits on its own ground. */
+.brand-logo {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.has-logo .site-head .brand-mark { background: var(--surface); }
+.has-logo .site-foot .brand-mark { background: rgb(255 255 255 / .12); }
+
+/*
+ * The wordmark is the SECOND time this page says KJ in the space of 40px —
+ * the tile beside it already says it — so on the narrowest phone sold it is
+ * the thing that goes, and the header keeps the brand, the packages link, the
+ * language and WhatsApp instead. It comes back at 380, which is under every
+ * phone anybody is actually holding.
+ */
 .brand-word {
+  display: none;
   font-family: var(--font);
   font-size: var(--fs-xl);
   font-weight: 800;
   letter-spacing: .06em;
 }
 
-/* The three page links are worth their room only once there is room. Below
-   768 the header carries the brand, the language and one WhatsApp target —
-   everything else on this page is one thumb-scroll away. */
-.head-nav { display: none; }
+/*
+ * FOUR LINKS, AND ONE OF THEM AT EVERY WIDTH.
+ *
+ * The page used to be six sections long and the header carried nothing but
+ * the brand on a phone, because everything was one thumb-scroll away. It is
+ * twelve sections long now and it is not: the prices sit behind four of them.
+ * So the one link that decides whether a visit is worth anything — the
+ * packages — is in the header at 320px, and the other three earn their room
+ * at 768, where there is room to earn.
+ */
+.head-nav {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-5);
+  font-size: var(--fs-base);
+  font-weight: 700;
+}
+.head-nav a {
+  display: none;
+  align-items: center;
+  min-height: var(--tap);
+  color: var(--ink-2);
+}
+.head-nav .nav-lead {
+  display: inline-flex;
+  padding-inline: var(--sp-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  color: var(--accent-strong);
+}
 
 .head-actions {
   display: flex;
@@ -452,6 +504,10 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .frame img { width: 100%; height: auto; }
 
 .hero-shot { max-width: 1020px; margin-inline: auto; width: 100%; }
+/* The window chrome is honest around a capture of a screen and a lie around a
+   photograph of a shop, so an uploaded hero loses it and keeps the card. */
+.hero-shot.is-photo .frame-bar { display: none; }
+.hero-shot.is-photo .frame img { aspect-ratio: auto; }
 
 /* -------------------------------------------------------------- sections -- */
 
@@ -504,6 +560,107 @@ button, input, select, textarea { font: inherit; color: inherit; }
 
 .block-title { font-size: var(--fs-2xl); margin-block-end: var(--sp-3); }
 .block-body { color: var(--ink-2); font-size: var(--fs-md); }
+
+/* ---------------------------------------------------- 3 · how it works -- */
+
+/*
+ * Four steps on a white band, and the cards are GREY on it — the exact
+ * inversion of the overview's white cards on grey. Two neighbouring sections
+ * that both stack cards need to be told apart at a glance while scrolling
+ * past, and the ground under the card is the cheapest way to say it.
+ */
+.steps { display: grid; gap: var(--sp-5); }
+
+.step {
+  display: grid;
+  gap: var(--sp-3);
+  align-content: start;
+  padding: var(--sp-6);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg);
+}
+
+/* The number is the only thing on this page rendered from an index rather
+   than from the document, and it is written in the reader's own numerals:
+   ١ ٢ ٣ ٤ for a reader in Arabic. */
+.step-num {
+  display: grid;
+  place-items: center;
+  width: var(--tap);
+  height: var(--tap);
+  margin-block-end: var(--sp-2);
+  border-radius: var(--radius-pill);
+  background: var(--accent-grad);
+  color: var(--accent-ink);
+  font-family: var(--font-display);
+  font-size: var(--fs-xl);
+  font-weight: 800;
+  line-height: 1;
+}
+
+.step-title { font-size: var(--fs-xl); }
+.step-body { color: var(--ink-2); font-size: var(--fs-md); }
+
+/* ------------------------------------------------- 4 · who this is for -- */
+
+.audience { display: grid; gap: var(--sp-5); }
+
+.aud-col {
+  padding: var(--sp-6);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+/*
+ * The honest column is QUIETER than the one beside it, and that is the whole
+ * design of this section: it is not hidden, it is not apologised for, and it
+ * is not shouted. A shop owner who reads "not for restaurants" and leaves was
+ * never a customer; the one who reads it and stays now believes the column
+ * next to it.
+ */
+.aud-no {
+  background: var(--bg-2);
+  border-color: var(--line);
+  box-shadow: none;
+  color: var(--ink-2);
+}
+
+.aud-title { font-size: var(--fs-xl); margin-block-end: var(--sp-5); }
+.aud-list { display: grid; gap: var(--sp-4); font-size: var(--fs-md); }
+.aud-list li { display: flex; gap: var(--sp-3); align-items: start; }
+.aud-mark { margin-block-start: 3px; }
+.aud-yes .aud-mark { color: var(--accent-strong); }
+.aud-no .aud-mark { color: var(--ink-3); }
+
+/* ----------------------------------------- 5 · the notebook and the till -- */
+
+/*
+ * One bordered container with hairlines between the rows, rather than four
+ * cards: these four lines are one argument, and four separate surfaces would
+ * read as four separate points. On a phone the before sits above the after; at
+ * 768 they stand side by side, which is where the contrast does its work.
+ */
+.versus {
+  display: grid;
+  max-width: 900px;
+  margin-inline: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.vs-row { display: grid; gap: var(--sp-3); padding: var(--sp-5) var(--sp-6); }
+.vs-row + .vs-row { border-block-start: 1px solid var(--line-2); }
+
+.vs-side { display: flex; gap: var(--sp-4); align-items: start; font-size: var(--fs-md); }
+.vs-mark { margin-block-start: 3px; }
+.vs-before { color: var(--ink-3); }
+.vs-before .vs-mark { color: var(--ink-3); }
+.vs-after { font-weight: 700; }
+.vs-after .vs-mark { color: var(--accent-strong); }
 
 /* -------------------------------------------------------- 3 · packages -- */
 
@@ -577,20 +734,63 @@ button, input, select, textarea { font: inherit; color: inherit; }
 }
 .plan-features li { display: flex; gap: var(--sp-3); align-items: start; }
 .plan-features .tick-icon { color: var(--accent-strong); margin-block-start: 3px; }
-/* "Everything in Starter, plus:" is not a feature — it is the sentence that
-   the features underneath it hang from, so it carries no tick and does carry
-   the weight. */
-.feature-lead { font-weight: 700; }
+/*
+ * "Everything in Starter, plus:" is not a feature — it is the sentence the
+ * features underneath it hang from, so it carries no tick, it does carry the
+ * weight, and it sits OUTSIDE the list rather than being its first item. That
+ * is what lets the list be a list: five bullets the owner can add a sixth to
+ * without the lead line being one of them. It takes the divider with it when
+ * it is there, and gives it back when it is not.
+ */
+.feature-lead {
+  padding-block-start: var(--sp-4);
+  border-block-start: 1px solid var(--line-2);
+  font-size: var(--fs-base);
+  font-weight: 700;
+}
+.feature-lead:not([hidden]) + .plan-features {
+  padding-block-start: 0;
+  border-block-start: 0;
+}
 
 /* Pushed to the bottom edge, so three cards of different heights still put
    their buttons on the same line. */
 .plan-cta { margin-block-start: auto; }
+
+/* ------------------------------------------------ 7 · in every package -- */
+
+/*
+ * A quiet strip under the three cards and above the reassurance line. These
+ * six are not features — they are the six things a buyer is afraid the price
+ * does not include, which is why they sit under all three prices rather than
+ * being repeated inside each of them.
+ */
+.included {
+  margin-block-start: var(--sp-7);
+  padding: var(--sp-6);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.included-title {
+  font-size: var(--fs-xl);
+  margin-block-end: var(--sp-5);
+  text-align: center;
+}
+.included-list { display: grid; gap: var(--sp-4); font-size: var(--fs-base); }
+.included-list li { display: flex; gap: var(--sp-3); align-items: start; }
+.included-list .tick-icon { color: var(--accent-strong); margin-block-start: 3px; }
 
 /* ----------------------------------------------------- 4 · screenshots -- */
 
 .shots { display: grid; gap: var(--sp-8); }
 
 .shot { display: grid; gap: var(--sp-5); }
+/* A phone capture is its own slot the owner can replace, so it is its own
+   figure. Standing three of them in a row is the sheet's job, not the
+   document's — nothing in the markup knows they are a set. */
+.shot-phone { justify-items: center; align-content: start; }
 .shot figcaption {
   color: var(--ink-2);
   font-size: var(--fs-md);
@@ -599,30 +799,17 @@ button, input, select, textarea { font: inherit; color: inherit; }
 }
 
 /*
- * The three storefront captures are phone screens and they are framed as
- * phones — a 390 × 844 picture floating in a white card would read as a
- * cropped desktop screen. The bezel is proportional to the picture rather
- * than a fixed thickness, so one phone at 280px and two phones at 150px on a
- * 390px screen are the same object at two sizes.
+ * The storefront captures are phone screens and they are framed as phones — a
+ * 390 × 844 picture floating in a white card would read as a cropped desktop
+ * screen. The bezel is proportional to the picture rather than a fixed
+ * thickness, so one phone at 280px and three phones at 220px are the same
+ * object at two sizes.
+ *
+ * The width is DEFINITE, and that is load-bearing: these pictures are lazy and
+ * have no size until they arrive, so a box sized by its own contents would
+ * open at 44px and jump to 280 as it scrolled into view, taking everything
+ * under it down the page with it.
  */
-.phones { display: grid; gap: var(--sp-5); justify-items: center; }
-/*
- * `justify-self`, NOT `margin-inline: auto`, and the difference is 528px of
- * reflow. An auto inline margin on a grid item makes the item shrink-to-fit
- * and centre — which meant these two columns were sized by their contents, and
- * their contents are two lazy images that have no size until they load. The
- * row opened at 44px wide and jumped to 560 as it scrolled into view, taking
- * everything under it down the page with it. A definite `width` plus grid
- * alignment centres the same box without ever asking the pictures how big
- * they are.
- */
-.phones-two {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--sp-4);
-  width: min(100%, 560px);
-  justify-self: center;
-}
-
 .phone {
   position: relative;
   width: min(100%, 280px);
@@ -631,8 +818,6 @@ button, input, select, textarea { font: inherit; color: inherit; }
   background: var(--ink);
   box-shadow: var(--shadow-lift);
 }
-.phones-two .phone { width: min(100%, 260px); }
-
 .phone-notch {
   position: absolute;
   inset-block-start: var(--sp-2);
@@ -653,26 +838,53 @@ button, input, select, textarea { font: inherit; color: inherit; }
   /* Belt as well as braces. The `width`/`height` attributes already carry this
      ratio and are what actually reserve the space; saying it here too means a
      phone frame cannot collapse even if one of those attributes is ever lost
-     in an edit. All three storefront captures are 390 × 844. */
+     in an edit. Every storefront capture is 390 × 844. */
   aspect-ratio: 390 / 844;
   border-radius: var(--radius-sm);
 }
 
+/* --------------------------------------------- 9 · what shop owners say -- */
+
+/*
+ * Written, and empty. Nothing below paints until a real quote is entered from
+ * the console — the section ships `hidden`, its list ships `hidden`, and its
+ * prototype lives in a `<template>`, so a page with no script has no empty
+ * card in it either.
+ */
+.quotes { display: grid; gap: var(--sp-5); }
+
+.quote {
+  display: grid;
+  gap: var(--sp-5);
+  align-content: start;
+  padding: var(--sp-6);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+.quote-body { font-size: var(--fs-md); }
+.quote-who { display: grid; gap: var(--sp-1); }
+.quote-name { font-size: var(--fs-base); font-weight: 700; }
+.quote-shop { color: var(--ink-3); font-size: var(--fs-sm); }
+
 /* ------------------------------------------------- 5 · request a demo -- */
 
-.demo {
-  padding-block: var(--section-pad);
-  /*
-   * The accent, with a symmetric wash over the top of it for depth. The wash
-   * is centred rather than cornered on purpose: a corner would sit on the
-   * opposite side of the band in English, and this band is the one place on
-   * the page where a gradient could give away which way the page runs.
-   */
+/*
+ * THE PAGE'S TWO ASKS LOOK LIKE EACH OTHER. The demo band and the closing band
+ * wear one recipe: the accent, with a symmetric wash over the top of it for
+ * depth. The wash is centred rather than cornered on purpose — a corner would
+ * sit on the opposite side of the band in English, and these are the one place
+ * on the page where a gradient could give away which way the page runs.
+ */
+.band-accent {
   background:
     radial-gradient(120% 90% at 50% 0%, rgb(255 255 255 / .18), transparent 60%),
     var(--accent-grad);
   color: var(--accent-ink);
 }
+
+.demo { padding-block: var(--section-pad); }
 
 .demo-inner { display: grid; gap: var(--sp-7); }
 
@@ -718,7 +930,9 @@ button, input, select, textarea { font: inherit; color: inherit; }
 /* ------------------------------------------------------------------ FAQ -- */
 
 .faq-band { padding-block: var(--section-pad); background: var(--surface); }
-.faq { display: grid; gap: var(--sp-4); max-width: 860px; }
+/* Seven of them now, so they get a heading and a measure of their own rather
+   than running the full width of a desktop. */
+.faq { display: grid; gap: var(--sp-4); max-width: 860px; margin-inline: auto; }
 
 .faq-item {
   border: 1px solid var(--line);
@@ -812,6 +1026,34 @@ button, input, select, textarea { font: inherit; color: inherit; }
 }
 .contact-actions .btn { flex: 1 1 240px; }
 
+/* -------------------------------------------------- 13 · the last ask -- */
+
+/*
+ * A page this long must not end on an address block. One line, two buttons,
+ * and the accent the demo band wears — the page's two asks are meant to look
+ * like each other.
+ */
+.closing { padding-block: var(--section-pad); }
+
+.closing-inner {
+  display: grid;
+  gap: var(--sp-5);
+  justify-items: center;
+  max-width: var(--wrap-prose);
+  margin-inline: auto;
+  text-align: center;
+}
+.closing-body { font-size: var(--fs-md); opacity: .92; }
+
+.closing-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--sp-4);
+  width: 100%;
+}
+.closing-actions .btn { flex: 1 1 240px; }
+
 /* ----------------------------------------------------------------- foot -- */
 
 .site-foot {
@@ -852,8 +1094,16 @@ button, input, select, textarea { font: inherit; color: inherit; }
    one spends room that the phone did not have.
    ====================================================================== */
 
+@media (min-width: 380px) {
+  .brand-word { display: inline; }
+}
+
 @media (min-width: 620px) {
   .blocks { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .steps { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .audience { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .included-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .quotes { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .contacts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   /* Two fields per row the moment two fields fit; the message keeps the row
      to itself because three lines of typing want the width. */
@@ -874,20 +1124,11 @@ button, input, select, textarea { font: inherit; color: inherit; }
 
   .wrap { padding-inline: var(--sp-6); }
   .head-inner { min-height: 72px; }
-  .head-nav {
-    display: flex;
-    align-items: center;
-    gap: var(--sp-6);
-    margin-inline-start: var(--sp-7);
-    font-size: var(--fs-base);
-    font-weight: 700;
-  }
-  .head-nav a {
-    display: inline-flex;
-    align-items: center;
-    min-height: var(--tap);
-    color: var(--ink-2);
-  }
+  .head-nav { margin-inline-start: var(--sp-6); }
+  .head-nav a { display: inline-flex; }
+  /* With all four showing, the first one stops being a button and becomes a
+     link like its neighbours. */
+  .head-nav .nav-lead { padding-inline: 0; border: 0; color: var(--ink-2); }
   .head-cta { display: inline-flex; }
   .head-wa { display: none; }
 
@@ -896,13 +1137,34 @@ button, input, select, textarea { font: inherit; color: inherit; }
   .contact-actions .btn { flex: 0 0 auto; }
   .contacts { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .blocks { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .shots { gap: calc(var(--sp-8) + var(--sp-6)); }
+  .included-list { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .closing-actions .btn { flex: 0 0 auto; }
+
+  /*
+   * Three columns, and a window spans all three. That is the whole reason the
+   * three phone captures are three separate figures: the sheet stands them in
+   * a row, so the owner can disable one, replace one, or add a fourth without
+   * anybody touching the markup.
+   */
+  .shots {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: calc(var(--sp-8) + var(--sp-6)) var(--sp-6);
+  }
+  .shot-desktop { grid-column: 1 / -1; }
+
+  .vs-row { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-6); align-items: start; }
+
   .block { padding: var(--sp-7); }
   .plan { padding: var(--sp-7); }
+  .step { padding: var(--sp-7); }
+  .aud-col { padding: var(--sp-7); }
+  .included { padding: var(--sp-7); }
 }
 
 @media (min-width: 900px) {
   .plans { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--sp-6); }
+  .steps { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .quotes { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   /*
    * Now that the three of them stand side by side, the middle one grows out of
    * the row in both directions by one rung — so it is taller than its

@@ -69,6 +69,44 @@ CREATE TABLE IF NOT EXISTS platform_settings (
   updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
 
+-- The marketing page's content, and its pictures.
+--
+-- Deliberately NOT a row in platform_settings. That table is documented as the
+-- handful of deployment settings, and its safety property is that a value can
+-- only be read by a caller naming its key — because one of those values is the
+-- Turso API token. This is the opposite kind of thing: a document rather than a
+-- setting, up to a quarter of a megabyte rather than a short string, and the
+-- one value in this database that is served to the public internet with no
+-- session. It also needs updated_by, which platform_settings has no column for.
+-- See src/platform/LandingContentService.js.
+--
+-- Exactly one row, enforced in the schema: the document is rewritten whole on
+-- every save, so "one row" is the shape of the data, not a limitation.
+CREATE TABLE IF NOT EXISTS landing_content (
+  id         INTEGER PRIMARY KEY CHECK (id = 1),
+  document   TEXT    NOT NULL,          -- JSON; validated on write AND on read
+  version    INTEGER NOT NULL DEFAULT 1,
+  updated_at TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_by INTEGER REFERENCES platform_users(id)
+);
+
+-- One row per named picture slot: 'logo', 'hero', and 'shot-<key>' for a
+-- screenshot override. Bytes in the database rather than on a disk, for the
+-- same reason the shops' web_assets are: a serverless host has no durable one.
+-- Replacing a slot overwrites its row, so there is never a second copy of a
+-- picture the owner believes he replaced.
+CREATE TABLE IF NOT EXISTS landing_assets (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  slot         TEXT    NOT NULL UNIQUE,
+  data         BLOB    NOT NULL,
+  content_type TEXT    NOT NULL,        -- sniffed from the bytes, never declared
+  byte_size    INTEGER NOT NULL,
+  width        INTEGER,
+  height       INTEGER,
+  updated_at   TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_by   INTEGER REFERENCES platform_users(id)
+);
+
 -- Append-only, same convention as the ERP's own audit_logs.
 CREATE TABLE IF NOT EXISTS platform_audit (
   id                INTEGER PRIMARY KEY AUTOINCREMENT,

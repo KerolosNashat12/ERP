@@ -29,6 +29,13 @@ export const icons = {
   /* The rail's own three: the way out, the way in on a phone, and the way back. */
   signout: svg('<path d="M15 17l5-5-5-5"/><path d="M20 12H9"/><path d="M12 4H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h5"/>'),
   menu: svg('<path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h16"/>'),
+  /* The landing-page editor's own three: the page in the rail, the two moves
+     a list row can make, and the bin at the end of a row. */
+  page: svg('<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/><path d="M7 13h7"/><path d="M7 16.5h4"/>'),
+  arrowUp: svg('<path d="M12 19V5"/><path d="m5 12 7-7 7 7"/>'),
+  trash: svg('<path d="M4 7h16"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M6 7l1 13h10l1-13"/><path d="M9 7V4h6v3"/>'),
+  image: svg('<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9.5" r="1.6"/><path d="m4 17 5-5 4 4 3-2.5 4 3.5"/>'),
+  eye: svg('<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/>'),
   close: svg('<path d="M6 6l12 12"/><path d="M18 6 6 18"/>'),
 };
 

@@ -7,6 +7,7 @@
  */
 
 import { detailStrings } from './i18n.detail.js';
+import { landingStrings } from './i18n.landing.js';
 
 const dictionary = {
   en: {
@@ -324,10 +325,12 @@ export function pickName(row) {
  * stray duplicate in an extension file cannot quietly change the wording of a
  * screen somewhere else.
  */
-for (const [lang, strings] of Object.entries(detailStrings)) {
-  if (!dictionary[lang]) continue;
-  for (const [key, value] of Object.entries(strings)) {
-    if (!(key in dictionary[lang])) dictionary[lang][key] = value;
+for (const extension of [detailStrings, landingStrings]) {
+  for (const [lang, strings] of Object.entries(extension)) {
+    if (!dictionary[lang]) continue;
+    for (const [key, value] of Object.entries(strings)) {
+      if (!(key in dictionary[lang])) dictionary[lang][key] = value;
+    }
   }
 }
 

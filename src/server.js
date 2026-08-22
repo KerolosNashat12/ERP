@@ -13,6 +13,7 @@ import { runMigrations } from './infrastructure/database/migrations/index.js';
 import apiRouter from './api/routes/index.js';
 import shopRouter from './api/routes/shop.js';
 import shopOrdersRouter from './api/routes/shopOrders.js';
+import { publicLandingRouter } from './api/routes/landing.js';
 import { attachRequestContext, errorHandler, notFoundHandler } from './api/middleware/index.js';
 import platformApiRouter from './api/routes/platform.js';
 import { resolveTenant, resolveDefaultTenant } from './api/middleware/tenant.js';
@@ -99,6 +100,19 @@ export function createApp() {
   app.get(['/kj', '/kj/*'], (_req, res) => {
     res.sendFile(path.join(config.paths.public, 'kj', 'index.html'));
   });
+
+  /**
+   * What that page says, and the pictures on it — public, and mounted in BOTH
+   * builds.
+   *
+   * It belongs here with `/kj` for the same reason `/kj` does: the marketing
+   * page is nobody's tenant, so it must not sit behind `resolveTenant`, and it
+   * must not fall into either `/api` catch-all below. In the single-shop build
+   * there is no control plane to read, and that is not an error — nothing is
+   * stored, so the page renders the defaults baked into `public/kj/defaults.js`,
+   * which is exactly what a shop PC should show. See LandingContentService.
+   */
+  app.use('/api/landing', publicLandingRouter);
 
   /**
    * The platform is entirely additive: with `config.platform.enabled` false,

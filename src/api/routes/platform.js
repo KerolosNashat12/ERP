@@ -20,6 +20,7 @@ import fleetService from '../../platform/FleetService.js';
 import turso from '../../platform/turso.js';
 import integrations from '../../platform/integrations.js';
 import { publicBaseUrl, tenantLinks } from '../../platform/links.js';
+import { ownerLandingRouter } from './landing.js';
 import { migrateAllTenants } from '../../platform/migrateAll.js';
 import { asyncHandler } from '../middleware/index.js';
 import { ValidationError } from '../../shared/errors.js';
@@ -84,6 +85,16 @@ router.get('/auth/me', platformAuth.authenticate, asyncHandler(async (req, res) 
 
 // Everything below is the owner's own dashboard, behind its own session.
 router.use(platformAuth.authenticate);
+
+/**
+ * The marketing page's content. Mounted here rather than written out inline so
+ * that the four owner routes and the two public ones live in one file together
+ * — the whole point of the pair is that they are opposites (session vs none,
+ * `no-store` vs a year), and that is only visible when they are read side by
+ * side. Sitting below `authenticate`, they carry the owner session exactly as
+ * every route below does.
+ */
+router.use('/landing', ownerLandingRouter);
 
 const limitsSchema = z.object({
   maxUsers: z.number().int().min(0).optional(),

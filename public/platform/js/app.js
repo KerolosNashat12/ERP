@@ -20,6 +20,7 @@ import { tenantsView } from './views/tenantList.js';
 import { tenantDetailView } from './views/tenantDetail.js';
 import { migrateView } from './views/migrate.js';
 import { integrationsView } from './views/integrations.js';
+import { landingView } from './views/landing.js';
 import { state } from './ui/states.js';
 import icons from './ui/icons.js';
 
@@ -35,6 +36,10 @@ const TABS = [
   // able to see that it is still connected without opening a dialog about
   // something else.
   { path: 'integrations', label: 'integrations', icon: 'sliders' },
+  // The public page's own words, prices and pictures. It is the one screen in
+  // this console that writes something customers read, so it sits at the
+  // bottom of the rail, apart from the fleet's own four.
+  { path: 'landing', label: 'landing', icon: 'page' },
 ];
 
 // A slug is arbitrary text, so it can't live in the static route map the way
@@ -46,6 +51,7 @@ defineRoutes({
   tenants: (host, route) => (route.segments[1] ? tenantDetailView(host, route) : tenantsView(host, route)),
   migrate: migrateView,
   integrations: integrationsView,
+  landing: landingView,
 }, {
   notFound: (host) => mount(host, state({
     icon: 'search',
