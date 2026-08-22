@@ -1,3 +1,0 @@
-Push started Sat 08/22/2026  5:37:13.33
-From https://github.com/KerolosNashat12/ERP
- * branch            main       -> FETCH_HEAD

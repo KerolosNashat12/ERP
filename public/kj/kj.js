@@ -42,6 +42,7 @@
 
 import { applyTheme, monogramFavicon } from '../shared/brandTheme.js';
 import { DEFAULTS } from './defaults.js';
+import { intlPhone, safeEmail, safeAsset } from './guards.js';
 
 const STORAGE_KEY = 'kj.lang';
 const API = '/api/landing';
@@ -196,32 +197,6 @@ function text(pair, lang) {
 const list = (value) => (Array.isArray(value) ? value.filter(isObject) : []);
 /** The same, for a list of `{ ar, en }` pairs. */
 const pairs = (value) => (Array.isArray(value) ? value.filter((v) => isObject(v) || typeof v === 'string') : []);
-
-/** Digits only, in the shape wa.me wants: country code, no plus, no spaces. */
-function intlPhone(raw) {
-  const digits = String(raw ?? '').replace(/\D+/g, '');
-  if (!digits) return '';
-  if (digits.startsWith('20')) return digits;
-  if (digits.startsWith('0')) return `20${digits.slice(1)}`;
-  return digits;
-}
-
-/** An address, or nothing. No scheme, no space, no newline can get through. */
-function safeEmail(raw) {
-  const value = String(raw ?? '').trim();
-  return /^[^\s@<>"']+@[^\s@<>"']+\.[^\s@<>"']+$/.test(value) ? value : '';
-}
-
-/**
- * An image URL the page is willing to load. Only the control plane's own asset
- * route and this repo's own folder — a document that says `javascript:` or
- * points at somebody else's host gets nothing, and the built-in is used.
- */
-function safeAsset(raw) {
-  const value = String(raw ?? '').trim();
-  if (!value) return '';
-  return /^\/(api\/landing\/asset\/[A-Za-z0-9._-]+|kj\/[A-Za-z0-9._/-]+)$/.test(value) ? value : '';
-}
 
 const ICONS = new Set(['till', 'boxes', 'globe-bag', 'check', 'phone', 'mail', 'clock']);
 
