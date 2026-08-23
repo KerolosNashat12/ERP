@@ -1,1 +1,11 @@
 Publish started Sun 08/23/2026  2:15:08.90
+warning: in the working copy of 'public/kj/guards.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'public/kj/kj.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'tests/kj-landing-guards.test.js', LF will be replaced by CRLF the next time Git touches it
+[main fbdf66d] The uploaded logo actually appears: the page's asset guard was matching the whole URL with an anchored regex and so rejected the only asset URL the server ever mints, the one carrying its cache key - it now checks the path and allows a version parameter, and the three guards moved into their own module with tests around them
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+ 
+--- push attempt 1 --- 
+To https://github.com/KerolosNashat12/ERP.git
+   26713ec..fbdf66d  HEAD -> main
+PUSH SUCCEEDED on attempt 1 

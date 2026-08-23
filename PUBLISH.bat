@@ -71,7 +71,7 @@ if exist "hosted-db-setup.txt" del /f /q "hosted-db-setup.txt" >> "%LOG%" 2>&1
 echo.
 echo   Committing...
 git add -A >> "%LOG%" 2>&1
-git -c user.email="kerolosnashatestfanous@gmail.com" -c user.name="KerolosNashat12" commit -m "The uploaded logo actually appears: the page's asset guard was matching the whole URL with an anchored regex and so rejected the only asset URL the server ever mints, the one carrying its cache key - it now checks the path and allows a version parameter, and the three guards moved into their own module with tests around them" >> "%LOG%" 2>&1
+git -c user.email="kerolosnashatestfanous@gmail.com" -c user.name="KerolosNashat12" commit -m "One save is one document, everywhere: a repeated create is settled by the database rather than by a disabled button, supplier payments become real rows with a photograph of the receipt, and the shop's costs and salaries finally come off the profit" >> "%LOG%" 2>&1
 if errorlevel 1 echo   Nothing new to commit - pushing whatever is outstanding.
 
 echo   Pushing (your connection to GitHub drops sometimes, so this retries)...
