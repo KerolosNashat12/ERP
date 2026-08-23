@@ -85,7 +85,7 @@
  * yet" — never a zero, because a zero is a claim that the shop sold nothing.
  */
 import { platformDb } from './db.js';
-import { getDb, runWithTenant } from '../infrastructure/database/connection.js';
+import { getDb, runWithTenant, driverName } from '../infrastructure/database/connection.js';
 import { round2 } from '../shared/money.js';
 import config from '../config/index.js';
 import {
@@ -256,10 +256,16 @@ export async function refreshShop(row, { source = 'cron' } = {}) {
  *
  * Deliberately only on the scheduled sweep, never on the request path: it is
  * the one thing here that writes to a shop's database, and the till must never
- * be behind it. Failures are ignored — a driver that does not support the
- * pragma simply keeps the statistics it has.
+ * be behind it.
+ *
+ * Asked of the driver BEFORE it is sent, not merely caught afterwards. Turso
+ * refuses this family of statement outright, and a refusal inside an open
+ * libSQL transaction poisons the rest of it — which is exactly how `ANALYZE`
+ * in migration 014 took every surface down. Wrapped as well, because the
+ * pragma is a hint and a hint must fail like one.
  */
 async function keepStatisticsFresh(row, modules) {
+  if (driverName() !== 'sqlite') return;
   try {
     await readTenant(row, modules, () => getDb().prepare('PRAGMA optimize').run());
   } catch { /* statistics are an optimisation, never a reason to fail a sweep */ }

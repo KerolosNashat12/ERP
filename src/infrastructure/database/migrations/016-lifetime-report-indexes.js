@@ -42,7 +42,7 @@
 export default {
   name: '016-lifetime-report-indexes',
 
-  async up({ hasTable, ddl }) {
+  async up({ hasTable, ddl, analyze }) {
     if (await hasTable('sales')) {
       // Dropped rather than left alongside a wider twin: two indexes on the
       // same expression are two indexes to write on every sale, and the narrow
@@ -70,6 +70,6 @@ export default {
                    ON purchase_payments(date(paid_on), purchase_order_id, amount)
                  WHERE status = 'recorded'`);
     }
-    await ddl('ANALYZE');
+    await analyze();
   },
 };

@@ -35,7 +35,7 @@
 export default {
   name: '014-fleet-summary-indexes',
 
-  async up({ hasTable, ddl }) {
+  async up({ hasTable, ddl, analyze }) {
     if (await hasTable('sales')) {
       await ddl(`CREATE INDEX IF NOT EXISTS idx_sales_completed_day
                    ON sales(date(sale_date), total_amount)
@@ -58,8 +58,12 @@ export default {
        * migrated anyway. `platform/FleetSummaryService.js` keeps the statistics
        * from drifting afterwards with a `PRAGMA optimize` on the hourly sweep,
        * which is what covers a shop that was empty when this ran.
+       *
+       * Through `analyze()` and never `ddl('ANALYZE')`: Turso refuses the
+       * statement, and sending it inside a migration's transaction took the
+       * whole platform down once already. See the helper for the full story.
        */
-      await ddl('ANALYZE');
+      await analyze();
     }
     /**
      * `MAX(created_at) FROM web_orders` is one of the four reads behind "when

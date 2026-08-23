@@ -18,7 +18,7 @@
  *    a database restored from an old backup can be in an unexpected state.
  *  - Keep it small enough to read in one screen.
  */
-import { getDb, transaction } from '../connection.js';
+import { getDb, transaction, driverName } from '../connection.js';
 import migration001 from './001-web-storefront.js';
 import migration002 from './002-web-orders.js';
 import migration003 from './003-web-order-sequence.js';
@@ -92,6 +92,45 @@ export async function ddl(sql) {
   await getDb().prepare(sql).run();
 }
 
+/**
+ * Collect query-planner statistics — best effort, and ONLY where they are legal.
+ *
+ * `ANALYZE` is not a schema change. It writes `sqlite_stat1`, which is how the
+ * planner learns that `status = 'completed'` matches nearly every row and so
+ * stops preferring `idx_sales_status` over a partial index that would actually
+ * seek. Skipping it costs milliseconds; it can never cost correctness.
+ *
+ * Turso does not allow it. libSQL's server refuses the statement outright —
+ * `SQL_PARSE_ERROR: SQL not allowed statement: ANALYZE` — and because a
+ * migration runs inside a transaction, that refusal aborted the migration, the
+ * migration aborted `runMigrations`, and `runMigrations` runs on the first
+ * request of every cold serverless instance. So one optimisation hint that the
+ * host would not accept took down the ERP, the storefront and the console at
+ * once, with every route answering 500. That is the whole reason this helper
+ * exists: an optimisation must fail like an optimisation.
+ *
+ * Two guards, deliberately both:
+ *  - the driver is asked first, so on a hosted database the statement is never
+ *    sent — catching it afterwards would be too late, since a statement that
+ *    errors inside an open libSQL transaction poisons the rest of it;
+ *  - and it is wrapped anyway, because a future host may refuse something this
+ *    file cannot predict, and the answer must still be "carry on".
+ *
+ * `PRAGMA optimize` on the hourly sweep (see `platform/FleetSummaryService.js`)
+ * is the same statement wearing different clothes and gets the same treatment.
+ */
+export async function analyze() {
+  if (driverName() !== 'sqlite') return false;
+  try {
+    await getDb().prepare('ANALYZE').run();
+    return true;
+  } catch {
+    // Statistics are a hint. A database that will not gather them is slower,
+    // never wrong, and must not stop a shop opening.
+    return false;
+  }
+}
+
 export async function hasTable(table) {
   const row = await getDb()
     .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name = ?").get(table);
@@ -113,7 +152,9 @@ export async function runMigrations() {
     // Each migration is atomic on its own: a failure half way through leaves
     // the database untouched and unrecorded, so the next start retries it.
     await transaction(async () => {
-      await migration.up({ getDb, hasColumn, addColumn, hasTable, ddl });
+      await migration.up({
+        getDb, hasColumn, addColumn, hasTable, ddl, analyze,
+      });
       await getDb().prepare('INSERT INTO schema_migrations (name) VALUES (?)').run(migration.name);
     });
     ran.push(migration.name);
@@ -121,4 +162,4 @@ export async function runMigrations() {
   return ran;
 }
 
-export default { runMigrations, hasColumn, addColumn, hasTable };
+export default { runMigrations, hasColumn, addColumn, hasTable, analyze };
