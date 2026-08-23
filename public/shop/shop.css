@@ -1478,6 +1478,30 @@ html[lang="ar"] .card-brand { letter-spacing: 0; text-transform: none; font-size
   transform: none;
 }
 
+/*
+ * A tap that is still in the air, which is NOT the same thing as a control
+ * that cannot be used. The flat muted fill above says "no"; this says "yes,
+ * and it is happening" — the difference matters most on the one button on this
+ * site that spends money, on the connection where it takes longest. Without
+ * it, "Confirm order" that looks inert for three seconds gets tapped again.
+ * See public/shop/js/core/actions.js.
+ */
+.btn.is-busy { cursor: progress; }
+.btn.is-busy::after {
+  content: '';
+  width: 1em;
+  height: 1em;
+  flex: none;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: btn-busy-spin .7s linear infinite;
+}
+@keyframes btn-busy-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .btn.is-busy::after { animation-duration: 2.4s; }
+}
+
 .link-danger {
   display: inline-flex;
   align-items: center;

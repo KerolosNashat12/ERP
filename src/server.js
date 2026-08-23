@@ -15,9 +15,11 @@ import shopRouter from './api/routes/shop.js';
 import shopOrdersRouter from './api/routes/shopOrders.js';
 import { publicLandingRouter } from './api/routes/landing.js';
 import { attachRequestContext, errorHandler, notFoundHandler } from './api/middleware/index.js';
+import { idempotency } from './api/middleware/idempotency.js';
 import platformApiRouter from './api/routes/platform.js';
 import { resolveTenant, resolveDefaultTenant } from './api/middleware/tenant.js';
-import { initPlatformDb } from './platform/db.js';
+import { currentTenant } from './infrastructure/database/connection.js';
+import { initPlatformDb, platformDb } from './platform/db.js';
 import { ensureDefaultTenant } from './platform/bootstrapDefaultTenant.js';
 
 const isHostedDb = () => config.database.driver === 'libsql';
@@ -64,6 +66,25 @@ export function createApp() {
   });
 
   app.use(attachRequestContext);
+
+  /**
+   * One save, one document.
+   *
+   * Mounted in FRONT of every router that can write — the ERP's, the
+   * storefront's and the console's — rather than on the routes that happen to
+   * matter today. A purchase order is what the owner noticed, but a customer
+   * double-tapping "confirm order" is the same bug with a worse consequence,
+   * and the next route somebody adds is the same bug again. Sitting here, in
+   * front of the routers, it covers all of them and asks nothing of whoever
+   * writes the next one. See api/middleware/idempotency.js.
+   *
+   * Two of them, because a shop's claims and the console's belong in two
+   * different databases: the ERP's follows the tenant that `resolveTenant` put
+   * in scope (so it is that shop's own database, never another's), and the
+   * console's is the control plane.
+   */
+  const guardShopWrites = idempotency({ scope: () => currentTenant()?.slug || 'shop' });
+  const guardConsoleWrites = idempotency({ db: platformDb, scope: () => 'platform' });
 
   app.get('/api/health', (_req, res) => {
     res.json({
@@ -130,7 +151,7 @@ export function createApp() {
    * 401, never reaching the platform router at all.
    */
   if (config.platform.enabled) {
-    app.use('/api/platform', platformApiRouter);
+    app.use('/api/platform', guardConsoleWrites, platformApiRouter);
     // The owner's own dashboard: its own cookie, its own router, never a
     // tenant's data. Mounted before the ERP's own '/' catch-all below, so it
     // wins on that one path — everywhere else is unchanged.
@@ -158,8 +179,8 @@ export function createApp() {
     // Tenant traffic. The shop API is mounted before the general API for the
     // same reason as its single-tenant counterpart below: so nothing about a
     // public storefront request can inherit the ERP's own routing by accident.
-    app.use('/t/:slug/api/shop', resolveTenant, shopRouter, shopOrdersRouter);
-    app.use('/t/:slug/api', resolveTenant, apiRouter);
+    app.use('/t/:slug/api/shop', resolveTenant, guardShopWrites, shopRouter, shopOrdersRouter);
+    app.use('/t/:slug/api', resolveTenant, guardShopWrites, apiRouter);
     app.use('/t/:slug/api', notFoundHandler);
 
     // A tenant with the website switched off must not leak that a shop is
@@ -203,8 +224,8 @@ export function createApp() {
      */
     if (config.platform.defaultTenant) {
       const asDefault = resolveDefaultTenant(config.platform.defaultTenant);
-      app.use('/api/shop', asDefault, shopRouter, shopOrdersRouter);
-      app.use('/api', asDefault, apiRouter);
+      app.use('/api/shop', asDefault, guardShopWrites, shopRouter, shopOrdersRouter);
+      app.use('/api', asDefault, guardShopWrites, apiRouter);
     }
 
     /**
@@ -233,10 +254,10 @@ export function createApp() {
   // Public storefront API. Mounted before the ERP router so nothing about the
   // shop can accidentally inherit its authentication middleware — and equally,
   // so the ERP's routes are never reachable without a session.
-  app.use('/api/shop', shopRouter);
-  app.use('/api/shop', shopOrdersRouter);
+  app.use('/api/shop', guardShopWrites, shopRouter);
+  app.use('/api/shop', guardShopWrites, shopOrdersRouter);
 
-  app.use('/api', apiRouter);
+  app.use('/api', guardShopWrites, apiRouter);
   app.use('/api', notFoundHandler);
 
   // Static SPA — no build step, so it also works from a USB stick.

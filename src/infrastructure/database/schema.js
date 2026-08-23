@@ -9,6 +9,11 @@
  * Everything is `IF NOT EXISTS`, so applying it repeatedly is safe.
  */
 
+import { REQUEST_REPLAY_SQL } from '../../shared/requestReplay.js';
+import { ATTACHMENTS_SQL } from '../../shared/attachments.js';
+import { PURCHASE_PAYMENTS_SQL } from '../../shared/supplierPayments.js';
+import { COSTS_SQL } from '../../shared/costs.js';
+
 export const SCHEMA_SQL = `
 -- =============================================================================
 --  M&M Accessories ERP — Database Schema (SQLite)
@@ -409,6 +414,13 @@ CREATE TABLE IF NOT EXISTS purchase_order_lines (
 CREATE INDEX IF NOT EXISTS idx_po_lines ON purchase_order_lines(purchase_order_id);
 CREATE INDEX IF NOT EXISTS idx_po_lines_variant ON purchase_order_lines(variant_id);
 
+-- ------------------------------------------------------- money out, with proof
+-- What the shop actually paid this supplier, and when. The paid_amount column
+-- on purchase_orders is the running total of these rows and is recomputed from
+-- them, never incremented. Defined once in shared/supplierPayments.js because a
+-- migration has to carry existing databases to the same shape.
+${PURCHASE_PAYMENTS_SQL};
+
 -- =============================================================================
 --  6. CLIENTS & SALES
 -- =============================================================================
@@ -631,6 +643,14 @@ CREATE TABLE IF NOT EXISTS product_images (
 CREATE INDEX IF NOT EXISTS idx_images_product ON product_images(product_id, display_order);
 CREATE INDEX IF NOT EXISTS idx_images_variant ON product_images(variant_id);
 
+-- ---------------------------------------------------------------- attachments
+-- One table for every photographed piece of paper in the system: the receipt
+-- for a supplier payment today, a bill and a salary slip next. Polymorphic by
+-- (owner_type, owner_id) so a new kind of owner is a new string, not a new
+-- table. Defined once in shared/attachments.js; the contract for using it is at
+-- the top of services/AttachmentService.js.
+${ATTACHMENTS_SQL};
+
 -- ---------------------------------------------------------------- website assets
 -- One row per named image slot ('banner' today), so a second slot later is a
 -- new row rather than a new table. Same reasoning as product_images: the bytes
@@ -668,6 +688,21 @@ CREATE TABLE IF NOT EXISTS password_reset_requests (
 );
 CREATE INDEX IF NOT EXISTS idx_reset_status ON password_reset_requests(status, requested_at DESC);
 CREATE INDEX IF NOT EXISTS idx_reset_user   ON password_reset_requests(user_id);
+
+-- ---------------------------------------------------------------- what the shop spends
+-- Costs (electricity, rent, taxes, equipment…), the templates that repeat, the
+-- people on the payroll, and the categories all three are filed under. Defined
+-- once in shared/costs.js because migration 012 has to create the identical
+-- shape on a database that already exists. A salary payment is deliberately a
+-- row in costs and not a table of its own — see that file for why.
+${COSTS_SQL};
+
+-- ---------------------------------------------------------------- one save, one document
+-- Every unsafe request stakes a claim here before it runs, so a second copy of
+-- the same click replays the first answer instead of writing a second row.
+-- Defined once in shared/requestReplay.js because the control plane needs the
+-- identical table. See api/middleware/idempotency.js for the protocol.
+${REQUEST_REPLAY_SQL}
 
 DROP VIEW IF EXISTS v_variant_details;
 CREATE VIEW v_variant_details AS

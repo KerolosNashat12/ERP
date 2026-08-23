@@ -10,6 +10,64 @@ import { money, number, date, isoDate } from '../core/format.js';
 import { session, can, lookup } from '../core/store.js';
 import { navigate } from '../core/router.js';
 import { variantPicker, lineNumber, requireLines } from './pickers.js';
+// One photograph mechanism, one browser-side implementation of it: the cost
+// and salary screens use the very same three helpers. See core/proof.js.
+import { proofUrl, openProof, proofPicker } from '../core/proof.js';
+
+/**
+ * What an order will not let you do, and why.
+ *
+ * The rule itself is the server's (`draft` or `ordered` may be edited, only a
+ * `draft` may be deleted) and is enforced there. This is the sentence a person
+ * reads instead of hunting for a button that was never drawn — the owner could
+ * not find edit and delete at all, and a button that quietly is not there is
+ * indistinguishable from a broken screen.
+ */
+const editRefusal = (order) => {
+  if (['draft', 'ordered'].includes(order.status)) return null;
+  if (order.status === 'cancelled') return t('cannotEditCancelled');
+  return t('cannotEditReceived');
+};
+
+const deleteRefusal = (order) => {
+  if (order.status === 'draft') {
+    // A draft can have taken a deposit; the server refuses to delete it and
+    // this says so before the click rather than after it.
+    return Number(order.paid_amount) > 0 ? t('cannotDeletePaid') : null;
+  }
+  if (order.status === 'ordered') return t('cannotDeleteOrdered');
+  if (order.status === 'cancelled') return t('cannotDeleteCancelled');
+  return t('cannotDeleteReceived');
+};
+
+/**
+ * An action button that explains itself when it cannot act.
+ *
+ * `disabled` would be honest and silent — a grey button tells nobody why. This
+ * stays pressable and answers the question when pressed, which is the whole
+ * point of the refusal text existing.
+ */
+function actionButton({ label, title, refusal, danger = false, onclick }) {
+  if (refusal) {
+    // Deliberately NOT `disabled` and NOT `aria-disabled`: both are promises
+    // that the control does nothing, and this one does something — it answers
+    // the question. It is greyed so it does not look like the live action, and
+    // it carries the reason as its title for a hover and for a screen reader.
+    return h('button', {
+      class: 'btn sm ghost muted',
+      type: 'button',
+      title: refusal,
+      dataset: { refused: 'true' },
+      onclick: (event) => { event.stopPropagation(); toast(refusal, 'warn', 6000); },
+    }, label);
+  }
+  return h('button', {
+    class: `btn sm ${danger ? 'danger' : ''}`,
+    type: 'button',
+    title: title || label,
+    onclick: (event) => { event.stopPropagation(); onclick(); },
+  }, label);
+}
 
 export async function purchasesView(root, route) {
   if (route.segments[1]) return purchaseFormView(root, route);
@@ -44,6 +102,28 @@ export async function purchasesView(root, route) {
             money(r.paid_amount)),
         },
         { key: 'status', label: t('status'), render: (r) => statusTag(r.status) },
+        // The owner's complaint was that he could not find editing and
+        // deleting at all: they existed only inside the editor, which is one
+        // click past the list where he was looking for them. They live here
+        // now, and where an order will not allow one, the button says why
+        // rather than not being drawn.
+        {
+          key: '__actions',
+          label: t('actions'),
+          class: 'nowrap',
+          render: (r) => h('div', { class: 'row-actions' },
+            can('purchases.update') ? actionButton({
+              label: `✎ ${t('editOrder')}`,
+              refusal: editRefusal(r),
+              onclick: () => navigate(`purchases/${r.id}`),
+            }) : null,
+            can('purchases.delete') ? actionButton({
+              label: `🗑 ${t('deleteOrder')}`,
+              danger: true,
+              refusal: deleteRefusal(r),
+              onclick: () => removeOrder(r, load),
+            }) : null),
+        },
       ],
       rows: data.rows,
       onRowClick: (row) => navigate(`purchases/${row.id}`),
@@ -78,6 +158,23 @@ export async function purchasesView(root, route) {
 
   await load();
   return undefined;
+}
+
+/** Delete a draft, with the confirmation and the refusal both in one place. */
+async function removeOrder(order, afterwards) {
+  const refusal = deleteRefusal(order);
+  if (refusal) { toast(refusal, 'warn', 6000); return; }
+  if (!await confirmDialog({
+    title: `${t('deleteOrder')} — ${order.po_number}`,
+    message: t('deleteOrderConfirm'),
+    confirmLabel: t('deleteOrder'),
+    danger: true,
+  })) return;
+  try {
+    await api.del(`/api/purchases/${order.id}`);
+    toast(t('deleted'));
+    await afterwards();
+  } catch (error) { toastError(error); }
 }
 
 async function openReorderSuggestions() {
@@ -273,22 +370,25 @@ async function purchaseFormView(root, route) {
       }, t('sendToSupplier')) : null,
       existing && ['ordered', 'partially_received'].includes(existing.status) && can('purchases.receive')
         ? h('button', { class: 'btn gold', onclick: () => openReceive(existing) }, t('receiveGoods')) : null,
-      existing && can('purchases.update') ? h('button', { class: 'btn', onclick: () => openPayment(existing) }, t('registerPayment')) : null,
-      existing?.status === 'draft' && can('purchases.delete') ? h('button', {
-        class: 'btn danger',
-        onclick: async () => {
-          if (!await confirmDialog({ title: t('delete'), message: t('deleteConfirm'), danger: true })) return;
-          await api.del(`/api/purchases/${id}`);
-          toast(t('deleted'));
-          navigate('purchases');
-        },
-      }, t('delete')) : null),
+      existing && can('purchases.pay') && existing.status !== 'cancelled'
+        ? h('button', { class: 'btn', onclick: () => openPayment(existing) }, t('registerPayment')) : null,
+      // Present whatever the status is, and saying why when it cannot act —
+      // a delete button that is simply absent is what sent the owner looking.
+      existing && can('purchases.delete') ? actionButton({
+        label: `🗑 ${t('deleteOrder')}`,
+        danger: true,
+        refusal: deleteRefusal(existing),
+        onclick: () => removeOrder(existing, async () => navigate('purchases')),
+      }) : null),
     h('div', { class: 'card' }, h('div', { class: 'card-body' }, header.node)),
     h('div', { class: 'card', style: { marginTop: '14px' } },
       h('div', { class: 'card-head' }, h('h3', {}, t('products'))),
       editable ? h('div', { class: 'card-body' }, picker.node) : null,
       linesHost,
-      totalsHost));
+      totalsHost),
+    // "How to see it after upload" — the half of the request most likely to be
+    // skipped. Every payment on this order, with the receipt attached to it.
+    existing ? paymentsCard(existing) : null);
 
   renderAll();
   return () => picker.destroy();
@@ -352,36 +452,187 @@ function openReceive(order) {
   render();
 }
 
+// ------------------------------------------------------- payments and proof
+
+/**
+ * Every payment on this order — the owner asked for this in the same breath as
+ * the upload: *"and how to see it after upload."*
+ *
+ * The thumbnail column points at `?size=thumb`, which is the ~20 KB preview the
+ * browser made when the photograph was taken. Ten payments cost ten of those,
+ * not ten phone photographs; the readable one is only fetched when somebody
+ * clicks. A reversed payment is still here, struck through and greyed, with who
+ * reversed it and why — the total already excludes it.
+ */
+function paymentsCard(order) {
+  const body = h('div', { class: 'card-body tight' }, spinner());
+  const summary = h('div', { class: 'muted small' });
+
+  const card = h('div', { class: 'card', style: { marginTop: '14px' } },
+    h('div', { class: 'card-head' },
+      h('h3', {}, t('paymentsOnThisOrder')),
+      h('span', { class: 'spacer' }),
+      summary,
+      can('purchases.pay') && order.status !== 'cancelled'
+        ? h('button', {
+          class: 'btn sm primary',
+          onclick: () => openPayment(order),
+        }, `＋ ${t('registerPayment')}`)
+        : null),
+    body);
+
+  async function load() {
+    try {
+      const data = await api.get(`/api/purchases/${order.id}/payments`);
+      mount(summary, `${t('paid')}: ${money(data.paid_amount)} · ${t('outstanding')}: ${money(data.outstanding)}`);
+      mount(body, dataTable({
+        columns: [
+          {
+            key: 'paid_on',
+            label: t('paymentDate'),
+            render: (p) => h('div', {},
+              h('div', {}, date(p.paid_on)),
+              p.status === 'reversed' ? tag(t('reversedPayment'), 'danger') : null),
+          },
+          {
+            key: 'amount',
+            label: t('amount'),
+            type: 'money',
+            class: 'amount',
+            render: (p) => money(p.amount),
+          },
+          { key: 'method', label: t('paymentMethod'), render: (p) => t(p.method === 'unknown' ? 'unknownMethod' : p.method, p.method) },
+          { key: 'reference', label: t('paymentReference'), class: 'mono small' },
+          {
+            key: 'note',
+            label: t('paymentNote'),
+            render: (p) => h('div', {},
+              h('div', {}, p.note || '—'),
+              p.status === 'reversed'
+                ? h('small', { class: 'muted' },
+                  `${t('reversedBy')}: ${p.reversed_by_name || '—'} — ${p.reversal_reason || ''}`)
+                : null),
+          },
+          { key: 'created_by_name', label: t('recordedBy') },
+          {
+            key: 'proof',
+            label: t('proof'),
+            render: (p) => (p.attachments.length
+              ? h('div', { class: 'row-actions' }, p.attachments.map((attachment) => h('img', {
+                class: 'proof-thumb',
+                loading: 'lazy',
+                // The preview, never the readable photograph. See AttachmentService.
+                src: proofUrl(attachment.id, 'thumb'),
+                alt: t('proofOfPayment'),
+                title: t('openFullSize'),
+                onclick: () => openProof(attachment, `${order.po_number} — ${money(p.amount)}`),
+              })))
+              : h('span', { class: 'muted' }, '—')),
+          },
+          {
+            key: '__actions',
+            label: t('actions'),
+            class: 'nowrap',
+            render: (p) => (can('purchases.reverse_payment') && p.status === 'recorded'
+              ? h('div', { class: 'row-actions' }, h('button', {
+                class: 'btn sm ghost',
+                title: t('reversePayment'),
+                onclick: () => openReversal(order, p),
+              }, '↺'))
+              : ''),
+          },
+        ],
+        rows: data.rows,
+        rowClass: (p) => (p.status === 'reversed' ? 'payment-reversed' : ''),
+        emptyMessage: t('noPaymentsYet'),
+      }));
+    } catch (error) {
+      toastError(error);
+      mount(body, h('div', { class: 'empty' }, t('noPaymentsYet')));
+    }
+  }
+
+  load();
+  return card;
+}
+
+function openReversal(order, payment) {
+  const reason = textInput({ placeholder: t('mistypedAmount') });
+  const dialog = modal({
+    title: `${t('reversePayment')} — ${money(payment.amount)}`,
+    size: 'narrow',
+    body: h('div', { class: 'stack' },
+      h('div', { class: 'muted small' }, t('reversalReasonHint')),
+      field({ label: t('reversalReason'), input: reason })),
+    footer: [
+      h('button', { class: 'btn', onclick: () => dialog.close() }, t('cancel')),
+      h('button', {
+        class: 'btn danger',
+        onclick: async () => {
+          if (!reason.value.trim()) { toast(t('reversalReason'), 'warn'); return; }
+          try {
+            await api.post(`/api/purchases/${order.id}/payments/${payment.id}/reverse`,
+              { reason: reason.value.trim() });
+            toast(t('paymentReversed'));
+            dialog.close();
+            window.location.reload();
+          } catch (error) { toastError(error); }
+        },
+      }, t('reversePayment')),
+    ],
+  });
+}
+
 function openPayment(order) {
-  const outstanding = order.total_amount - order.paid_amount;
+  const outstanding = Math.round((order.total_amount - order.paid_amount) * 100) / 100;
   const form = buildForm([
     { name: 'amount', label: t('amount'), type: 'number', required: true, value: outstanding },
+    { name: 'paidOn', label: t('paidOnDate'), type: 'date', required: true },
     {
       name: 'method',
       label: t('paymentMethod'),
       type: 'select',
       required: true,
-      options: ['cash', 'card', 'transfer', 'wallet'].map((v) => ({ value: v, label: t(v) })),
+      options: ['cash', 'card', 'transfer', 'wallet', 'cheque'].map((v) => ({ value: v, label: t(v) })),
     },
-    { name: 'reference', label: t('reference'), span: 2 },
-  ], { method: 'transfer' }, { columns: 2 });
+    { name: 'reference', label: t('paymentReference') },
+    { name: 'note', label: t('paymentNote'), span: 2 },
+  ], { method: 'transfer', paidOn: isoDate() }, { columns: 2 });
+
+  const proof = proofPicker();
 
   const dialog = modal({
     title: `${t('registerPayment')} — ${order.po_number}`,
     size: 'narrow',
     body: h('div', { class: 'stack' },
       h('div', { class: 'muted small' }, `${t('outstanding')}: ${money(outstanding)}`),
-      form.node),
+      form.node,
+      field({ label: t('proofOfPayment'), input: proof.node })),
     footer: [
       h('button', { class: 'btn', onclick: () => dialog.close() }, t('cancel')),
       h('button', {
         class: 'btn primary',
         onclick: async () => {
           if (!form.validate()) return;
+          // A photograph still being compressed is a photograph that would be
+          // left behind by a save that went now.
+          if (proof.isBusy()) { toast(t('preparingPhoto'), 'warn'); return; }
+          const values = form.values();
           try {
-            await api.post(`/api/purchases/${order.id}/payment`, form.values());
-            toast(t('saved'));
+            await api.post(`/api/purchases/${order.id}/payments`, {
+              // The amount is sent as typed and rounded by the server; nothing
+              // the browser calculated is trusted as a total.
+              amount: Number(values.amount),
+              method: values.method,
+              reference: values.reference || null,
+              note: values.note || null,
+              paidOn: values.paidOn || null,
+              photo: proof.value(),
+            });
+            toast(t('paymentRecorded'));
             dialog.close();
+            // The whole screen, not just the list: the order's totals, its
+            // status tag and the outstanding figure all moved with this.
             window.location.reload();
           } catch (error) { toastError(error); }
         },

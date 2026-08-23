@@ -221,6 +221,22 @@ html[dir="rtl"] .nav-group { letter-spacing: 0; }
 .btn.block { width: 100%; }
 .btn.lg { padding: 11px 18px; font-size: 14.5px; }
 
+/* A press that is still in the air.
+   The disabled state alone says "you cannot", not "it is happening" — and a
+   button that only greys out on a slow connection reads as broken, which is
+   precisely when it gets pressed again. The ring turns for as long as the
+   request is out. See public/js/core/actions.js. */
+.btn.is-busy { position: relative; opacity: .75; cursor: progress; }
+.btn.is-busy::after {
+  content: ''; width: 12px; height: 12px; flex: none;
+  border: 2px solid currentColor; border-top-color: transparent;
+  border-radius: 50%; animation: mm-busy-spin .7s linear infinite;
+}
+@keyframes mm-busy-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .btn.is-busy::after { animation-duration: 2.4s; }
+}
+
 .field { display: grid; gap: 5px; }
 .field > label { font-size: 12.5px; font-weight: 500; color: var(--ink-2); }
 .field .hint { font-size: 11.5px; color: var(--ink-3); }
@@ -480,6 +496,37 @@ html[dir="rtl"] .kpi .label { letter-spacing: 0; }
 .photo-actions { display: flex; gap: 3px; align-items: center; }
 .photo-actions .spacer { flex: 1; }
 
+/* ------------------------------------------------- payments and their proof */
+/* Actions that live in a list row: they must not stretch the row's height or
+   wrap onto a second line on a narrow till screen. */
+.row-actions { display: flex; gap: 4px; align-items: center; justify-content: flex-end; }
+/* A refusal is still a button — it is pressable and it answers when pressed.
+   Greyed rather than disabled, because `disabled` cannot explain itself. */
+.btn.muted { color: var(--ink-3); opacity: .72; }
+.btn.muted:hover { opacity: 1; background: var(--line-2); }
+
+/* The thumbnail in a payments row. Small on purpose: this is the ~20 KB
+   preview, never the readable photograph, which is fetched only when opened. */
+.proof-thumb {
+  display: block; width: 46px; height: 46px; object-fit: cover; cursor: zoom-in;
+  border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--line-2);
+}
+.proof-thumb:hover { border-color: var(--accent); }
+/* The opened photograph. A receipt is portrait and is being READ, so it is
+   given the height of the viewport rather than a fixed box, and may be
+   panned/zoomed by the browser once it overflows. */
+.proof-full {
+  display: block; max-width: 100%; max-height: 72vh; margin-inline: auto;
+  border-radius: var(--radius-sm); background: var(--line-2);
+}
+.payment-reversed td { opacity: .58; }
+.payment-reversed .amount { text-decoration: line-through; }
+.proof-picker { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.proof-picker img {
+  width: 64px; height: 64px; object-fit: cover;
+  border: 1px solid var(--line); border-radius: var(--radius-sm);
+}
+
 /* ---------------------------------------------------------------- labels */
 /* Geometry is set inline from Settings → Devices so one component prints a
    40x30 thermal label, a 30x20 jewellery tag or an A4 sticker sheet. */
@@ -671,6 +718,28 @@ html[dir="rtl"] .kpi .label { letter-spacing: 0; }
   @page { margin: 8mm; }
 }
 
+/* ------------------------------------------------------- what a report means
+   A sentence above a report saying what its numbers do and do not include.
+   It exists because "profit" on the sales summary is goods margin and the ERP
+   now also knows what the shop spends — the figure did not change, the risk of
+   misreading it did. Soft rather than loud: this is context, not a warning. */
+.callout {
+  background: var(--accent-soft); color: var(--ink-2);
+  border: 1px solid var(--line); border-inline-start: 3px solid var(--accent);
+  border-radius: var(--radius-sm); padding: 10px 12px; margin-bottom: 14px;
+  font-size: 13px; line-height: 1.55;
+}
+.callout strong { color: var(--ink); }
+
+/* The costs screen's tables can carry a long Arabic description; on a phone the
+   whole table scrolls rather than the page, which `.table-wrap` already does. */
+.filters .field.grow { flex: 1 1 180px; min-width: 140px; }
+
+/* The report centre: a catalogue beside the result on a desktop, stacked on a
+   phone (see the breakpoint below). */
+.report-layout { grid-template-columns: 250px 1fr; align-items: start; }
+.grid .span-2 { grid-column: span 2; }
+
 /* ------------------------------------------------------------ responsive */
 @media (max-width: 1180px) {
   .pos { grid-template-columns: 1fr; }
@@ -678,9 +747,22 @@ html[dir="rtl"] .kpi .label { letter-spacing: 0; }
 }
 @media (max-width: 900px) {
   .shell { grid-template-columns: 1fr; }
+  /* A card told to span two columns inside a grid that has collapsed to one is
+     wider than the screen, and takes the whole page sideways with it. Both of
+     the two places that do it now say so with a class, so the breakpoint can
+     undo it. */
+  .grid .span-2 { grid-column: auto; }
+  .report-layout { grid-template-columns: minmax(0, 1fr); }
+  /* `1fr` alone is not enough: a grid track's automatic minimum is its item's
+     MIN-CONTENT, so a wide table inside a card stretches the column past the
+     screen even though `.table-wrap` would have scrolled it. `minmax(0, …)`
+     plus `min-width: 0` is what actually lets the card be narrower than what
+     is inside it. This is why the reports screen and the dashboard's trend
+     card scrolled the whole page sideways on a phone. */
+  .grid > * { min-width: 0; }
   .sidebar { position: fixed; inset-inline-start: -100%; width: 260px; z-index: 60; transition: inset-inline-start .2s; }
   .sidebar.open { inset-inline-start: 0; }
-  .grid.cols-2, .grid.cols-3, .grid.cols-4 { grid-template-columns: 1fr; }
+  .grid.cols-2, .grid.cols-3, .grid.cols-4 { grid-template-columns: minmax(0, 1fr); }
   .login-page { grid-template-columns: 1fr; }
   .login-aside { display: none; }
   .topbar-scan { min-width: 0; flex: 1; }

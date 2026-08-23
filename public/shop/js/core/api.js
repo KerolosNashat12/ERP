@@ -5,6 +5,21 @@
  * session cookie, redirects on 401 and knows about the back office. A shopper
  * has no session, so this sends no credentials and treats every failure as
  * something to show a friendly card about.
+ *
+ * It does share that module's guard against a request being made twice, and it
+ * matters more here than it does in the office: a customer who taps "confirm
+ * order" twice on a slow phone is the same bug as the owner's double-saved
+ * purchase order, with a worse consequence — two orders, two deliveries, one
+ * shopper who only meant to buy once, and a shop that finds out at the door.
+ *
+ * `POST /api/shop/orders` is the only thing here that writes, so the guard is
+ * one small piece of machinery: an unsafe request that is already in the air is
+ * not sent again (both callers wait on the one promise), and every unsafe
+ * request carries an `Idempotency-Key` so the server can refuse a duplicate it
+ * never saw this page send — a retransmit on a bad connection, a page restored
+ * from the back-forward cache. The key is held per submission and dropped the
+ * moment one succeeds, so a customer who really does place the same order again
+ * tomorrow places a second order.
  */
 
 /**
@@ -18,6 +33,47 @@ export function apiBase() {
   return match ? `/t/${match[1]}` : '';
 }
 
+// ------------------------------------------------------- one tap, one order
+
+const UNSAFE = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+
+/** In the air right now, by signature -> the promise every caller shares. */
+const inFlight = new Map();
+
+/** Keys held per submission; an entry is dropped when that submission works. */
+const heldKeys = new Map();
+const KEY_TTL_MS = 10 * 60_000;
+
+/** Key order is decided by whatever built the object, never by the shopper. */
+function canonical(value) {
+  if (value === null || value === undefined) return 'null';
+  if (typeof value !== 'object') return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
+  return `{${Object.keys(value).sort().map((k) => `${JSON.stringify(k)}:${canonical(value[k])}`).join(',')}}`;
+}
+
+const newKey = () => (globalThis.crypto?.randomUUID
+  ? globalThis.crypto.randomUUID()
+  : `k${Date.now().toString(36)}${Math.random().toString(36).slice(2, 12)}`);
+
+function keyFor(signature) {
+  const now = Date.now();
+  for (const [held, entry] of heldKeys) {
+    if (now - entry.at > KEY_TTL_MS) heldKeys.delete(held);
+  }
+  const existing = heldKeys.get(signature);
+  if (existing) return existing.key;
+  const key = newKey();
+  heldKeys.set(signature, { key, at: now });
+  return key;
+}
+
+/** How many unsafe requests are in the air — see core/actions.js. */
+export const pendingRequests = () => inFlight.size;
+
+/** Settles when everything currently in the air has finished, however it ends. */
+export const settledRequests = () => Promise.allSettled([...inFlight.values()]);
+
 export class ShopError extends Error {
   constructor(message, status, code, details) {
     super(message);
@@ -29,18 +85,45 @@ export class ShopError extends Error {
   }
 }
 
-async function request(path, { method = 'GET', body, query } = {}) {
+function request(path, options = {}) {
+  const method = options.method || 'GET';
+  if (!UNSAFE.has(method)) return send(path, options, null);
+
+  const signature = `${method} ${path} ${canonical(options.body)}`;
+  const already = inFlight.get(signature);
+  // The second tap, stopped before it reaches the shop at all.
+  if (already) return already;
+
+  const key = keyFor(signature);
+  const attempt = send(path, options, key)
+    .then((payload) => {
+      // The order is placed. A later identical one is a second order and gets
+      // a key of its own.
+      heldKeys.delete(signature);
+      return payload;
+    })
+    .finally(() => inFlight.delete(signature));
+
+  inFlight.set(signature, attempt);
+  return attempt;
+}
+
+async function send(path, { method = 'GET', body, query } = {}, idempotencyKey) {
   const url = new URL(apiBase() + path, window.location.origin);
   for (const [key, value] of Object.entries(query || {})) {
     if (value === undefined || value === null || value === '') continue;
     url.searchParams.set(key, value);
   }
 
+  const headers = {};
+  if (body) headers['Content-Type'] = 'application/json';
+  if (idempotencyKey) headers['Idempotency-Key'] = idempotencyKey;
+
   let response;
   try {
     response = await fetch(url, {
       method,
-      headers: body ? { 'Content-Type': 'application/json' } : {},
+      headers,
       body: body ? JSON.stringify(body) : undefined,
     });
   } catch (cause) {

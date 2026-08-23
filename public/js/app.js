@@ -19,6 +19,8 @@ import { webOrdersView } from './views/webOrders.js';
 import { returnsView } from './views/returns.js';
 import { promotionsView } from './views/promotions.js';
 import { reportsView } from './views/reports.js';
+import { costsView, costCategoriesView } from './views/costs.js';
+import { employeesView } from './views/employees.js';
 import { usersView, auditView, settingsView } from './views/admin.js';
 import { labelsView } from './views/labels.js';
 
@@ -69,6 +71,17 @@ const NAV = [
     items: [
       { path: 'purchases', label: 'purchases', icon: '⇩', permission: 'purchases.view' },
       { path: 'suppliers', label: 'suppliers', icon: '⌂', permission: 'suppliers.view' },
+    ],
+  },
+  {
+    // What the shop spends, and who it pays. Its own group rather than a corner
+    // of Purchasing: buying stock and paying the electricity are different
+    // acts, sold as different modules, and the owner asked for التكاليف as a
+    // page of its own.
+    group: 'navMoney',
+    items: [
+      { path: 'costs', label: 'costs', icon: '⌁', permission: 'costs.view' },
+      { path: 'employees', label: 'employees', icon: '☻', permission: 'employees.view' },
     ],
   },
   {
@@ -123,6 +136,7 @@ const ROUTE_PERMISSIONS = {
   attributes: 'attributes.view', labels: 'labels.view', inventory: 'inventory.view',
   movements: 'inventory.view', adjustments: 'inventory.view',
   purchases: 'purchases.view', suppliers: 'suppliers.view', customers: 'customers.view',
+  costs: 'costs.view', 'cost-categories': 'costs.view', employees: 'employees.view',
   promotions: 'promotions.view', reports: 'reports.view', users: 'users.view',
   audit: 'audit.view', settings: 'settings.view',
 };
@@ -287,6 +301,9 @@ async function startApp() {
     purchases: purchasesView,
     suppliers: suppliersView,
     customers: customersView,
+    costs: costsView,
+    'cost-categories': costCategoriesView,
+    employees: employeesView,
     promotions: promotionsView,
     reports: reportsView,
     users: usersView,

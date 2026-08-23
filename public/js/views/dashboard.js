@@ -37,7 +37,14 @@ export async function dashboardView(root) {
 
     h('div', { class: 'kpis' },
       kpi(t('todaysSales'), money(k.todayRevenue), `${k.todayInvoices} ${t('invoice')}`, true),
-      kpi(t('monthRevenue'), money(k.monthRevenue), `${t('profit')}: ${money(k.monthProfit)}`),
+      // Two profits, both named. The left one is the number this tile always
+      // showed — revenue minus what the goods cost — and it now says so out
+      // loud, because the shop's rent and wages are in this system and a tile
+      // labelled just "profit" would quietly mean the wrong thing to the person
+      // reading it. The right one is what he means by the word.
+      kpi(t('monthRevenue'), money(k.monthRevenue), `${t('grossProfit')}: ${money(k.monthProfit)}`),
+      kpi(t('costsThisMonth'), money(k.monthCosts), `${number(k.monthCostEntries)} ${t('costEntries')}`),
+      kpi(t('netProfit'), money(k.monthNetProfit), t('netProfitHint'), true),
       kpi(t('averageBasket'), money(k.averageBasket), t('thisMonth')),
       kpi(t('stockValue'), money(k.stockValue), `${number(k.stockUnits)} ${t('qty')}`),
       kpi(t('lowStockItems'), number(k.lowStockCount), t('inventory')),
@@ -47,7 +54,11 @@ export async function dashboardView(root) {
         `${t('products')} / ${t('variants')}`)),
 
     h('div', { class: 'grid cols-3', style: { marginTop: '16px', alignItems: 'start' } },
-      h('div', { class: 'card', style: { gridColumn: 'span 2' } },
+      // A class rather than an inline `gridColumn`, so the phone breakpoint can
+      // undo it: a two-column span inside a one-column grid is what made this
+      // card 403 px wide on a 390 px screen and scrolled the whole page
+      // sideways.
+      h('div', { class: 'card span-2' },
         h('div', { class: 'card-head' }, h('h3', {}, t('salesTrend'))),
         h('div', { class: 'card-body' }, trendChart(data.trend))),
 

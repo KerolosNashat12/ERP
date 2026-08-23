@@ -123,11 +123,26 @@ export const asyncHandler = (fn) => (req, res, next) => Promise.resolve(fn(req, 
  *
  * `res.end()` rather than `res.send()`: send() would try to charset-tag the
  * body and generate an ETag of its own.
+ *
+ * ── Serving bytes that came from outside ────────────────────────────────────
+ * The content type is the one SNIFFED out of the file when it was stored (see
+ * shared/imageCodec.js), never the one the uploader declared — but a browser
+ * will still second-guess a `Content-Type` it disagrees with, and a file that
+ * is a valid JPEG *and* valid HTML is a real trick. `nosniff` takes that
+ * decision away from it. `Content-Disposition: inline` and a `default-src
+ * 'none'` policy are the belt to that brace: if anything ever did get served
+ * as a document, it would be a document that can load nothing and run nothing.
+ * Product photos, the banner and a photographed receipt are all bytes somebody
+ * uploaded, so all three get this — it is set here rather than at each caller
+ * for exactly that reason.
  */
 export function sendImage(req, res, image, { cacheControl = 'public, max-age=31536000, immutable' } = {}) {
   const etag = `"img-${image.id}-${image.byte_size}-${image.created_at}"`;
   res.setHeader('ETag', etag);
   res.setHeader('Cache-Control', cacheControl);
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Content-Disposition', 'inline');
+  res.setHeader('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; sandbox");
 
   const conditional = req.get('if-none-match');
   if (conditional && conditional.split(',').some((candidate) => candidate.trim() === etag)) {

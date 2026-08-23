@@ -13,6 +13,7 @@ import bcrypt from 'bcryptjs';
 import { getDb, transaction } from './connection.js';
 import config from '../../config/index.js';
 import { ALL_PERMISSIONS, ROLE_DEFINITIONS } from '../../shared/permissions.js';
+import { COST_CATEGORY_SEED } from '../../shared/costs.js';
 
 const nowIso = () => new Date().toISOString();
 const daysAgo = (n) => new Date(Date.now() - n * 86_400_000).toISOString();
@@ -226,6 +227,21 @@ export async function seedBaseline() {
       `).run(bcrypt.hashSync('admin123', config.auth.bcryptRounds), adminRoleId, locationId);
     }
 
+    // What a shop spends money on, in both languages. Rows, not a hard-coded
+    // list: the owner renames these, hides the ones he does not use and adds
+    // his own. `ON CONFLICT DO NOTHING` so re-seeding never undoes that.
+    // Kept in step with migrations/012-costs-and-payroll.js.
+    const insertCostCategory = db.prepare(`
+      INSERT INTO cost_categories (code, name_en, name_ar, kind, display_order, is_system)
+      VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(code) DO NOTHING
+    `);
+    for (const category of COST_CATEGORY_SEED) {
+      await insertCostCategory.run(
+        category.code, category.name_en, category.name_ar, category.kind,
+        category.display_order, category.is_system,
+      );
+    }
+
     // Attributes an accessories catalogue actually needs
     const insertAttribute = db.prepare(`
       INSERT INTO attributes (code, name_en, name_ar, input_type, display_order)
@@ -409,6 +425,15 @@ export async function seedExample() {
       lineNet * variants.length * 1.14, lineNet * variants.length * 1.14,
       adminId, adminId, daysAgo(9),
     )).lastInsertRowid;
+
+    // The order was paid in full, and `paid_amount` is now the running total of
+    // the payment rows rather than a number of its own — so the payment that
+    // explains it has to exist, or the demo shop opens with an order that says
+    // it is paid and a payments list that is empty.
+    await db.prepare(`
+      INSERT INTO purchase_payments (purchase_order_id, paid_on, amount, method, reference, note, created_by)
+      VALUES (?, ?, ?, 'transfer', 'TRF-000418', 'Settled in full on delivery', ?)
+    `).run(poId, daysAgo(4).slice(0, 10), lineNet * variants.length * 1.14, adminId);
 
     const insertPoLine = db.prepare(`
       INSERT INTO purchase_order_lines (purchase_order_id, variant_id, quantity_ordered,

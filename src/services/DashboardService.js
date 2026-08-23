@@ -2,6 +2,7 @@
 import repositories from '../infrastructure/repositories/index.js';
 import { getDb } from '../infrastructure/database/connection.js';
 import { round2 } from '../shared/money.js';
+import costService from './CostService.js';
 
 const today = () => new Date().toISOString().slice(0, 10);
 const daysAgo = (n) => new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 10);
@@ -18,6 +19,7 @@ export class DashboardService {
       trend, topProducts, lowStock, lowStockAll, recentSales,
       pendingPurchases, receivables,
       productCount, variantCount, customerCount, supplierCount, activePromotionCount,
+      monthCosts, todayCosts,
     ] = await Promise.all([
       sales.salesTotals({ dateFrom: today(), dateTo: today(), warehouseId }),
       sales.salesTotals({ dateFrom: today().slice(0, 8) + '01', dateTo: today(), warehouseId }),
@@ -73,6 +75,15 @@ export class DashboardService {
         SELECT COUNT(*) AS n FROM promotions
         WHERE is_active = 1 AND (ends_at IS NULL OR date(ends_at) >= date('now'))
       `).get(),
+
+      // What the shop SPENT — rent, electricity, taxes, wages — over the same
+      // two windows as the revenue beside it. Without these the home screen
+      // says "profit" and means goods margin, which is not the word's meaning
+      // to the person reading it. See ReportService.profit_and_costs.
+      repositories.costs.total({
+        dateFrom: today().slice(0, 8) + '01', dateTo: today(), warehouseId,
+      }),
+      repositories.costs.total({ dateFrom: today(), dateTo: today(), warehouseId }),
     ]);
 
     const counts = {
@@ -90,7 +101,14 @@ export class DashboardService {
         todayProfit: round2(todayTotals.profit),
         weekRevenue: round2(week.revenue),
         monthRevenue: round2(monthTotals.revenue),
+        // `monthProfit` is goods margin and always was. It keeps its name and
+        // its meaning; what changes is that it is no longer the only profit on
+        // the screen, and the tile that shows it now says "gross".
         monthProfit: round2(monthTotals.profit),
+        monthCosts: round2(monthCosts.amount),
+        monthCostEntries: monthCosts.entries,
+        monthNetProfit: round2(monthTotals.profit - monthCosts.amount),
+        todayCosts: round2(todayCosts.amount),
         averageBasket: round2(monthTotals.average_basket),
         stockValue: round2(stock.v),
         stockUnits: round2(stock.q),
@@ -115,7 +133,7 @@ export class DashboardService {
 
     // Four independent counts, one round trip; the feed is assembled in a fixed
     // order below so the manager always reads the same list in the same places.
-    const [low, overdue, expiring, staleDrafts] = await Promise.all([
+    const [low, overdue, expiring, staleDrafts, dueCosts] = await Promise.all([
       repositories.inventory.lowStock(warehouseId, 1000),
 
       db.prepare(`
@@ -135,6 +153,12 @@ export class DashboardService {
         SELECT COUNT(*) AS n FROM purchase_orders
         WHERE status='ordered' AND expected_date IS NOT NULL AND date(expected_date) < date('now')
       `).get(),
+
+      // Nothing has been posted — this is the point. A repeating cost waits to
+      // be confirmed, and the shop finds out it is waiting HERE, on the screen
+      // somebody opens every morning, rather than by discovering three months
+      // of missing rent at the end of the quarter.
+      costService.due().catch(() => ({ rows: [] })),
     ]);
 
     if (low.length) {
@@ -178,6 +202,17 @@ export class DashboardService {
         titleEn: `${staleDrafts.n} purchase order(s) past their expected date`,
         titleAr: `${staleDrafts.n} أمر شراء تجاوز موعد التسليم`,
         route: '#/purchases',
+      });
+    }
+
+    if (dueCosts.rows.length) {
+      alerts.push({
+        type: 'costs_due',
+        severity: 'medium',
+        count: dueCosts.rows.length,
+        titleEn: `${dueCosts.rows.length} repeating cost(s) waiting to be confirmed`,
+        titleAr: `${dueCosts.rows.length} تكلفة متكررة مستنية التأكيد`,
+        route: '#/costs',
       });
     }
 

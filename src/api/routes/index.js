@@ -11,12 +11,16 @@ import authService from '../../services/AuthService.js';
 import dashboardService from '../../services/DashboardService.js';
 import catalogService from '../../services/CatalogService.js';
 import imageService from '../../services/ImageService.js';
+import attachmentService from '../../services/AttachmentService.js';
 import inventoryService from '../../services/InventoryService.js';
 import purchaseService from '../../services/PurchaseService.js';
 import salesService from '../../services/SalesService.js';
 import returnService from '../../services/ReturnService.js';
 import promotionService from '../../services/PromotionService.js';
 import reportService from '../../services/ReportService.js';
+import costService from '../../services/CostService.js';
+import costCategoryService from '../../services/CostCategoryService.js';
+import payrollService, { employeeService } from '../../services/PayrollService.js';
 import labelService from '../../services/LabelService.js';
 import auditService from '../../services/AuditService.js';
 import { userService, settingsService, backupService } from '../../services/AdminService.js';
@@ -314,6 +318,71 @@ router.delete('/products/:id/images/:imageId', requirePermission('products.updat
     res.json(await imageService.remove(Number(req.params.id), Number(req.params.imageId), req.context));
   }));
 
+// ------------------------------------------------------------- attachments
+/**
+ * Photographs of paper, for any kind of owner that has registered one.
+ *
+ * These four routes are the whole serving half of the attachment contract — a
+ * cost or a salary payment gets them for free the moment its service calls
+ * `attachmentService.registerOwner()`. Nothing here mentions a purchase.
+ *
+ * The permission is not written in the route because it cannot be: it belongs
+ * to the owner type, which arrives in the URL. So the registration is looked up
+ * first and `requirePermission` is then applied with the code it named — which
+ * keeps RBAC *and* the tenant's module entitlement exactly as they are
+ * everywhere else, rather than inventing a second, weaker check here.
+ */
+const runGuard = (code, req, res) => new Promise((resolve, reject) => {
+  requirePermission(code)(req, res, (error) => (error ? reject(error) : resolve()));
+});
+
+/** Guard by the owner type in the path. Unknown type -> 404, not 403. */
+const guardOwnerType = (right) => asyncHandler(async (req, res, next) => {
+  const rules = attachmentService.owner(req.params.ownerType);
+  await runGuard(rules[right], req, res);
+  next();
+});
+
+/**
+ * The bytes. `?size=thumb` is the small preview a list shows; anything else is
+ * the readable photograph, which is only fetched when somebody opens one.
+ *
+ * Registered BEFORE `/:ownerType/:ownerId`, which is the same three segments
+ * and would otherwise swallow this one and go looking for an owner type called
+ * "1". (A registered owner type named `raw` would collide the other way — so
+ * do not name one that.)
+ *
+ * The row has to be read before the permission can be known — the id alone
+ * says nothing about who owns it — so the guard runs on what the row says its
+ * owner type is, never on anything the caller sent.
+ */
+router.get('/attachments/:id/raw', asyncHandler(async (req, res) => {
+  const meta = await attachmentService.find(Number(req.params.id));
+  const rules = attachmentService.owner(meta.owner_type);
+  await runGuard(rules.view, req, res);
+  const bytes = await attachmentService.bytes(meta.id, req.query.size === 'thumb' ? 'thumb' : 'full');
+  sendImage(req, res, bytes, { cacheControl: 'private, max-age=31536000, immutable' });
+}));
+
+router.get('/attachments/:ownerType/:ownerId', guardOwnerType('view'),
+  asyncHandler(async (req, res) => res.json({
+    rows: await attachmentService.list(req.params.ownerType, Number(req.params.ownerId)),
+  })));
+
+router.post('/attachments/:ownerType/:ownerId', guardOwnerType('attach'),
+  validate(v.attachedPhotoSchema), asyncHandler(async (req, res) => res.status(201).json(
+    await attachmentService.attach(
+      req.params.ownerType, Number(req.params.ownerId), req.body, req.context,
+    ),
+  )));
+
+router.delete('/attachments/:id', asyncHandler(async (req, res) => {
+  const meta = await attachmentService.find(Number(req.params.id));
+  const rules = attachmentService.owner(meta.owner_type);
+  await runGuard(rules.attach, req, res);
+  res.json(await attachmentService.remove(meta.id, req.context));
+}));
+
 // --------------------------------------------------------------- inventory
 router.get('/inventory/stock', requirePermission('inventory.view'), asyncHandler(async (req, res) => {
   res.json(await inventoryService.stockOnHand({
@@ -371,10 +440,34 @@ router.post('/purchases/:id/approve', requirePermission('purchases.approve'),
   asyncHandler(async (req, res) => res.json(await purchaseService.approve(Number(req.params.id), req.context))));
 router.post('/purchases/:id/receive', requirePermission('purchases.receive'), validate(v.receiveSchema),
   asyncHandler(async (req, res) => res.json(await purchaseService.receive(Number(req.params.id), req.body, req.context))));
-router.post('/purchases/:id/payment', requirePermission('purchases.update'), validate(v.paymentSchema),
-  asyncHandler(async (req, res) => res.json(
-    await purchaseService.registerPayment(Number(req.params.id), req.body, req.context),
-  )));
+/**
+ * Money out, as a row.
+ *
+ * `/payment` (singular) is the address the shop's browsers have been posting to
+ * since before payments were rows at all; it is kept, pointing at the same
+ * service call, so a tab left open across the deploy still works. `/payments`
+ * is the one to use.
+ *
+ * `purchases.pay` rather than `purchases.update`: paying a supplier is not
+ * editing the document, and migration 011 grants the new code to the roles that
+ * could already commit the shop to the spend. See shared/permissions.js.
+ */
+router.get('/purchases/:id/payments', requirePermission('purchases.view'),
+  asyncHandler(async (req, res) => res.json(await purchaseService.payments(Number(req.params.id)))));
+
+const recordPayment = asyncHandler(async (req, res) => res.json(
+  await purchaseService.registerPayment(Number(req.params.id), req.body, req.context),
+));
+router.post('/purchases/:id/payments', requirePermission('purchases.pay'),
+  validate(v.paymentSchema), recordPayment);
+router.post('/purchases/:id/payment', requirePermission('purchases.pay'),
+  validate(v.paymentSchema), recordPayment);
+
+router.post('/purchases/:id/payments/:paymentId/reverse',
+  requirePermission('purchases.reverse_payment'), validate(v.paymentReversalSchema),
+  asyncHandler(async (req, res) => res.json(await purchaseService.reversePayment(
+    Number(req.params.id), Number(req.params.paymentId), req.body.reason, req.context,
+  ))));
 router.post('/purchases/:id/cancel', requirePermission('purchases.update'),
   asyncHandler(async (req, res) => res.json(
     await purchaseService.cancel(Number(req.params.id), req.body?.reason, req.context),
@@ -502,11 +595,129 @@ router.use('/promotions', crudRouter({
   },
 }));
 
+// ------------------------------------------------------------------- costs
+/**
+ * صفحة التكاليف — what the shop spends that is not stock.
+ *
+ * `/costs/recurring…` is registered BEFORE `/costs/:id`, which is the same two
+ * segments and would otherwise swallow it and go looking for a cost with the id
+ * "recurring". Cost categories live at their own path for the same reason.
+ *
+ * Every POST here is covered by the idempotency guard mounted in front of this
+ * router (see server.js), so a double-tapped "save" on a cost cannot produce
+ * two of it — the same protection purchase orders got, inherited rather than
+ * re-implemented.
+ */
+router.use('/cost-categories', crudRouter({
+  service: costCategoryService, module: 'costs', schema: v.costCategorySchema,
+}));
+
+router.get('/costs', requirePermission('costs.view'), asyncHandler(async (req, res) => {
+  res.json(await costService.list(req.query));
+}));
+router.get('/costs/summary', requirePermission('costs.view'), asyncHandler(async (req, res) => {
+  res.json(await costService.summary(req.query));
+}));
+
+/**
+ * What the repeating costs owe, and posting it.
+ *
+ * `GET /due` writes nothing: it is the list the shop is shown so a person can
+ * confirm it. `POST /generate` is that confirmation for everything waiting;
+ * `POST /:id/post` is one month, with the amount corrected if the bill was not
+ * what the template guessed. Nothing else in the system posts a recurring cost.
+ */
+router.get('/costs/recurring', requirePermission('costs.view'), asyncHandler(async (req, res) => {
+  res.json(await costService.listRecurring(req.query));
+}));
+router.get('/costs/recurring/due', requirePermission('costs.view'), asyncHandler(async (req, res) => {
+  res.json(await costService.due({ asOf: req.query.asOf || null }));
+}));
+router.post('/costs/recurring/generate', requirePermission('costs.create'),
+  asyncHandler(async (req, res) => res.json(
+    await costService.generate({ asOf: req.body?.asOf || null }, req.context),
+  )));
+router.post('/costs/recurring', requirePermission('costs.create'), validate(v.recurringCostSchema),
+  asyncHandler(async (req, res) => res.status(201).json(
+    await costService.saveRecurring(req.body, req.context),
+  )));
+router.put('/costs/recurring/:id', requirePermission('costs.update'), validate(v.recurringCostSchema),
+  asyncHandler(async (req, res) => res.json(
+    await costService.saveRecurring(req.body, req.context, Number(req.params.id)),
+  )));
+router.post('/costs/recurring/:id/post', requirePermission('costs.create'),
+  validate(v.recurringPostSchema), asyncHandler(async (req, res) => res.status(201).json(
+    await costService.postOccurrence(Number(req.params.id), req.body.period_key, {
+      amount: req.body.amount ?? null, spentOn: req.body.spent_on || null,
+    }, req.context),
+  )));
+router.post('/costs/recurring/:id/stop', requirePermission('costs.update'),
+  asyncHandler(async (req, res) => res.json(
+    await costService.setRecurringActive(Number(req.params.id), false, req.context),
+  )));
+router.post('/costs/recurring/:id/resume', requirePermission('costs.update'),
+  asyncHandler(async (req, res) => res.json(
+    await costService.setRecurringActive(Number(req.params.id), true, req.context),
+  )));
+router.delete('/costs/recurring/:id', requirePermission('costs.delete'),
+  asyncHandler(async (req, res) => res.json(
+    await costService.removeRecurring(Number(req.params.id), req.context),
+  )));
+
+router.get('/costs/:id', requirePermission('costs.view'), asyncHandler(async (req, res) => {
+  res.json(await costService.get(Number(req.params.id)));
+}));
+router.post('/costs', requirePermission('costs.create'), validate(v.costSchema),
+  asyncHandler(async (req, res) => res.status(201).json(await costService.create(req.body, req.context))));
+router.put('/costs/:id', requirePermission('costs.update'), validate(v.costSchema.partial()),
+  asyncHandler(async (req, res) => res.json(
+    await costService.update(Number(req.params.id), req.body, req.context),
+  )));
+router.delete('/costs/:id', requirePermission('costs.delete'), asyncHandler(async (req, res) => {
+  res.json(await costService.remove(Number(req.params.id), req.context));
+}));
+
+// --------------------------------------------------------------- employees
+/**
+ * The people the shop pays — a separate list from the ERP's login users, and
+ * deliberately so: a delivery man has a salary and no login.
+ *
+ * `POST /:id/payments` records what was actually handed over. It writes a COST
+ * row — there is no salary payments table — so the money lands in the same
+ * ledger the rent does and comes off the same profit, exactly once. Correcting
+ * or removing one is therefore done through `/api/costs/:id`, which is the same
+ * row: there is no second copy that could be edited in one screen and not the
+ * other.
+ */
+router.get('/employees/payroll', requirePermission('employees.view'),
+  asyncHandler(async (req, res) => res.json(await payrollService.roster(req.query))));
+router.use('/employees', crudRouter({
+  service: employeeService,
+  module: 'employees',
+  schema: v.employeeSchema,
+  extend: (r, { perm }) => {
+    r.get('/:id/payments', perm('view'), asyncHandler(async (req, res) => {
+      res.json(await payrollService.payments(Number(req.params.id)));
+    }));
+    r.post('/:id/payments', requirePermission('employees.pay'), validate(v.salaryPaymentSchema),
+      asyncHandler(async (req, res) => res.status(201).json(
+        await payrollService.pay(Number(req.params.id), req.body, req.context),
+      )));
+  },
+}));
+
 // ----------------------------------------------------------------- reports
 router.get('/reports', requirePermission('reports.view'), asyncHandler((req, res) => {
   res.json({ rows: reportService.catalogue(req.permissions) });
 }));
 router.get('/reports/:key', requirePermission('reports.view'), asyncHandler(async (req, res) => {
+  // A report may need a second permission — the costs and payroll ones do. It
+  // is applied through `requirePermission` rather than a hand-rolled check so
+  // the tenant's module entitlement is enforced exactly as it is everywhere
+  // else: a shop whose plan has no costs module cannot read its wage bill out
+  // of the report centre. Same helper the attachment routes use.
+  const extra = reportService.permissionFor(req.params.key);
+  if (extra) await runGuard(extra, req, res);
   const report = await reportService.run(req.params.key, req.query);
   if (req.query.format === 'csv') {
     await auditService.record({

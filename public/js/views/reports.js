@@ -3,7 +3,7 @@ import api from '../core/api.js';
 import {
   h, mount, dataTable, spinner, selectInput, field, toastError, printNode,
 } from '../core/ui.js';
-import { t, pick, getLanguage } from '../core/i18n.js';
+import { t, tCode, pick, getLanguage } from '../core/i18n.js';
 import { byType, isoDate, daysAgoIso, startOfMonthIso } from '../core/format.js';
 import { session, can, lookup } from '../core/store.js';
 import { navigate } from '../core/router.js';
@@ -29,6 +29,7 @@ export async function reportsView(root, route) {
   };
 
   const resultHost = h('div', { class: 'card-body tight' }, spinner());
+  const noteHost = h('div');
   const summaryHost = h('div', { class: 'kpis', style: { marginBottom: '14px' } });
   const titleHost = h('h2', {});
 
@@ -39,8 +40,24 @@ export async function reportsView(root, route) {
       state.report = report;
       mount(titleHost, getLanguage() === 'ar' ? report.titleAr : report.titleEn);
 
+      // What this report means, when it needs saying. It is how a reader of the
+      // sales summary finds out that its "profit" column is before costs and
+      // where the figure that is not lives — a number can change meaning
+      // without changing value, and a report that lets somebody assume is worse
+      // than one that explains itself.
+      mount(noteHost, note(report)
+        ? h('div', { class: 'callout' },
+          h('strong', {}, `${t('reportNote')}: `),
+          note(report))
+        : null);
+
+      // The summary keys arrive from the server in snake_case (`net_profit`)
+      // and used to be printed with the underscores swapped for spaces — which
+      // is English, in the middle of an otherwise Arabic screen. `tCode` is the
+      // one conversion; a key nobody has written a word for yet still reads as
+      // it always did rather than disappearing.
       mount(summaryHost, ...Object.entries(report.summary || {}).map(([key, value]) => h('div', { class: 'kpi' },
-        h('div', { class: 'label' }, key.replace(/_/g, ' ')),
+        h('div', { class: 'label' }, tCode(key, key.replace(/_/g, ' '))),
         h('div', { class: 'value' }, formatSummary(key, value)))));
 
       mount(resultHost, dataTable({
@@ -130,9 +147,12 @@ export async function reportsView(root, route) {
         }, '⭳ ' + t('export')) : null,
         h('button', { class: 'btn', onclick: () => printNode(printableReport(state.report)) }, '🖨 ' + t('print')),
         h('button', { class: 'btn primary', onclick: run }, t('refresh'))),
-      h('div', { class: 'grid', style: { gridTemplateColumns: '250px 1fr', alignItems: 'start' } },
+      // Same reason as the dashboard's `span-2`: a fixed 250 px sidebar beside
+      // `1fr` cannot fit a phone, and the breakpoint in app.css stacks it.
+      h('div', { class: 'grid report-layout' },
         sidebar(),
         h('div', {},
+          noteHost,
           summaryHost,
           h('div', { class: 'card' }, filterBar(), resultHost))));
   }
@@ -141,9 +161,11 @@ export async function reportsView(root, route) {
   await run();
 }
 
+const note = (report) => (getLanguage() === 'ar' ? report?.noteAr : report?.noteEn);
+
 function formatSummary(key, value) {
   if (typeof value !== 'number') return String(value);
-  if (/value|cost|revenue|profit|discount|outstanding|receivab|purchased|refunded|collected/i.test(key)) {
+  if (/value|cost|cogs|revenue|profit|discount|outstanding|receivab|purchased|refunded|collected|paid|owed|wage/i.test(key)) {
     return byType(value, 'money');
   }
   return byType(value, 'number');
@@ -168,6 +190,6 @@ function printableReport(report) {
         report.columns.map((c) => h('td', {}, byType(row[c.key], c.type))))))),
     h('div', { class: 'doc-totals' },
       Object.entries(report.summary || {}).map(([key, value]) => h('div', { class: 'line' },
-        h('span', {}, key.replace(/_/g, ' ')),
+        h('span', {}, tCode(key, key.replace(/_/g, ' '))),
         h('span', {}, formatSummary(key, value))))));
 }

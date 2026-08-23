@@ -11,6 +11,8 @@
  * as the single-shop build always has. This file only describes the fleet.
  */
 
+import { REQUEST_REPLAY_SQL } from '../shared/requestReplay.js';
+
 export const PLATFORM_SCHEMA_SQL = `
 PRAGMA foreign_keys = ON;
 
@@ -116,6 +118,11 @@ CREATE TABLE IF NOT EXISTS platform_audit (
   detail            TEXT,
   created_at        TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
+
+-- The console's half of "one save, one document". Identical table, identical
+-- protocol, different database: a console request never touches a shop's, so
+-- its claims cannot live in one. See shared/requestReplay.js.
+${REQUEST_REPLAY_SQL}
 `;
 
 export default PLATFORM_SCHEMA_SQL;

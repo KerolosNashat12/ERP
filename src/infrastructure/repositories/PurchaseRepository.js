@@ -117,4 +117,78 @@ export class PurchaseOrderRepository extends BaseRepository {
     await this.db.prepare('UPDATE purchase_order_lines SET quantity_received = ? WHERE id = ?')
       .run(quantityReceived, lineId);
   }
+
+  // --------------------------------------------------------------- payments
+
+  /** Every payment ever recorded against an order, newest first, reversals included. */
+  async payments(orderId) {
+    return this.db.prepare(`
+      SELECT p.*, u.full_name AS created_by_name, r.full_name AS reversed_by_name
+      FROM purchase_payments p
+      LEFT JOIN users u ON u.id = p.created_by
+      LEFT JOIN users r ON r.id = p.reversed_by
+      WHERE p.purchase_order_id = ?
+      ORDER BY p.paid_on DESC, p.id DESC
+    `).all(Number(orderId));
+  }
+
+  async findPayment(orderId, paymentId) {
+    return this.db.prepare(
+      'SELECT * FROM purchase_payments WHERE id = ? AND purchase_order_id = ?',
+    ).get(Number(paymentId), Number(orderId));
+  }
+
+  async insertPayment(orderId, payment) {
+    const result = await this.db.prepare(`
+      INSERT INTO purchase_payments
+        (purchase_order_id, paid_on, amount, method, reference, note, created_by)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      Number(orderId), payment.paid_on, payment.amount, payment.method,
+      payment.reference || null, payment.note || null, payment.created_by || null,
+    );
+    return Number(result.lastInsertRowid);
+  }
+
+  async reversePayment(paymentId, { reason, actorId }) {
+    await this.db.prepare(`
+      UPDATE purchase_payments
+         SET status = 'reversed', reversal_reason = ?, reversed_by = ?,
+             reversed_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
+       WHERE id = ? AND status = 'recorded'
+    `).run(reason || null, actorId || null, Number(paymentId));
+  }
+
+  /**
+   * Bring the order's running total back in step with its payment rows.
+   *
+   * One statement, and that is the whole point: the new total is computed by
+   * the DATABASE from the rows as they stand at this instant, never read into
+   * JavaScript, added to and written back. Two payments recorded at the same
+   * moment therefore cannot lose each other — whichever commits second sums
+   * both. Returns the value it wrote so the caller can check it against the
+   * order total without a second read.
+   */
+  async recomputePaid(orderId) {
+    await this.db.prepare(`
+      UPDATE purchase_orders
+         SET paid_amount = ROUND((
+               SELECT COALESCE(SUM(amount), 0) FROM purchase_payments
+               WHERE purchase_order_id = ? AND status = 'recorded'
+             ), 2),
+             updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
+       WHERE id = ?
+    `).run(Number(orderId), Number(orderId));
+    const row = await this.db.prepare('SELECT paid_amount FROM purchase_orders WHERE id = ?')
+      .get(Number(orderId));
+    return Number(row?.paid_amount || 0);
+  }
+
+  /** How many payments an order carries at all — a draft with one cannot be deleted. */
+  async countPayments(orderId) {
+    const row = await this.db.prepare(
+      'SELECT COUNT(*) AS n FROM purchase_payments WHERE purchase_order_id = ?',
+    ).get(Number(orderId));
+    return Number(row?.n || 0);
+  }
 }

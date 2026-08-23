@@ -13,6 +13,9 @@ import { PurchaseOrderRepository } from './PurchaseRepository.js';
 import { SalesRepository, SalesReturnRepository } from './SalesRepository.js';
 import { PromotionRepository } from './PromotionRepository.js';
 import {
+  CostRepository, CostCategoryRepository, RecurringCostRepository, EmployeeRepository,
+} from './CostRepository.js';
+import {
   UserRepository, RoleRepository, AuditRepository, SettingsRepository, SequenceRepository,
 } from './SystemRepository.js';
 
@@ -32,6 +35,10 @@ export const repositories = {
   sales: new SalesRepository(),
   salesReturns: new SalesReturnRepository(),
   promotions: new PromotionRepository(),
+  costs: new CostRepository(),
+  costCategories: new CostCategoryRepository(),
+  recurringCosts: new RecurringCostRepository(),
+  employees: new EmployeeRepository(),
   users: new UserRepository(),
   roles: new RoleRepository(),
   audit: new AuditRepository(),

@@ -274,10 +274,110 @@ export const userUpdateSchema = userSchema
   .partial({ password: true, username: true })
   .extend({ unlock: z.coerce.boolean().optional() });
 
+/**
+ * A photograph attached to something — a supplier payment today, a cost and a
+ * salary slip next. Only the shape is checked here: what the bytes actually
+ * ARE is decided by `shared/imageCodec.js`, which sniffs them, because a
+ * declared type is a claim and a filename is a suggestion. See the contract at
+ * the top of services/AttachmentService.js.
+ */
+export const attachedPhotoSchema = z.object({
+  dataUrl: z.string().min(1, 'A photograph is required'),
+  thumbDataUrl: z.string().min(1).optional().nullable(),
+  caption: z.string().trim().max(300).optional().nullable(),
+});
+
+/** YYYY-MM-DD, the way every other date in this system is stored. */
+const isoDay = z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use a YYYY-MM-DD date');
+
 export const paymentSchema = z.object({
   amount: z.coerce.number().positive('Amount must be greater than zero'),
   method: z.string().trim().default('cash'),
   reference: optionalString,
+  note: optionalString,
+  paidOn: isoDay.optional().nullable(),
+  photo: attachedPhotoSchema.optional().nullable(),
+});
+
+export const paymentReversalSchema = z.object({
+  reason: z.string().trim().min(1, 'Say why this payment is being reversed').max(500),
+});
+
+/**
+ * A cost — what the shop spent, on what, at which branch.
+ *
+ * `amount` is coerced and validated here and rounded again in the service:
+ * nothing the browser calculated is trusted as a total, and this schema is only
+ * the first of the two gates.
+ */
+export const costSchema = z.object({
+  category_id: id,
+  warehouse_id: id.optional().nullable(),
+  spent_on: isoDay.optional().nullable(),
+  amount: z.coerce.number().positive('A cost must be greater than zero'),
+  description: optionalString,
+  reference: optionalString,
+  payment_method: z.string().trim().default('cash'),
+  photo: attachedPhotoSchema.optional().nullable(),
+});
+
+export const costCategorySchema = z.object({
+  code: optionalString,
+  name_en: z.string().trim().min(1, 'A name is required'),
+  name_ar: optionalString,
+  display_order: z.coerce.number().int().min(0).default(100),
+  is_active: z.coerce.boolean().default(true).transform((v) => (v ? 1 : 0)),
+});
+
+/** The template, not the cost: rent, every month, on the day it falls due. */
+export const recurringCostSchema = z.object({
+  category_id: id,
+  warehouse_id: id.optional().nullable(),
+  description: optionalString,
+  amount: z.coerce.number().positive('A repeating cost must be greater than zero'),
+  payment_method: z.string().trim().default('cash'),
+  // 1–31, clamped to the length of each month when the date is computed — a
+  // "31st" template lands on the 28th of February rather than being skipped.
+  day_of_month: z.coerce.number().int().min(1).max(31).default(1),
+  starts_on: isoDay,
+  ends_on: isoDay.optional().nullable(),
+});
+
+/** Confirming one waiting month. The amount may differ from the template's. */
+export const recurringPostSchema = z.object({
+  period_key: z.string().trim().regex(/^\d{4}-\d{2}$/, 'Use a YYYY-MM month'),
+  amount: z.coerce.number().positive().optional().nullable(),
+  spent_on: isoDay.optional().nullable(),
+});
+
+/**
+ * Somebody the shop pays. Nothing here beyond what paying them needs: a name,
+ * a job, a phone, an amount and how often. No address, no identity document,
+ * no date of birth — a shop's payroll is not a personnel file.
+ */
+export const employeeSchema = z.object({
+  code: optionalString,
+  name: z.string().trim().min(1, 'A name is required'),
+  job_title: optionalString,
+  phone: optionalString,
+  salary_amount: z.coerce.number().min(0).default(0),
+  salary_period: z.enum(['day', 'week', 'month']).default('month'),
+  warehouse_id: id.optional().nullable(),
+  hired_on: isoDay.optional().nullable(),
+  notes: optionalString,
+  is_active: z.coerce.boolean().default(true).transform((v) => (v ? 1 : 0)),
+});
+
+/** What was actually handed over, when, for which period. */
+export const salaryPaymentSchema = z.object({
+  amount: z.coerce.number().positive('Amount must be greater than zero'),
+  paid_on: isoDay.optional().nullable(),
+  period_start: isoDay.optional().nullable(),
+  period_end: isoDay.optional().nullable(),
+  payment_method: z.string().trim().default('cash'),
+  reference: optionalString,
+  note: optionalString,
+  photo: attachedPhotoSchema.optional().nullable(),
 });
 
 export const labelBatchSchema = z.object({

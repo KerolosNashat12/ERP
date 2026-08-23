@@ -22,6 +22,9 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const store = new Map();
 globalThis.localStorage = {
@@ -40,7 +43,12 @@ const { t, tCode, setLanguage } = await import('../public/js/core/i18n.js');
  * grow with it — which is the point.
  */
 const WEB_ORDER_STATUSES = ['pending', 'accepted', 'out_for_delivery', 'delivered', 'not_received', 'cancelled'];
-const ALERT_TYPES = ['low_stock', 'overdue_receivables', 'promotions_expiring', 'late_deliveries'];
+const ALERT_TYPES = [
+  'low_stock', 'overdue_receivables', 'promotions_expiring', 'late_deliveries',
+  // A repeating cost waits to be confirmed rather than posting itself, so the
+  // dashboard is where the shop finds out one is waiting.
+  'costs_due',
+];
 const CODES = [...WEB_ORDER_STATUSES, ...ALERT_TYPES];
 
 /** A translation that is just the key back is a miss wearing a label's clothes. */
@@ -49,6 +57,20 @@ const translated = (code) => {
   const camel = code.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
   return out && out !== code && out !== camel;
 };
+
+/**
+ * The sidebar's own keys, read out of `public/js/app.js` rather than listed
+ * here, so a nav group or entry added later is covered without anybody
+ * remembering this file. It is the same failure as the codes above wearing a
+ * different hat: `t('navMoney')` with no Arabic for it renders the English
+ * words in an otherwise Arabic sidebar, and nothing anywhere fails.
+ */
+const here = path.dirname(fileURLToPath(import.meta.url));
+const appSource = fs.readFileSync(path.join(here, '..', 'public', 'js', 'app.js'), 'utf8');
+const NAV_KEYS = [...new Set([
+  ...[...appSource.matchAll(/^\s*group: '([a-zA-Z0-9]+)',/gm)].map((m) => m[1]),
+  ...[...appSource.matchAll(/\blabel: '([a-zA-Z0-9]+)',/g)].map((m) => m[1]),
+])];
 
 // The subtest context is `ctx`, not `t`: this file imports the dictionary's
 // own `t()` and a parameter named `t` would shadow it.
@@ -68,6 +90,19 @@ test('API codes are translated, not printed', async (ctx) => {
       for (const code of ALERT_TYPES) {
         assert.ok(translated(code), `${code} has no ${lang} translation — it renders as the code`);
       }
+    }
+  });
+
+  await ctx.test('every sidebar group and entry is written in both languages', () => {
+    assert.ok(NAV_KEYS.length > 20, 'the nav keys were not read out of app.js');
+    for (const key of NAV_KEYS) {
+      setLanguage('en');
+      const en = t(key);
+      setLanguage('ar');
+      const ar = t(key);
+      assert.notEqual(en, key, `${key} has no English label`);
+      assert.notEqual(ar, key, `${key} has no Arabic label`);
+      assert.notEqual(ar, en, `${key} falls back to English in the Arabic sidebar`);
     }
   });
 

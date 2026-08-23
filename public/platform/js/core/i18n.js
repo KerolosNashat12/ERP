@@ -278,7 +278,7 @@ const dictionary = {
     attributes: 'الخصائص', products: 'المنتجات', inventory: 'المخزون', purchases: 'أوامر الشراء',
     customers: 'العملاء', sales: 'المبيعات', promotions: 'العروض والخصومات', reports: 'التقارير',
     users: 'المستخدمون والصلاحيات', audit: 'سجل التدقيق', settings: 'الإعدادات', labels: 'الملصقات',
-    weborders: 'طلبات الموقع',
+    weborders: 'طلبات الموقع', costs: 'التكاليف', employees: 'الموظفين والمرتبات',
   },
 };
 
@@ -289,7 +289,7 @@ Object.assign(dictionary.en, {
   attributes: 'Attributes', products: 'Products', inventory: 'Inventory', purchases: 'Purchase Orders',
   customers: 'Clients', sales: 'Sales', promotions: 'Promotions', reports: 'Reports',
   users: 'Users & Roles', audit: 'Audit Log', settings: 'Settings', labels: 'Labels',
-  weborders: 'Web Orders',
+  weborders: 'Web Orders', costs: 'Costs', employees: 'Employees & Salaries',
 });
 
 let language = localStorage.getItem('mm.platform.lang') || 'en';

@@ -9,6 +9,7 @@ import repositories from '../infrastructure/repositories/index.js';
 import { getDb } from '../infrastructure/database/connection.js';
 import { NotFoundError } from '../shared/errors.js';
 import { round2 } from '../shared/money.js';
+import { costFilter } from '../infrastructure/repositories/CostRepository.js';
 
 const col = (key, labelEn, labelAr, type = 'text') => ({ key, labelEn, labelAr, type });
 
@@ -191,9 +192,16 @@ export const REPORTS = {
       col('discounts', 'Discounts', 'الخصومات', 'money'),
       col('tax', 'Tax', 'الضريبة', 'money'),
       col('cost', 'COGS', 'التكلفة', 'money'),
-      col('profit', 'Gross profit', 'الربح', 'money'),
+      // Renamed, not recomputed. This column has always been revenue minus the
+      // cost of the goods and it still is — but it used to be called "Gross
+      // profit" next to a shop owner who means something else by profit, and
+      // now that the ERP knows what the shop SPENDS, leaving the old word there
+      // would be the report quietly meaning two things. See `note` below.
+      col('profit', 'Gross profit (before costs)', 'مجمل الربح (قبل التكاليف)', 'money'),
       col('margin_percent', 'Margin %', 'نسبة الربح', 'percent'),
     ],
+    noteEn: 'Gross profit here is revenue minus the cost of the goods sold. It does not include rent, electricity, wages or any other cost — see "Profit after costs" for the figure those come off.',
+    noteAr: 'مجمل الربح هنا هو الإيراد ناقص تكلفة البضاعة المباعة، ومش شامل الإيجار ولا الكهربا ولا المرتبات ولا أي تكاليف تانية — شوف تقرير «الأرباح بعد التكاليف» عشان الرقم اللي بتتخصم منه.',
     run: async (filters) => {
       const { from, to } = dateRange(filters);
       const where = ["s.status = 'completed'", 'date(s.sale_date) BETWEEN date(?) AND date(?)'];
@@ -222,7 +230,12 @@ export const REPORTS = {
           days: rows.length,
           invoices: rows.reduce((s, r) => s + r.invoices, 0),
           revenue: round2(rows.reduce((s, r) => s + r.revenue, 0)),
-          profit: round2(rows.reduce((s, r) => s + r.profit, 0)),
+          // Renamed from `profit` for the same reason the column above was: the
+          // figure is unchanged, and a tile reading just "Profit" next to a net
+          // profit on the screen behind it is the ambiguity this round exists to
+          // remove. The row key stays `profit` — it is the column's identity and
+          // renaming that would break a saved CSV import.
+          gross_profit: round2(rows.reduce((s, r) => s + r.profit, 0)),
           discounts: round2(rows.reduce((s, r) => s + r.discounts, 0)),
         },
       };
@@ -606,6 +619,221 @@ export const REPORTS = {
     },
   },
 
+  // ----------------------------------------------------------------- costs
+  /**
+   * What the owner means by "profit".
+   *
+   * Everywhere else in this system profit is goods margin — revenue minus what
+   * the stock cost. That is a real number and a useful one, and it is not the
+   * one a shop owner is asking for when he asks whether the shop made money
+   * this month, because the rent came out of it and the rent is not in it.
+   *
+   * This report is that question, answered: revenue, the cost of the goods, the
+   * margin they left, everything else the shop spent — rent, electricity,
+   * taxes, wages, the lot — and what is left. Wages appear here exactly once,
+   * inside `costs`, because a salary payment is a row in the costs ledger and
+   * not a copy of one.
+   *
+   * By month rather than by day on purpose: rent arrives once a month, and a
+   * daily net profit would show the shop losing four thousand pounds on the
+   * fifth of every month and making it back on the sixth.
+   */
+  profit_and_costs: {
+    titleEn: 'Profit after costs',
+    titleAr: 'الأرباح بعد التكاليف',
+    module: 'costs',
+    permission: 'costs.view',
+    noteEn: 'Revenue is completed sales. Gross profit is revenue minus the cost of the goods sold. Costs is everything else the shop spent — rent, electricity, taxes, equipment, maintenance and wages — and net profit is what is left.',
+    noteAr: 'الإيراد هو المبيعات المكتملة، ومجمل الربح هو الإيراد ناقص تكلفة البضاعة، والتكاليف هي كل اللي المحل صرفه غير البضاعة — إيجار وكهربا وضرايب ومعدات وصيانة ومرتبات — وصافي الربح هو الباقي.',
+    columns: [
+      col('month', 'Month', 'الشهر'),
+      col('revenue', 'Revenue', 'الإيرادات', 'money'),
+      col('cogs', 'Cost of goods', 'تكلفة البضاعة', 'money'),
+      col('gross_profit', 'Gross profit', 'مجمل الربح', 'money'),
+      col('costs', 'Costs', 'التكاليف', 'money'),
+      col('net_profit', 'Net profit', 'صافي الربح', 'money'),
+      col('net_margin_percent', 'Net margin %', 'نسبة صافي الربح', 'percent'),
+    ],
+    run: async (filters) => {
+      const { from, to } = dateRange(filters);
+      const salesWhere = ["s.status = 'completed'", "date(s.sale_date) BETWEEN date(?) AND date(?)"];
+      const salesParams = [from, to];
+      if (filters.warehouseId) { salesWhere.push('s.warehouse_id = ?'); salesParams.push(filters.warehouseId); }
+
+      const sales = await getDb().prepare(`
+        SELECT substr(s.sale_date, 1, 7) AS month,
+               ROUND(SUM(s.total_amount), 2) AS revenue,
+               ROUND(SUM(s.total_cost), 2)   AS cogs
+        FROM sales s WHERE ${salesWhere.join(' AND ')}
+        GROUP BY month
+      `).all(...salesParams);
+
+      const costs = await repositories.costs.byMonth({
+        dateFrom: from, dateTo: to, warehouseId: filters.warehouseId || null,
+      });
+
+      const months = new Map();
+      const slot = (month) => {
+        if (!months.has(month)) {
+          months.set(month, { month, revenue: 0, cogs: 0, gross_profit: 0, costs: 0, net_profit: 0 });
+        }
+        return months.get(month);
+      };
+      for (const row of sales) {
+        const entry = slot(row.month);
+        entry.revenue = round2(row.revenue);
+        entry.cogs = round2(row.cogs);
+      }
+      for (const row of costs) slot(row.month).costs = round2(row.amount);
+
+      const rows = [...months.values()]
+        .map((entry) => {
+          const gross = round2(entry.revenue - entry.cogs);
+          const net = round2(gross - entry.costs);
+          return {
+            ...entry,
+            gross_profit: gross,
+            net_profit: net,
+            net_margin_percent: entry.revenue > 0 ? round2((net * 100) / entry.revenue) : 0,
+          };
+        })
+        .sort((a, b) => (a.month < b.month ? 1 : -1));
+
+      const totals = rows.reduce((acc, row) => ({
+        revenue: acc.revenue + row.revenue,
+        cogs: acc.cogs + row.cogs,
+        costs: acc.costs + row.costs,
+      }), { revenue: 0, cogs: 0, costs: 0 });
+      const grossProfit = round2(totals.revenue - totals.cogs);
+
+      return {
+        rows,
+        summary: {
+          months: rows.length,
+          revenue: round2(totals.revenue),
+          cogs: round2(totals.cogs),
+          gross_profit: grossProfit,
+          costs: round2(totals.costs),
+          net_profit: round2(grossProfit - totals.costs),
+        },
+      };
+    },
+  },
+
+  costs_by_category: {
+    titleEn: 'Costs by Category',
+    titleAr: 'التكاليف حسب البند',
+    module: 'costs',
+    permission: 'costs.view',
+    columns: [
+      col('category_name_en', 'Category', 'البند'),
+      col('entries', 'Entries', 'عدد المصاريف', 'number'),
+      col('amount', 'Amount', 'المبلغ', 'money'),
+      col('share_percent', 'Share %', 'الحصة', 'percent'),
+    ],
+    run: async (filters) => {
+      const { from, to } = dateRange(filters);
+      const rows = await repositories.costs.byCategory({
+        dateFrom: from, dateTo: to, warehouseId: filters.warehouseId || null,
+      });
+      const total = rows.reduce((sum, row) => sum + row.amount, 0) || 1;
+      rows.forEach((row) => { row.share_percent = round2((row.amount * 100) / total); });
+      return {
+        rows,
+        summary: {
+          categories: rows.length,
+          entries: rows.reduce((sum, row) => sum + row.entries, 0),
+          costs: round2(rows.reduce((sum, row) => sum + row.amount, 0)),
+        },
+      };
+    },
+  },
+
+  costs_ledger: {
+    titleEn: 'Costs Ledger',
+    titleAr: 'دفتر التكاليف',
+    module: 'costs',
+    permission: 'costs.view',
+    columns: [
+      col('spent_on', 'Date', 'التاريخ', 'date'),
+      col('category_name_en', 'Category', 'البند'),
+      col('branch_name_en', 'Branch', 'الفرع'),
+      col('description', 'Description', 'البيان'),
+      col('employee_name', 'Employee', 'الموظف'),
+      col('payment_method', 'Paid by', 'طريقة الدفع'),
+      col('reference', 'Reference', 'المرجع'),
+      col('amount', 'Amount', 'المبلغ', 'money'),
+    ],
+    run: async (filters) => {
+      const { from, to } = dateRange(filters);
+      const scope = {
+        dateFrom: from,
+        dateTo: to,
+        warehouseId: filters.warehouseId || null,
+        categoryId: filters.categoryId || null,
+      };
+      const { sql, params } = costFilter(scope);
+      const rows = await getDb().prepare(`
+        SELECT k.spent_on, k.description, k.reference, k.payment_method, k.amount, k.source,
+               c.name_en AS category_name_en, c.name_ar AS category_name_ar,
+               w.name_en AS branch_name_en, w.name_ar AS branch_name_ar,
+               e.name AS employee_name
+        FROM costs k
+        JOIN cost_categories c ON c.id = k.category_id
+        JOIN warehouses w ON w.id = k.warehouse_id
+        LEFT JOIN employees e ON e.id = k.employee_id
+        ${sql}
+        ORDER BY k.spent_on DESC, k.id DESC LIMIT 5000
+      `).all(...params);
+      return {
+        rows,
+        summary: {
+          entries: rows.length,
+          costs: round2(rows.reduce((sum, row) => sum + row.amount, 0)),
+        },
+      };
+    },
+  },
+
+  salaries_paid: {
+    titleEn: 'Salaries Paid',
+    titleAr: 'المرتبات المدفوعة',
+    module: 'employees',
+    permission: 'employees.view',
+    noteEn: 'Every line here is also a line in the costs ledger — a salary payment is a cost, stored once, so this report and the costs total never disagree.',
+    noteAr: 'كل سطر هنا هو نفسه سطر في دفتر التكاليف — دفعة المرتب دي تكلفة متسجلة مرة واحدة، فالتقرير ده وإجمالي التكاليف عمرهم ما يختلفوا.',
+    columns: [
+      col('name', 'Employee', 'الموظف'),
+      col('job_title', 'Job', 'الوظيفة'),
+      col('salary_period', 'Paid every', 'الدورة'),
+      col('salary_amount', 'Salary', 'المرتب', 'money'),
+      col('payments', 'Payments', 'عدد الدفعات', 'number'),
+      col('paid', 'Paid in period', 'المدفوع', 'money'),
+      col('paid_up_to', 'Paid up to', 'مدفوع حتى', 'date'),
+    ],
+    run: async (filters) => {
+      const { from, to } = dateRange(filters);
+      const rows = await getDb().prepare(`
+        SELECT e.name, e.job_title, e.salary_period, e.salary_amount,
+               COUNT(k.id) AS payments,
+               ROUND(COALESCE(SUM(k.amount), 0), 2) AS paid,
+               MAX(k.period_end) AS paid_up_to
+        FROM employees e
+        LEFT JOIN costs k ON k.employee_id = e.id
+             AND date(k.spent_on) BETWEEN date(?) AND date(?)
+        GROUP BY e.id ORDER BY paid DESC, e.name ASC
+      `).all(from, to);
+      return {
+        rows,
+        summary: {
+          employees: rows.length,
+          payments: rows.reduce((sum, row) => sum + row.payments, 0),
+          paid: round2(rows.reduce((sum, row) => sum + row.paid, 0)),
+        },
+      };
+    },
+  },
+
   // ----------------------------------------------------------------- audit
   audit_trail: {
     titleEn: 'Audit Trail',
@@ -629,13 +857,31 @@ export const REPORTS = {
 };
 
 export class ReportService {
+  /**
+   * Which reports this person may run.
+   *
+   * `reports.view` is the door; a definition may name a second permission it
+   * ALSO needs, and the costs and payroll reports do. That is not politeness:
+   * `requirePermission` enforces the tenant's module entitlement against the
+   * matched code, so a shop whose plan has no costs module must not be handed
+   * its own wage bill through the report centre. The route re-checks the same
+   * code before running one — this list only decides what is offered.
+   */
   catalogue(permissions = []) {
+    if (!permissions.includes('reports.view')) return [];
     return Object.entries(REPORTS)
-      .filter(([, def]) => permissions.includes('reports.view'))
+      .filter(([, def]) => !def.permission || permissions.includes(def.permission))
       .map(([key, def]) => ({
         key, titleEn: def.titleEn, titleAr: def.titleAr, module: def.module,
+        permission: def.permission || null,
+        noteEn: def.noteEn || null, noteAr: def.noteAr || null,
         columns: def.columns,
       }));
+  }
+
+  /** The extra permission a report needs beyond `reports.view`, or null. */
+  permissionFor(key) {
+    return REPORTS[key]?.permission || null;
   }
 
   async run(key, filters = {}) {
@@ -647,6 +893,13 @@ export class ReportService {
       titleEn: definition.titleEn,
       titleAr: definition.titleAr,
       module: definition.module,
+      // What this report means, in the reader's language. It exists because a
+      // number can change meaning without changing value: "profit" on the sales
+      // summary is the same figure it always was and now sits in a system that
+      // knows about rent, so the report says out loud what it does and does not
+      // include rather than letting somebody assume.
+      noteEn: definition.noteEn || null,
+      noteAr: definition.noteAr || null,
       columns: definition.columns,
       filters,
       generatedAt: new Date().toISOString(),

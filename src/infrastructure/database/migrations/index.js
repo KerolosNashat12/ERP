@@ -28,6 +28,9 @@ import migration006 from './006-banner-and-shipping.js';
 import migration007 from './007-barcode-symbology.js';
 import migration008 from './008-shop-branding.js';
 import migration009 from './009-search-indexes.js';
+import migration010 from './010-request-replay.js';
+import migration011 from './011-supplier-payments.js';
+import migration012 from './012-costs-and-payroll.js';
 
 /** Ordered. Append only. */
 const MIGRATIONS = [
@@ -40,6 +43,9 @@ const MIGRATIONS = [
   migration007,
   migration008,
   migration009,
+  migration010,
+  migration011,
+  migration012,
 ];
 
 async function ensureRegistry() {

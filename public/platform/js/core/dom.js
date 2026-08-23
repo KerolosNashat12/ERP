@@ -8,6 +8,7 @@
  * same hand, separate build.
  */
 import { t } from './i18n.js';
+import { guardHandler } from './actions.js';
 
 export function h(tag, attrs = {}, ...children) {
   const node = document.createElement(tag);
@@ -17,7 +18,12 @@ export function h(tag, attrs = {}, ...children) {
     else if (key === 'style' && typeof value === 'object') Object.assign(node.style, value);
     else if (key === 'html') node.innerHTML = value;
     else if (key.startsWith('on') && typeof value === 'function') {
-      node.addEventListener(key.slice(2).toLowerCase(), value);
+      // Every button and every form in the console is built here, so this is
+      // where "a press that is already running cannot be started again"
+      // belongs — see core/actions.js. Anything that is not a button click or
+      // a form submit is passed through untouched.
+      const type = key.slice(2).toLowerCase();
+      node.addEventListener(type, guardHandler(node, type, value));
     } else if (key === 'dataset') Object.assign(node.dataset, value);
     else if (key in node && key !== 'list' && typeof value !== 'object') {
       try { node[key] = value; } catch { node.setAttribute(key, value); }

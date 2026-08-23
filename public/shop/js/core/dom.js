@@ -7,6 +7,7 @@
  * `innerHTML` that is one missed escape away from script injection on a public
  * page; with `textContent` it cannot happen at all, and nobody has to remember.
  */
+import { guardHandler } from './actions.js';
 
 /**
  * @param {string} tag  tag name, optionally with `#id` and `.class.names`
@@ -29,8 +30,14 @@ export function el(tag, props, ...children) {
       else if (key === 'text') node.textContent = String(value);
       else if (key === 'html') node.innerHTML = value; // only ever called with our own markup
       else if (key === 'dataset') Object.assign(node.dataset, value);
-      else if (key.startsWith('on')) node.addEventListener(key.slice(2).toLowerCase(), value);
-      else if (key in node && key !== 'list' && key !== 'form') node[key] = value;
+      else if (key.startsWith('on')) {
+        // Every button and every form on this site is built here, so this is
+        // where "a tap that is already running cannot be started again"
+        // belongs — see core/actions.js. Everything that is not a button click
+        // or a form submit is passed through untouched.
+        const type = key.slice(2).toLowerCase();
+        node.addEventListener(type, guardHandler(node, type, value));
+      } else if (key in node && key !== 'list' && key !== 'form') node[key] = value;
       else node.setAttribute(key, value === true ? '' : String(value));
     }
   }

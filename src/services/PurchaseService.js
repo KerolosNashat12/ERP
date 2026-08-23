@@ -9,6 +9,36 @@ import { BusinessRuleError, NotFoundError, ValidationError } from '../shared/err
 import { calculateLine, round2, round3 } from '../shared/money.js';
 import inventoryService from './InventoryService.js';
 import auditService from './AuditService.js';
+import attachmentService from './AttachmentService.js';
+
+/**
+ * A supplier payment can carry a photograph of the receipt.
+ *
+ * Declared here rather than inside AttachmentService because this module owns
+ * the rows: the generic mechanism has no idea what a purchase payment is and
+ * must not learn. A cost and a salary payment register themselves the same way
+ * from their own services — see the contract at the top of AttachmentService.js.
+ *
+ * Looking at the proof is looking at the order (`purchases.view`); adding or
+ * removing one is the same right as recording the payment it proves.
+ */
+attachmentService.registerOwner('purchase_payment', {
+  module: 'purchases',
+  view: 'purchases.view',
+  attach: 'purchases.pay',
+  exists: async (id) => Boolean(
+    await repositories.purchaseOrders.db
+      .prepare('SELECT id FROM purchase_payments WHERE id = ?').get(Number(id)),
+  ),
+  label: async (id) => {
+    const row = await repositories.purchaseOrders.db.prepare(`
+      SELECT po.po_number, p.amount FROM purchase_payments p
+      JOIN purchase_orders po ON po.id = p.purchase_order_id
+      WHERE p.id = ?
+    `).get(Number(id));
+    return row ? `${row.po_number} — payment ${id} (${row.amount})` : `purchase payment ${id}`;
+  },
+});
 
 export class PurchaseService {
   constructor(deps = {}) {
@@ -210,24 +240,128 @@ export class PurchaseService {
     });
   }
 
-  async registerPayment(id, { amount, method = 'cash', reference }, context = {}) {
+  /**
+   * What the shop paid this supplier, as a row.
+   *
+   * One atomic act, and there is more than one thing in it: the payment, the
+   * order's running total, and — when somebody photographed the receipt — the
+   * photograph. All three happen inside one transaction, so a picture that will
+   * not store takes the payment down with it rather than leaving a payment with
+   * no proof, and a total that will not write takes both.
+   *
+   * The total is not incremented here. `recomputePaid` asks the database to sum
+   * the rows as they stand and write that, in one statement, so two payments
+   * recorded at the same moment cannot lose each other: whichever commits
+   * second sums both. Reading `paid_amount`, adding to it and writing it back —
+   * which is what this method used to do — loses one of them every time the two
+   * overlap.
+   *
+   * The overpayment check runs AFTER the row is written, against the total the
+   * database just computed. Checking before would let two concurrent payments
+   * each pass a check that neither would pass together; checking after means
+   * the loser throws, its transaction rolls back, and its row is gone.
+   */
+  async registerPayment(id, payload = {}, context = {}) {
+    const {
+      amount, method = 'cash', reference = null, note = null, paidOn = null, photo = null,
+    } = payload;
+
     return transaction(async () => {
       const order = await this.orders.requireById(id, 'purchase order');
+      if (order.status === 'cancelled') {
+        throw new BusinessRuleError('A cancelled purchase order cannot take a payment');
+      }
       const value = round2(Number(amount));
       if (!(value > 0)) throw new ValidationError('Payment amount must be greater than zero');
-      const paid = round2(Number(order.paid_amount) + value);
+
+      const paymentId = await this.orders.insertPayment(order.id, {
+        paid_on: paidOn || new Date().toISOString().slice(0, 10),
+        amount: value,
+        method: String(method || 'cash'),
+        reference,
+        note,
+        created_by: context.actor?.id || null,
+      });
+
+      const paid = await this.orders.recomputePaid(order.id);
       if (paid > round2(order.total_amount) + 0.01) {
-        throw new BusinessRuleError('Payment exceeds the purchase order total');
+        throw new BusinessRuleError(
+          `Payment exceeds the purchase order total: ${paid} paid against ${round2(order.total_amount)}`,
+        );
       }
-      const updated = await this.orders.update(id, { paid_amount: paid });
+
+      if (photo?.dataUrl) {
+        await attachmentService.attach('purchase_payment', paymentId, photo, context);
+      }
+
+      const payment = await this.orders.findPayment(order.id, paymentId);
       await this.audit.record({
-        action: 'PAYMENT', module: 'purchases', entityType: 'purchase_order', entityId: id,
-        entityLabel: order.po_number,
+        action: 'PAYMENT', module: 'purchases', entityType: 'purchase_payment', entityId: paymentId,
+        entityLabel: `${order.po_number} — ${value}`,
         before: { paid_amount: order.paid_amount },
-        after: { paid_amount: paid, method, reference },
+        after: { ...payment, paid_amount: paid, has_photo: Boolean(photo?.dataUrl) },
         actor: context.actor, request: context.request,
       });
-      return updated;
+
+      return { ...(await this.orders.findById(order.id)), payment };
+    });
+  }
+
+  /** Every payment on an order, with the photographs attached to each. */
+  async payments(id) {
+    const order = await this.orders.requireById(id, 'purchase order');
+    const rows = await this.orders.payments(order.id);
+    // One query for every payment's photographs rather than one per payment:
+    // a list of ten must not be eleven round trips to a hosted database.
+    const byPayment = await attachmentService.listMany(
+      'purchase_payment', rows.map((row) => row.id),
+    );
+    return {
+      rows: rows.map((row) => ({ ...row, attachments: byPayment[row.id] || [] })),
+      paid_amount: round2(Number(order.paid_amount)),
+      total_amount: round2(Number(order.total_amount)),
+      outstanding: round2(Number(order.total_amount) - Number(order.paid_amount)),
+    };
+  }
+
+  /**
+   * A payment that was wrong.
+   *
+   * It is REVERSED, never deleted, and that is a decision rather than an
+   * omission. A shop owner who typed 15,000 instead of 1,500 has already told
+   * the system something happened; deleting the row would leave the supplier
+   * balance right and the history wrong, and the next person to ask "why did
+   * this order say it was paid last Tuesday?" would find nothing at all. The
+   * row stays, marked, with who reversed it and why — and the running total,
+   * which counts recorded payments only, drops back on its own. The receipt
+   * stays attached to it: it is proof of what was recorded, and a reversal does
+   * not make the photograph untrue.
+   *
+   * The correction is then a new payment for the right amount, which is also
+   * what the shop's paper trail would look like.
+   */
+  async reversePayment(id, paymentId, reason, context = {}) {
+    return transaction(async () => {
+      const order = await this.orders.requireById(id, 'purchase order');
+      const payment = await this.orders.findPayment(order.id, paymentId);
+      if (!payment) throw new NotFoundError('Purchase payment', paymentId);
+      if (payment.status === 'reversed') {
+        throw new BusinessRuleError('This payment has already been reversed');
+      }
+      const text = String(reason || '').trim();
+      if (!text) throw new ValidationError('Say why this payment is being reversed');
+
+      await this.orders.reversePayment(payment.id, { reason: text, actorId: context.actor?.id });
+      const paid = await this.orders.recomputePaid(order.id);
+
+      await this.audit.record({
+        action: 'REVERSE_PAYMENT', module: 'purchases', entityType: 'purchase_payment',
+        entityId: payment.id, entityLabel: `${order.po_number} — ${payment.amount}`,
+        before: { status: payment.status, paid_amount: order.paid_amount },
+        after: { status: 'reversed', reason: text, paid_amount: paid },
+        actor: context.actor, request: context.request,
+      });
+      return { ...(await this.orders.findById(order.id)), reversed: payment.id };
     });
   }
 
@@ -236,6 +370,14 @@ export class PurchaseService {
       const order = await this.orders.findAggregate(id);
       if (!order) throw new NotFoundError('Purchase order', id);
       if (order.status !== 'draft') throw new BusinessRuleError('Only draft purchase orders can be deleted');
+      // A draft can still have taken a deposit. `purchase_payments` cascades
+      // with the order, so deleting one here would take the money — and the
+      // photograph of the receipt — out of the shop's history without a trace.
+      if (await this.orders.countPayments(id)) {
+        throw new BusinessRuleError(
+          'Money has been recorded against this purchase order — reverse the payments first, or cancel the order instead of deleting it',
+        );
+      }
       await this.orders.remove(id);
       await this.audit.record({
         action: 'DELETE', module: 'purchases', entityType: 'purchase_order', entityId: id,

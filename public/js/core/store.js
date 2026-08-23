@@ -21,6 +21,14 @@ export const session = {
   branding: null,
   /** The single shop location. Kept as a record so documents still reference it. */
   location: null,
+  /**
+   * Every active location, which is what a "branch" is in this system: the
+   * `warehouses` row that stock, sales, purchase orders — and now costs —
+   * already point at. Not a tenant: those are separate databases and cannot
+   * appear on one screen. A single-shop install has exactly one of these, and
+   * the branch selectors quietly show one option.
+   */
+  branches: [],
   lookups: {},
 };
 
@@ -45,7 +53,8 @@ export async function loadSession() {
   const data = await api.get('/api/auth/me');
   session.user = data.user;
   session.settings = data.settings || {};
-  session.location = (data.warehouses || [])[0] || null;
+  session.branches = data.warehouses || [];
+  session.location = session.branches[0] || null;
   return session;
 }
 
@@ -53,6 +62,7 @@ export function clearSession() {
   session.user = null;
   session.settings = {};
   session.location = null;
+  session.branches = [];
   session.lookups = {};
   badges.pendingResets = 0;
   badges.pendingWebOrders = 0;

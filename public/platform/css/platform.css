@@ -341,6 +341,22 @@ html[dir="rtl"] .back-link .chev { transform: scaleX(-1); }
 .btn .plus { unicode-bidi: isolate; font-weight: 700; }
 .btn.sm svg { width: 13px; height: 13px; }
 
+/* A press that is still in the air.
+   `:disabled` above says "you cannot"; this says "yes, and it is happening".
+   Provisioning a shop is the slowest thing this console does and the one where
+   a second press costs the most, so it is the one that most needs to look
+   busy rather than broken. See public/platform/js/core/actions.js. */
+.btn.is-busy, .icon-btn.is-busy { cursor: progress; opacity: .75; }
+.btn.is-busy::after, .icon-btn.is-busy::after {
+  content: ''; width: 12px; height: 12px; flex: none;
+  border: 2px solid currentColor; border-top-color: transparent;
+  border-radius: 50%; animation: btn-busy-spin .7s linear infinite;
+}
+@keyframes btn-busy-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .btn.is-busy::after, .icon-btn.is-busy::after { animation-duration: 2.4s; }
+}
+
 .icon-btn {
   display: inline-grid; place-items: center; width: 32px; height: 32px; padding: 0;
   border: 1px solid var(--line); border-radius: var(--r);

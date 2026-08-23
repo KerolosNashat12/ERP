@@ -13,11 +13,27 @@ export const MODULES = {
   attributes: ['view', 'create', 'update', 'delete'],
   products: ['view', 'create', 'update', 'delete'],
   inventory: ['view', 'adjust', 'count'],
-  purchases: ['view', 'create', 'update', 'delete', 'receive', 'approve'],
+  // `pay` and `reverse_payment` are money leaving the shop, which is not the
+  // same act as editing the document it leaves against: a stock clerk who can
+  // raise and amend a purchase order has no business recording what was paid
+  // for it, and undoing a recorded payment is rarer still. See
+  // migration 011 for how existing shops are granted them.
+  purchases: ['view', 'create', 'update', 'delete', 'receive', 'approve', 'pay', 'reverse_payment'],
   customers: ['view', 'create', 'update', 'delete'],
   sales: ['view', 'create', 'void', 'return', 'return_no_receipt', 'discount'],
   promotions: ['view', 'create', 'update', 'delete'],
   reports: ['view', 'export'],
+  // What the shop spends that is not stock — electricity, rent, taxes, wages.
+  // Its own module rather than a corner of `reports` or `settings`, because
+  // the platform sells modules: a shop on a small package has not paid for the
+  // costs page and must not be given it, and `requirePermission` enforces that
+  // against the matched code's module with no extra work here.
+  costs: ['view', 'create', 'update', 'delete'],
+  // The people the shop pays. Separate from `users` on purpose: a delivery man
+  // has a salary and no login. `pay` is money leaving the shop, which is not
+  // the same act as editing somebody's record — see `purchases.pay` above for
+  // the same distinction.
+  employees: ['view', 'create', 'update', 'delete', 'pay'],
   users: ['view', 'create', 'update', 'delete', 'reset_password'],
   audit: ['view', 'export'],
   settings: ['view', 'update', 'backup'],
@@ -50,7 +66,7 @@ export const ROLE_DEFINITIONS = [
       ...forModules(
         'dashboard', 'suppliers', 'brands', 'categories', 'attributes', 'products',
         'inventory', 'purchases', 'customers', 'sales', 'promotions', 'reports', 'labels',
-        'weborders',
+        'weborders', 'costs', 'employees',
       ),
       'audit.view',
       'settings.view',
@@ -94,6 +110,10 @@ export const ROLE_DEFINITIONS = [
       'suppliers.view', 'brands.view', 'categories.view', 'attributes.view',
       'products.view', 'inventory.view', 'purchases.view', 'customers.view',
       'sales.view', 'promotions.view',
+      // Read-only, and deliberately including the costs and the payroll: an
+      // auditor who cannot see the electricity bill or the wages cannot audit
+      // the profit those come off.
+      'costs.view', 'employees.view',
       'reports.view', 'reports.export',
       'audit.view', 'audit.export',
       'settings.view',

@@ -23,7 +23,7 @@ import { openTursoDialog } from './integrations.js';
 export const MODULE_KEYS = [
   'dashboard', 'suppliers', 'brands', 'categories', 'attributes', 'products',
   'inventory', 'purchases', 'customers', 'sales', 'promotions', 'reports',
-  'users', 'audit', 'settings', 'labels', 'weborders',
+  'costs', 'employees', 'users', 'audit', 'settings', 'labels', 'weborders',
 ];
 
 const SLUG_RE = /^[a-z0-9][a-z0-9-]{1,30}$/;
