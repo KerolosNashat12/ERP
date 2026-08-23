@@ -21,6 +21,7 @@ import { resolveTenant, resolveDefaultTenant } from './api/middleware/tenant.js'
 import { currentTenant } from './infrastructure/database/connection.js';
 import { initPlatformDb, platformDb } from './platform/db.js';
 import { ensureDefaultTenant } from './platform/bootstrapDefaultTenant.js';
+import { upgradeTenantModules } from './platform/moduleUpgrade.js';
 
 const isHostedDb = () => config.database.driver === 'libsql';
 
@@ -375,7 +376,13 @@ export async function ensureDatabaseReady() {
   await bootstrap;
   // Runs after the schema is up, so the shop it adopts is a shop that exists.
   // It never throws into a request — see ensureDefaultTenant.
-  if (config.platform.enabled) await ensureDefaultTenant();
+  if (config.platform.enabled) {
+    await ensureDefaultTenant();
+    // And a shop that was full before this release stays full after it — see
+    // moduleUpgrade.js. Without this a module ships, deploys, answers on its
+    // API, and is invisible to every shop that existed before it.
+    await upgradeTenantModules();
+  }
 }
 
 /** Startup path for a local run, where a real `listen()` happens. */
@@ -400,7 +407,10 @@ async function prepareDatabase() {
   }
   await syncPermissions();
   await hardenCredentials();
-  if (config.platform.enabled) await ensureDefaultTenant();
+  if (config.platform.enabled) {
+    await ensureDefaultTenant();
+    await upgradeTenantModules();
+  }
 }
 
 /**
