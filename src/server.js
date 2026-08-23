@@ -12,6 +12,8 @@ import { seedBaseline, hardenDefaultCredentials, syncPermissionCatalogue } from 
 import { runMigrations } from './infrastructure/database/migrations/index.js';
 import apiRouter from './api/routes/index.js';
 import shopRouter from './api/routes/shop.js';
+import { pageHandler, seoRoutes } from './api/routes/storefrontPages.js';
+import { websiteGate } from './api/middleware/websiteGate.js';
 import shopOrdersRouter from './api/routes/shopOrders.js';
 import { publicLandingRouter } from './api/routes/landing.js';
 import { attachRequestContext, errorHandler, notFoundHandler } from './api/middleware/index.js';
@@ -238,22 +240,39 @@ export function createApp() {
     // there in any way — not the API (see shop.js/shopOrders.js), and not
     // the storefront's own HTML or static assets either. Registered ahead
     // of the static mount below, so a direct request for
-    // `/t/<slug>/shop/index.html` cannot bypass the check that guards the
+    // `/t/<slug>/shop/app.html` cannot bypass the check that guards the
     // bare `/t/<slug>/shop` route by reaching the file through the static
     // server instead.
-    app.use('/t/:slug/shop', resolveTenant, (req, res, next) => {
-      if (!req.tenant.websiteEnabled) return res.status(404).end();
-      return next();
-    });
+    app.use('/t/:slug/shop', resolveTenant, websiteGate({ shape: 'plain' }));
+
+    /**
+     * This shop's own `robots.txt` and `sitemap.xml`.
+     *
+     * Behind the same gate for the same reason: a sitemap is an instruction to
+     * a machine to fetch every address in it, so a shop whose website is off
+     * must not have one any more than it has pages. Registered ahead of the
+     * static mount below so neither can be reached around it, and ahead of the
+     * `/t/:slug*` page catch-all so `/t/mm/sitemap.xml` is not answered with
+     * the ERP's own HTML.
+     */
+    const tenantSeo = seoRoutes({ prefixOf: (req) => `/t/${req.params.slug}` });
+    const guardedTenant = [resolveTenant, websiteGate({ shape: 'plain' })];
+    app.get('/t/:slug/robots.txt', ...guardedTenant, tenantSeo.robots);
+    app.get('/t/:slug/sitemap.xml', ...guardedTenant, tenantSeo.sitemap);
+    app.get('/t/:slug/sitemap/:shard', ...guardedTenant, tenantSeo.shard);
 
     // Static assets and the two SPAs, under the tenant's own prefix — so
     // `/t/mm/js/app.js` resolves before falling through to a page shell.
     app.use('/t/:slug', resolveTenant, express.static(config.paths.public, {
       index: false, redirect: false, maxAge: '1h',
     }));
-    app.get('/t/:slug/shop*', resolveTenant, (_req, res) => {
-      res.sendFile(path.join(config.paths.public, 'shop', 'index.html'));
-    });
+    /**
+     * Every storefront page, with this shop's own head already in it. The shell
+     * is rendered rather than sent — see api/routes/storefrontPages.js — so a
+     * WhatsApp preview of `/t/mm/shop/product/12/…` shows that shop's product
+     * and never the first tenant's name.
+     */
+    app.get('/t/:slug/shop*', resolveTenant, pageHandler((req) => `/t/${req.params.slug}`));
     app.get('/t/:slug*', resolveTenant, (_req, res) => {
       res.sendFile(path.join(config.paths.public, 'index.html'));
     });
@@ -277,6 +296,41 @@ export function createApp() {
       const asDefault = resolveDefaultTenant(config.platform.defaultTenant);
       app.use('/api/shop', asDefault, guardShopWrites, shopRouter, shopOrdersRouter);
       app.use('/api', asDefault, guardShopWrites, apiRouter);
+
+      /**
+       * The one `robots.txt` a crawler will ever ask this host for.
+       *
+       * It is fetched from the ROOT of a domain and nowhere else, so this
+       * single file has to speak for every shop on the deployment as well as
+       * for the back offices. It refuses everything by default, allows
+       * `/t/*​/shop` and the storefront's photographs for every tenant — safe,
+       * because a shop with its website off answers 404 there, and permission
+       * to fetch is not the same as something being there — and names one
+       * sitemap: the default shop's, the one that owns this address. No other
+       * tenant is listed, because a list of the shops on a platform is not the
+       * internet's to have; each is submitted to Search Console by its own
+       * owner, which is what SEO-OWNER.md tells him to do.
+       *
+       * Deliberately NOT behind the website gate: a host with no robots.txt is
+       * a host where the ERP is fair game. When the default shop is off, the
+       * file still refuses the back office and simply names no sitemap.
+       */
+      const rootSeo = seoRoutes({
+        prefixOf: () => `/t/${config.platform.defaultTenant}`,
+        prefixesOf: () => ['', '/t/*'],
+      });
+      app.get('/robots.txt', asDefault, rootSeo.robots);
+      app.get('/sitemap.xml', asDefault, websiteGate({ shape: 'plain' }), rootSeo.sitemap);
+      app.get('/sitemap/:shard', asDefault, websiteGate({ shape: 'plain' }), rootSeo.shard);
+    } else {
+      /**
+       * A console-only deployment has no shop at its root, so there is nothing
+       * to point a sitemap at — but the refusal still has to be written down,
+       * or the owner's console is crawlable by default. Shops on it are still
+       * allowed: each is submitted to Search Console by its own owner.
+       */
+      const rootSeo = seoRoutes({ prefixOf: () => '', prefixesOf: () => ['/t/*'], hasSitemap: false });
+      app.get('/robots.txt', rootSeo.robots);
     }
 
     /**
@@ -317,9 +371,26 @@ export function createApp() {
   // still resolve here first; only the bare directory falls through to the
   // storefront handler below.
   app.use(express.static(config.paths.public, { index: false, redirect: false, maxAge: '1h' }));
-  app.get('/shop*', (_req, res) => {
-    res.sendFile(path.join(config.paths.public, 'shop', 'index.html'));
-  });
+
+  /**
+   * What a crawler is allowed near, and where this shop's addresses are listed.
+   *
+   * The ERP is at `/` on this build, so `robots.txt` refuses everything and
+   * allows `/shop` back — see SitemapService for why the refusal is the
+   * default rather than the exception.
+   */
+  const seo = seoRoutes({ prefixOf: () => '' });
+  app.get('/robots.txt', seo.robots);
+  app.get('/sitemap.xml', seo.sitemap);
+  app.get('/sitemap/:shard', seo.shard);
+
+  /**
+   * Every storefront page, with its head rendered into the shell before it is
+   * sent — see api/routes/storefrontPages.js. `/shop/product/12/<slug>` is a
+   * real address; `#/product/12` still reaches the same page, translated in the
+   * browser on arrival (public/shop/js/core/router.js).
+   */
+  app.get('/shop*', pageHandler(() => ''));
   app.get('*', (_req, res) => {
     res.sendFile(path.join(config.paths.public, 'index.html'));
   });

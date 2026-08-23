@@ -5,6 +5,7 @@ import { t, pick } from '../core/i18n.js';
 import { monogramText } from '../core/branding.js';
 import { priceRange } from '../core/format.js';
 import { href } from '../core/router.js';
+import { routePath, slugFor } from '../../../shared/shopUrls.js';
 import * as favorites from '../core/favorites.js';
 
 /**
@@ -171,7 +172,7 @@ export function productCard(card, { eager = false } = {}) {
   const out = card.availability === 'out';
 
   return el('div.card', { class: out ? 'is-out' : '' },
-    el('a.card-link', { href: href(`product/${card.id}`), 'aria-label': name },
+    el('a.card-link', { href: href(routePath('product', { id: card.id, slug: slugFor(card) })), 'aria-label': name },
       el('div.card-photo',
         productPhoto(card.image_id, name, { eager }),
         card.availability !== 'in_stock' && el('div.card-badge', availabilityBadge(card.availability))),
@@ -204,7 +205,7 @@ const categoryLetter = (name) => Array.from(String(name).trim())[0] || monogramT
  */
 export function taxonomyTile(row, kind) {
   const name = pick(row, 'name');
-  return el('a.tile', { href: href(`${kind}/${row.id}`) },
+  return el('a.tile', { href: href(routePath(kind, { id: row.id, slug: slugFor(row) })) },
     el('span.tile-badge', { 'aria-hidden': 'true' }, categoryLetter(name)),
     el('span.tile-name', name),
     el('span.tile-count', t('itemsCount', Number(row.product_count || 0))),

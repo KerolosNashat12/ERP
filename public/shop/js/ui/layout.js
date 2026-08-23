@@ -7,7 +7,10 @@
 import { el, icon, ICONS } from '../core/dom.js';
 import { t, pick, getLanguage, setLanguage } from '../core/i18n.js';
 import { shop, isOpen } from '../core/store.js';
-import { href, navigate, parseHash } from '../core/router.js';
+import {
+  href, navigate, currentRoute, shopRoot,
+} from '../core/router.js';
+import { routePath, slugFor, routeSegments } from '../../../shared/shopUrls.js';
 import { brandMark, shopName, tagline, about, searchPlaceholder } from '../core/branding.js';
 import * as cart from '../core/cart.js';
 import * as favorites from '../core/favorites.js';
@@ -70,7 +73,7 @@ function searchForm() {
     // `t('searchPlaceholder')` is only reached if the config never arrived.
     placeholder: searchPlaceholder() || t('searchPlaceholder'),
     autocomplete: 'off',
-    value: parseHash().query.q || '',
+    value: currentRoute().query.q || '',
   });
   searchInput = input;
 
@@ -134,14 +137,14 @@ function favoritesButton() {
  */
 function categoryNav() {
   if (!isOpen()) return null;
-  const current = parseHash();
+  const current = currentRoute();
   const items = [
     el('a.chip', {
       href: href('products'),
       class: current.segments[0] === 'products' ? 'is-active' : '',
     }, t('allProducts')),
     ...shop.categories.map((category) => el('a.chip', {
-      href: href(`category/${category.id}`),
+      href: href(routePath('category', { id: category.id, slug: slugFor(category) })),
       class: current.segments[0] === 'category' && current.segments[1] === String(category.id) ? 'is-active' : '',
     }, pick(category, 'name'))),
   ];
@@ -196,7 +199,7 @@ export function buildFooter() {
       isOpen() && el('nav.foot-col', { 'aria-label': t('footerShop') },
         el('h3', t('footerShop')),
         el('a', { href: href('products') }, t('allProducts')),
-        shop.categories.slice(0, 4).map((category) => el('a', { href: href(`category/${category.id}`) }, pick(category, 'name')))),
+        shop.categories.slice(0, 4).map((category) => el('a', { href: href(routePath('category', { id: category.id, slug: slugFor(category) })) }, pick(category, 'name')))),
       el('nav.foot-col', { 'aria-label': t('footerHelp') },
         el('h3', t('footerHelp')),
         el('a', { href: href('contact') }, t('contactUs')),
@@ -245,17 +248,19 @@ favorites.onChange(refreshFavCount);
  */
 export function syncSearchInput() {
   if (!searchInput) return;
-  const route = parseHash();
+  const route = currentRoute();
   const term = route.segments[0] === 'search' ? (route.query.q || '') : '';
   if (document.activeElement !== searchInput) searchInput.value = term;
 }
 
 /** Mark the active category chip after a navigation without rebuilding the header. */
 export function syncNav(root) {
-  const current = parseHash();
+  const current = currentRoute();
   root.querySelectorAll('.cat-nav .chip').forEach((chip) => {
-    const target = chip.getAttribute('href').replace(/^#\//, '');
-    const segments = target.split('/');
+    // The chip's own address, read back as a route: the shop root off the
+    // front, the query off the end, and what is left is `category/3/<slug>`.
+    const target = chip.getAttribute('href').split('?')[0];
+    const segments = routeSegments(target, shopRoot());
     const active = segments[0] === current.segments[0]
       && (segments.length < 2 || segments[1] === current.segments[1]);
     chip.classList.toggle('is-active', active);

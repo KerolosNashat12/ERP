@@ -28,7 +28,7 @@ function basketRecap() {
 }
 
 export default function checkoutView(root) {
-  setPageMeta({ title: t('checkout') });
+  setPageMeta({ title: t('checkout'), indexable: false });
   const holder = el('div.wrap.stack');
   root.append(holder);
 

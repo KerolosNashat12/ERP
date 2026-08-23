@@ -116,6 +116,22 @@ nothing changes); every screen says so when it is not production; and a
 deployment whose control-plane database disagrees with it refuses to start
 rather than writing to the wrong shops.
 
+**Read `SEO-OWNER.md` when you want the shop to be found.** It is in Arabic,
+because it is a list of things the shop's owner has to do himself and no code
+can do for him: buying and connecting a domain, verifying the shop in Search
+Console and on Google Business Profile, and writing a description of his own
+shop that is worth indexing. It is also honest about the one thing the code
+cannot fix — a storefront on a shared `vercel.app` subdomain will not rank for
+anything competitive, whatever is in its `<head>`.
+
+The code's half is done and needs nothing switched on: every storefront page has
+a real address (`/shop/product/12/<slug>`), its title, description, canonical,
+`hreflang` pair, Open Graph card and JSON-LD are rendered into the HTML by the
+server before any script runs, `sitemap.xml` is generated per shop from its live
+catalogue, and `robots.txt` refuses the ERP and the console. Links already in
+the world — `#/product/12` in a WhatsApp thread — still reach the right page.
+See `src/services/StorefrontSeo.js`.
+
 ### Your scanner and printers
 
 Everything those two devices need is under **Settings → Devices**, with a live

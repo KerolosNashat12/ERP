@@ -54,6 +54,10 @@ production" into the control-plane database, which is what later stops a
 staging deployment pointed at the live data from starting at all.
 Second project, and how to promote a release: **`DEPLOY-STAGING.md`**.
 
+Being found in Google once it is live — the domain, Search Console, Google
+Business Profile, and what to write in the shop's own description: **`SEO-OWNER.md`**
+(in Arabic, for the shop's owner rather than for whoever is deploying).
+
 Generate the secret:
 
 ```bash

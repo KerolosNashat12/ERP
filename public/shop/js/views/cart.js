@@ -14,6 +14,7 @@ import { api } from '../core/api.js';
 import { t, pick } from '../core/i18n.js';
 import { money } from '../core/format.js';
 import { href } from '../core/router.js';
+import { routePath, slugFor } from '../../../shared/shopUrls.js';
 import { setPageMeta } from '../core/seo.js';
 import * as cart from '../core/cart.js';
 import { productPhoto } from '../ui/cards.js';
@@ -38,12 +39,12 @@ function cartLine(line, limits, rerender) {
   const atCap = cap !== null && line.qty >= cap;
 
   return el('article.cart-line',
-    el('a.cart-photo', { href: line.product_id ? href(`product/${line.product_id}`) : href('cart'), 'aria-label': name },
+    el('a.cart-photo', { href: line.product_id ? href(routePath('product', { id: line.product_id, slug: slugFor(line) })) : href('cart'), 'aria-label': name },
       productPhoto(line.image_id, name)),
     el('div.cart-detail',
       el('h3.cart-name',
         line.product_id
-          ? el('a', { href: href(`product/${line.product_id}`) }, name)
+          ? el('a', { href: href(routePath('product', { id: line.product_id, slug: slugFor(line) })) }, name)
           : name),
       line.label && el('p.cart-variant', line.label),
       el('p.cart-unit.muted', `${money(line.price)} ${t('eachPrice')}`)),
@@ -72,7 +73,8 @@ function cartLine(line, limits, rerender) {
 }
 
 export default function cartView(root) {
-  setPageMeta({ title: t('yourCart') });
+  // A basket is one customer's, so it is a page for them and not for an index.
+  setPageMeta({ title: t('yourCart'), indexable: false });
   const holder = el('div.wrap.stack');
   root.append(holder);
 

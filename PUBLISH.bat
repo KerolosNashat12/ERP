@@ -71,7 +71,7 @@ if exist "hosted-db-setup.txt" del /f /q "hosted-db-setup.txt" >> "%LOG%" 2>&1
 echo.
 echo   Committing...
 git add -A >> "%LOG%" 2>&1
-git -c user.email="kerolosnashatestfanous@gmail.com" -c user.name="KerolosNashat12" commit -m "Your data is yours: a shop can download its own books from Settings, every shop gets a guarded backup and restore, an archive for the paper invoices that stays out of the accounts, and two reports answering what the shop has cost and what it has really made" >> "%LOG%" 2>&1
+git -c user.email="kerolosnashatestfanous@gmail.com" -c user.name="KerolosNashat12" commit -m "Fix the cron that had been failing every deployment since the backups round - an hourly schedule is refused outright on a Hobby account, so Vercel kept serving the old build and three releases never shipped. Plus real crawlable URLs for every shop, the title and description in the HTML the server sends, structured data and a sitemap" >> "%LOG%" 2>&1
 if errorlevel 1 echo   Nothing new to commit - pushing whatever is outstanding.
 
 echo   Pushing (your connection to GitHub drops sometimes, so this retries)...

@@ -1,0 +1,64 @@
+<!doctype html>
+<!--
+  The public storefront — for whichever shop this address belongs to.
+
+  NOT `index.html`, and that is the whole point of the name. A host that serves
+  `public/` statically (Vercel does; three bugs in this repo came from
+  forgetting it) answers `/shop` from its CDN before Express is reached, and
+  what it would have answered with is THIS file: one shell, no shop's name in
+  it, a placeholder title. That is survivable for a customer, whose browser
+  fills the page in a moment later — and fatal for a crawler and for a WhatsApp
+  link preview, neither of which runs the script. With no `index.html` under
+  `/shop`, the CDN has nothing to serve and every page request reaches
+  `src/api/routes/storefrontPages.js`, which renders the head for the page and
+  the shop actually being asked for.
+
+  Real paths, not a hash: `/shop/product/12/<slug>` is a page a crawler can
+  index. Old `#/product/12` links are translated in the browser on arrival —
+  see `js/core/router.js`. Arabic is the default language and is set on the
+  first paint below rather than by JavaScript, so a slow connection never shows
+  a flash of left-to-right layout before the script lands; the server rewrites
+  the opening HTML tag's `lang` and `dir` for `?lang=en`.
+
+  ONE FILE, MANY SHOPS. Nothing here names a shop, describes one, or draws one's
+  mark. Everything between the two SEO markers is REPLACED by the server with
+  this shop's own; what is written between them is what a shop would get if that
+  ever failed, so it is a placeholder that says `noindex` — a page with no name
+  is not a page Google should keep. A name typed into this file would be shown
+  by every other shop on the platform for the first few hundred milliseconds of
+  every visit — which is how a clothes shop came to be called an accessories
+  shop in the first place.
+-->
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <link rel="stylesheet" href="/shop/shop.css">
+  <!--MM-SEO-START-->
+  <title>المتجر</title>
+  <meta name="description" content="">
+  <!-- Replaced by the real directive for the page being served. A shell that
+       reached a crawler by some other route is a shell with no shop in it. -->
+  <meta name="robots" content="noindex, nofollow">
+  <!-- Overwritten from `branding.dark` once the config lands. -->
+  <meta name="theme-color" content="#111827">
+  <!-- A plain mark, replaced by the shop's logo or its own monogram on boot. -->
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23111827'/%3E%3C/svg%3E">
+  <!--MM-SEO-END-->
+</head>
+<body class="is-booting">
+  <!-- Replaced by the app on boot; visible only while the first request is in
+       flight, which is exactly why it carries no letters: the only mark this
+       shop has is the one the server is about to send. -->
+  <div class="boot-screen" role="status" aria-live="polite">
+    <span class="boot-mark" aria-hidden="true"></span>
+  </div>
+  <script type="module" src="/shop/js/main.js"></script>
+  <noscript>
+    <div class="boot-screen">
+      <p>هذا المتجر يحتاج إلى تفعيل الجافاسكريبت في المتصفح.<br>
+         This shop needs JavaScript enabled in your browser.</p>
+    </div>
+  </noscript>
+</body>
+</html>

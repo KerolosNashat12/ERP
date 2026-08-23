@@ -7,6 +7,12 @@
        a name typed here would greet the staff of every other shop on the
        platform for as long as the first request takes. -->
   <title>ERP</title>
+  <!-- A back office is not a website. `robots.txt` refuses this whole address
+       space (see src/services/SitemapService.js); this is the second lock, for
+       a crawler that reached the page some other way — a link somebody pasted,
+       a URL in a bug report — because a page that is merely un-linked is not a
+       page that is un-indexed. -->
+  <meta name="robots" content="noindex, nofollow" />
   <link rel="stylesheet" href="/css/app.css" />
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%23111827'/></svg>" />
 </head>

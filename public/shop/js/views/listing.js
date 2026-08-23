@@ -7,8 +7,9 @@
  */
 import { el, fill, chevron } from '../core/dom.js';
 import { api } from '../core/api.js';
-import { t, pick, getLanguage } from '../core/i18n.js';
+import { t, pick } from '../core/i18n.js';
 import { href, navigate } from '../core/router.js';
+import { routePath, slugFor } from '../../../shared/shopUrls.js';
 import { setPageMeta } from '../core/seo.js';
 import { shopName } from '../core/branding.js';
 import { shop } from '../core/store.js';
@@ -37,18 +38,34 @@ function readRoute(route, kind) {
   };
 }
 
-const buildHref = (state, changes = {}) => {
+/** The shelf or the maker this listing is of — for its name and for its slug. */
+const rowFor = (state) => (state.kind === 'category'
+  ? shop.categories.find((entry) => entry.id === state.id)
+  : state.kind === 'brand'
+    ? shop.brands.find((entry) => entry.id === state.id)
+    : null);
+
+/** `category/3/<slug>` — the readable half of the address, without the query. */
+function basePath(state) {
+  if (state.kind === 'category' || state.kind === 'brand') {
+    const row = rowFor(state);
+    return routePath(state.kind, { id: state.id, slug: row ? slugFor(row) : '' });
+  }
+  return state.kind === 'search' ? 'search' : 'products';
+}
+
+const buildPath = (state, changes = {}) => {
   const next = { ...state, ...changes };
   const params = new URLSearchParams();
   if (next.q) params.set('q', next.q);
   if (next.sort && next.sort !== 'newest') params.set('sort', next.sort);
   if (next.page > 1) params.set('page', String(next.page));
-  const base = next.kind === 'category' ? `category/${next.id}`
-    : next.kind === 'brand' ? `brand/${next.id}`
-      : next.kind === 'search' ? 'search' : 'products';
   const query = params.toString();
-  return href(query ? `${base}?${query}` : base);
+  const base = basePath(next);
+  return query ? `${base}?${query}` : base;
 };
+
+const buildHref = (state, changes = {}) => href(buildPath(state, changes));
 
 /**
  * The heading. Category and brand names are not in the products response, so
@@ -56,14 +73,8 @@ const buildHref = (state, changes = {}) => {
  */
 function headingFor(state) {
   if (state.kind === 'search') return state.q ? t('resultsFor', state.q) : t('allProducts');
-  if (state.kind === 'category') {
-    const row = shop.categories.find((entry) => entry.id === state.id);
-    return row ? pick(row, 'name') : t('allProducts');
-  }
-  if (state.kind === 'brand') {
-    const row = shop.brands.find((entry) => entry.id === state.id);
-    return row ? pick(row, 'name') : t('allProducts');
-  }
+  const row = rowFor(state);
+  if (state.kind === 'category' || state.kind === 'brand') return row ? pick(row, 'name') : t('allProducts');
   return t('allProducts');
 }
 
@@ -99,14 +110,24 @@ export function listingView(kind) {
     const state = readRoute(route, kind);
     const title = headingFor(state);
 
-    // The shop's name comes from its own config, never from a literal here:
-    // this same sentence used to name the first tenant on every other shop's
-    // category pages.
+    /*
+     * The shop's name comes from its own config, never from a literal here:
+     * this same sentence used to name the first tenant on every other shop's
+     * category pages. The sentence itself is `metaListing` in core/i18n.js, so
+     * the server writes the identical one into the HTML before this runs.
+     *
+     * The canonical keeps the PAGE and drops the SORT. Page 2 of a shelf is a
+     * different set of products and deserves its own address; the same page
+     * ordered by price is the same products in a different order, and three
+     * spellings of one shelf competing with each other in an index is how a
+     * small shop's crawl budget gets spent on itself. A search results page is
+     * not a page at all — see `indexable`.
+     */
     setPageMeta({
       title,
-      description: getLanguage() === 'ar'
-        ? `تصفّح ${title} في ${shopName()} — الدفع عند الاستلام في كل مصر.`
-        : `Browse ${title} at ${shopName()} — cash on delivery across Egypt.`,
+      description: t('metaListing', title, shopName()),
+      canonicalPath: buildPath(state, { sort: 'newest' }),
+      indexable: kind !== 'search',
     });
 
     const head = el('div.listing-head',

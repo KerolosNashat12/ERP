@@ -8,7 +8,9 @@ import { el, fill, icon, ICONS } from '../core/dom.js';
 import { api, imageUrl, ShopError } from '../core/api.js';
 import { t, pick, getLanguage, isRtl } from '../core/i18n.js';
 import { money, number, priceRange } from '../core/format.js';
-import { href } from '../core/router.js';
+import { href, canonicalise } from '../core/router.js';
+import { routePath, slugFor } from '../../../shared/shopUrls.js';
+import { takeProduct } from '../core/boot.js';
 import { setPageMeta } from '../core/seo.js';
 import { shopName } from '../core/branding.js';
 import { freeDeliveryOver, deliverySettings } from '../core/store.js';
@@ -21,7 +23,7 @@ function crumbs(product) {
   const parts = [el('a', { href: href('') }, t('home'))];
   if (product.brand_id) {
     parts.push(el('span.crumb-sep', '/'));
-    parts.push(el('a', { href: href(`brand/${product.brand_id}`) }, pick(product, 'brand_name')));
+    parts.push(el('a', { href: href(routePath('brand', { id: product.brand_id, slug: slugFor(product, 'brand_name') })) }, pick(product, 'brand_name')));
   }
   return el('nav.crumbs', { 'aria-label': t('home') }, parts);
 }
@@ -280,7 +282,11 @@ export default async function productView(root, route) {
 
   let product;
   try {
-    product = await api.product(route.params.id);
+    // The server read this product a moment ago to write the page's title and
+    // its Open Graph card, and sent it down with the HTML — see core/boot.js.
+    // Only ever for the page the customer landed on; every navigation after
+    // that asks the API, exactly as before.
+    product = takeProduct(route.params.id) || await api.product(route.params.id);
   } catch (error) {
     // A 404 here is ordinary: the piece sold out and was unpublished, and the
     // link is doing the rounds on WhatsApp. It gets a shop-shaped page, not an
@@ -291,7 +297,7 @@ export default async function productView(root, route) {
         body: t('notFoundBody'),
         action: el('a.btn.btn-primary', { href: href('products') }, t('allProducts')),
       }));
-      setPageMeta({ title: t('productGoneTitle') });
+      setPageMeta({ title: t('productGoneTitle'), indexable: false });
       return;
     }
     fill(holder, errorState(error, () => { root.replaceChildren(); productView(root, route); }));
@@ -300,11 +306,26 @@ export default async function productView(root, route) {
 
   const name = pick(product, 'name');
   const description = pick(product, 'description');
+  /*
+   * One address per product, and it carries the product's own name.
+   *
+   * A link may arrive without the slug (an old `#/product/12`, a URL somebody
+   * trimmed out of a message) or with an out-of-date one after a rename. Both
+   * load this exact page — the id is what resolves — and both are told which
+   * spelling is canonical. `canonicalise` then puts that spelling in the
+   * address bar without adding a history entry, so the link a customer copies
+   * from the bar is the one Google is indexing.
+   *
+   * The fallback sentence is `metaProduct` in core/i18n.js, which is the same
+   * sentence the server already wrote into the HTML for this page.
+   */
+  const canonicalPath = routePath('product', { id: product.id, slug: slugFor(product) });
+  canonicalise(href(canonicalPath));
   setPageMeta({
     title: name,
-    description: (description || '').slice(0, 180)
-      || (getLanguage() === 'ar' ? `${name} — متاح الآن في ${shopName()}.` : `${name} — available now at ${shopName()}.`),
+    description: (description || '').slice(0, 180) || t('metaProduct', name, shopName()),
     image: product.image_id ? imageUrl(product.image_id) : null,
+    canonicalPath,
   });
 
   const view = gallery(product);
@@ -392,7 +413,7 @@ export default async function productView(root, route) {
     el('div.product-layout',
       view.node,
       el('div.product-info',
-        pick(product, 'brand_name') && el('a.product-brand', { href: href(`brand/${product.brand_id}`) },
+        pick(product, 'brand_name') && el('a.product-brand', { href: href(routePath('brand', { id: product.brand_id, slug: slugFor(product, 'brand_name') })) },
           pick(product, 'brand_name')),
         el('h1.product-name', name),
         priceNode,

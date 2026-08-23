@@ -323,8 +323,10 @@ test('a website-disabled tenant answers 404 on the shop API and serves no storef
     !String(storefrontPage.data).includes('<html'),
     'no HTML document comes back for a website-disabled tenant',
   );
-  // Nor by reaching the same file straight through the static server.
-  const directFile = await api(`/t/${off.slug}/shop/index.html`);
+  // Nor by reaching the shell straight through the static server. It is
+  // `app.html` rather than `index.html` precisely so a CDN has no directory
+  // index to hand out ahead of the application — see storefrontPages.js.
+  const directFile = await api(`/t/${off.slug}/shop/app.html`);
   assert.equal(directFile.status, 404);
 
   // The control: an otherwise-identical tenant with the website on gets a

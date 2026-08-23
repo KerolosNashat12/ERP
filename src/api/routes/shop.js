@@ -12,8 +12,7 @@ import { asyncHandler, sendImage } from '../middleware/index.js';
 import storefront from '../../services/StorefrontService.js';
 import images from '../../services/ImageService.js';
 import webAssets from '../../services/WebAssetService.js';
-import { currentTenant } from '../../infrastructure/database/connection.js';
-import { confirmTenant } from '../middleware/tenant.js';
+import { websiteGate } from '../middleware/websiteGate.js';
 import { NotFoundError } from '../../shared/errors.js';
 import { deploymentInfo } from '../../shared/deploymentInfo.js';
 
@@ -21,33 +20,12 @@ const router = Router();
 
 /**
  * A tenant that has switched its website off must not leak that a shop even
- * exists there — so this is a plain 404, the same shape `notFoundHandler`
- * would produce, not a 403 that would confirm something is behind the door.
- * Registered first, ahead of every route below, so nothing here is ever
- * reachable while the switch is off. With no tenant resolved (the
- * single-shop build), `currentTenant()` is null and nothing changes.
+ * exists there. Registered first, ahead of every route below, so nothing here
+ * is ever reachable while the switch is off — and shared with the storefront's
+ * PAGES and its sitemap (see api/middleware/websiteGate.js), so there is one
+ * answer to "is this shop open to the public" rather than three.
  */
-router.use(async (req, res, next) => {
-  const tenant = currentTenant();
-  if (!tenant || tenant.websiteEnabled) return next();
-
-  // Before closing a storefront, ask the control plane again. This instance's
-  // cached row may have been written by another one — and a shop that is open
-  // being told it is closed, in front of its customers, is the one failure this
-  // gate must never produce. Only a refusal that survives a fresh read stands.
-  try {
-    const confirmed = await confirmTenant(tenant.slug);
-    if (confirmed && confirmed.websiteEnabled) {
-      tenant.websiteEnabled = true;
-      return next();
-    }
-  } catch {
-    // The control plane being unreachable is not a reason to open a door the
-    // owner closed; fall through to the 404 below.
-  }
-
-  return res.status(404).json({ error: { code: 'NOT_FOUND', message: `No route for ${req.method} ${req.path}` } });
-});
+router.use(websiteGate({ shape: 'json' }));
 
 /**
  * Shop-wide settings, categories and brands the pages need on first paint —

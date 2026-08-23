@@ -6,6 +6,12 @@
   <meta name="color-scheme" content="light" />
   <meta name="theme-color" content="#3730a3" />
   <title>KJ Admin — Owner Console</title>
+  <!-- A back office is not a website. `robots.txt` refuses this whole address
+       space (see src/services/SitemapService.js); this is the second lock, for
+       a crawler that reached the page some other way — a link somebody pasted,
+       a URL in a bug report — because a page that is merely un-linked is not a
+       page that is un-indexed. -->
+  <meta name="robots" content="noindex, nofollow" />
   <!-- The language is known before a single module loads, so an Arabic console
        never paints left-to-right for a frame first. i18n.js sets the same two
        attributes again from the same key; this only wins the race. -->

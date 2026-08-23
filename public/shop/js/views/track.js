@@ -124,7 +124,7 @@ function orderCard(order) {
 }
 
 export default function trackView(root, route) {
-  setPageMeta({ title: t('trackTitle') });
+  setPageMeta({ title: t('trackTitle'), indexable: false });
 
   const orderNo = field({
     name: 'order', label: t('orderNumberLabel'), required: true,

@@ -690,6 +690,57 @@ export class StorefrontService {
     };
   }
 
+  // ----------------------------------------------------------------- sitemap
+
+  /**
+   * How many products a crawler is allowed to be told about.
+   *
+   * Same gate as every other public query — `PUBLISHED_PRODUCT` — which is the
+   * only reason a sitemap cannot become the one place next season's range leaks
+   * from. A sitemap is read by a machine that will fetch every address in it,
+   * so "listed but hidden" is not a smaller mistake here than it is on a page;
+   * it is a bigger one.
+   */
+  async sitemapCount() {
+    const row = await this.db.prepare(`
+      SELECT COUNT(*) AS n FROM products p WHERE ${PUBLISHED_PRODUCT}
+    `).get();
+    return Number(row?.n || 0);
+  }
+
+  /**
+   * One page of the sitemap, and never more than one.
+   *
+   * A shop with 5,000 products would be 5,000 rows and several megabytes of XML
+   * built in a serverless function with a memory limit and a wall clock. So the
+   * sitemap is an index of shards and this answers exactly one of them: one
+   * bounded query, `LIMIT`/`OFFSET` on the primary key, a fixed number of rows
+   * whatever the catalogue grows to. The index itself costs one `COUNT(*)`.
+   *
+   * Five columns, named, as everything in this file is: an id, the two names
+   * the address is built from, a timestamp, and the id of one photograph. No
+   * price, no stock, no cost — a sitemap is a public document and this one is
+   * generated from the same doctrine as the pages it points at.
+   */
+  async sitemapProducts({ offset = 0, limit = 1000 } = {}) {
+    return this.db.prepare(`
+      SELECT p.id      AS id,
+             p.name_en AS name_en,
+             p.name_ar AS name_ar,
+             COALESCE(p.updated_at, p.published_at, p.created_at) AS lastmod,
+             COALESCE(
+               (SELECT ip.id FROM product_images ip
+                 WHERE ip.id = p.primary_image_id AND ip.product_id = p.id),
+               (SELECT i2.id FROM product_images i2
+                 WHERE i2.product_id = p.id ORDER BY i2.display_order, i2.id LIMIT 1)
+             ) AS image_id
+      FROM products p
+      WHERE ${PUBLISHED_PRODUCT}
+      ORDER BY p.id
+      LIMIT ? OFFSET ?
+    `).all(limit, offset);
+  }
+
   // --------------------------------------------------------------- internals
 
   /** Cards for a known set of ids, returned in the order the ids were given. */

@@ -4,6 +4,7 @@ import { api, assetUrl } from '../core/api.js';
 import { t, pick } from '../core/i18n.js';
 import { shopName, tagline, bilingual } from '../core/branding.js';
 import { href } from '../core/router.js';
+import { routePath, slugFor } from '../../../shared/shopUrls.js';
 import { setPageMeta } from '../core/seo.js';
 import { shop, deliverySettings } from '../core/store.js';
 import { money, number } from '../core/format.js';
@@ -205,13 +206,13 @@ export default async function homeView(root) {
     sections.push(el('section.section.section-band',
       sectionHead(t('ourBrands')),
       el('div.brand-strip', brands.map((row) => el('a.brand-pill',
-        { href: href(`brand/${row.id}`) }, pick(row, 'name'))))));
+        { href: href(routePath('brand', { id: row.id, slug: slugFor(row) })) }, pick(row, 'name'))))));
   }
 
   if (newest.length) {
     sections.push(el('section.section',
       sectionHead(t('newArrivals'), t('newArrivalsNote'),
-        { href: href('products?sort=newest'), label: t('viewAll') }),
+        { href: href('products'), label: t('viewAll') }),
       productGrid(newest)));
   }
 

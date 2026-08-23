@@ -258,6 +258,24 @@ const dictionary = {
     contactMapCta: 'Open in Maps',
     contactEmptyTitle: 'No contact details yet',
     contactEmptyBody: 'This shop has not added a way to reach it here yet.',
+
+    /*
+     * --- what a page says about itself
+     *
+     * The `<title>`, the meta description and the Open Graph card. These are
+     * here, with every other sentence on the site, because the SERVER writes
+     * them into the HTML before any script runs (see
+     * src/services/StorefrontSeo.js) and the browser rewrites them as the
+     * customer moves between pages. Two places that say it, one place it is
+     * written — otherwise the sentence a shared link arrives wearing and the
+     * sentence the page settles on would drift apart, and only one of them is
+     * ever looked at by the person who notices.
+     *
+     * Nothing here names a shop: the name is always an argument.
+     */
+    metaTitle: (title, shop) => `${title} — ${shop}`,
+    metaProduct: (name, shop) => `${name} — available now at ${shop}. Cash on delivery across Egypt.`,
+    metaListing: (title, shop) => `Browse ${title} at ${shop} — cash on delivery across Egypt.`,
   },
 
   ar: {
@@ -487,6 +505,13 @@ const dictionary = {
     contactMapCta: 'افتح على الخريطة',
     contactEmptyTitle: 'لسه مفيش بيانات تواصل',
     contactEmptyBody: 'المحل ده لسه ما ضافش طريقة يتواصل بيها هنا.',
+
+    // --- الكلام اللي الصفحة بتقوله عن نفسها: العنوان والوصف وكارت المشاركة.
+    // مكتوب هنا مع باقي كلام الموقع لأن السيرفر هو اللي بيكتبه في الـ HTML قبل
+    // ما أي سكريبت يشتغل، والمتصفح بيحدّثه بعد كده — نص واحد، مش نسختين.
+    metaTitle: (title, shop) => `${title} — ${shop}`,
+    metaProduct: (name, shop) => `${name} — متاح دلوقتي في ${shop}. الدفع عند الاستلام في كل مصر.`,
+    metaListing: (title, shop) => `اتفرّج على ${title} في ${shop} — الدفع عند الاستلام في كل مصر.`,
   },
 };
 
@@ -497,7 +522,10 @@ const dictionary = {
  */
 function readStored() {
   try {
-    const saved = window.localStorage.getItem(STORAGE_KEY);
+    // `globalThis.localStorage` rather than `window.`: this module is imported
+    // by Node too (see the note on `translate` below), where there is no window
+    // at all and a bare reference would throw before the dictionary exists.
+    const saved = globalThis.localStorage?.getItem(STORAGE_KEY);
     return saved === 'en' || saved === 'ar' ? saved : null;
   } catch {
     return null;
@@ -534,15 +562,40 @@ export function applyDocumentLanguage() {
  * the same sentence with a different number in it.
  */
 export function t(key, ...args) {
-  const entry = dictionary[language]?.[key] ?? dictionary.en[key];
+  return translate(language, key, ...args);
+}
+
+/**
+ * The same words, for a language that is not this browser's.
+ *
+ * This is what lets the SERVER render the `<head>` — the title, the description
+ * and the Open Graph card that a WhatsApp preview shows — out of this exact
+ * dictionary instead of a second copy of it in `src/`. Node cannot use `t()`,
+ * because `t()` reads a module-level language that only a browser sets; it can
+ * use this, because the language is an argument.
+ *
+ * There is no build step and there never will be, so nothing is generated or
+ * duplicated: `src/services/StorefrontSeo.js` imports this file directly. The
+ * storefront cannot import from `src/` — a browser has no access to it — but
+ * Node reading a plain ES module out of `public/` works exactly as it looks
+ * like it should, and it is the only arrangement where the sentence a shared
+ * link arrives wearing and the sentence the page settles on cannot drift.
+ */
+export function translate(lang, key, ...args) {
+  const entry = dictionary[lang]?.[key] ?? dictionary.en[key];
   if (typeof entry === 'function') return entry(...args);
   return entry ?? key;
 }
 
 /** Pick the right side of a bilingual record, falling back rather than blanking. */
 export function pick(row, field = 'name') {
+  return pickIn(language, row, field);
+}
+
+/** `pick`, for a language given rather than assumed — the server's half. */
+export function pickIn(lang, row, field = 'name') {
   if (!row) return '';
-  const wanted = row[`${field}_${language}`];
-  const other = row[`${field}_${language === 'ar' ? 'en' : 'ar'}`];
+  const wanted = row[`${field}_${lang}`];
+  const other = row[`${field}_${lang === 'ar' ? 'en' : 'ar'}`];
   return (wanted && String(wanted).trim()) || (other && String(other).trim()) || '';
 }

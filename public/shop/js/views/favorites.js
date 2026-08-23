@@ -31,7 +31,7 @@ const nothingSaved = () => emptyState({
 });
 
 export default async function favoritesView(root) {
-  setPageMeta({ title: t('yourFavorites') });
+  setPageMeta({ title: t('yourFavorites'), indexable: false });
 
   const note = el('p.page-note.muted');
   const head = el('div', el('h1.page-title', t('yourFavorites')), note);

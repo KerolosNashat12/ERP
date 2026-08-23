@@ -46,7 +46,7 @@ export default function successView(root, route) {
     return;
   }
 
-  setPageMeta({ title: t('thankYou') });
+  setPageMeta({ title: t('thankYou'), indexable: false });
 
   root.append(el('div.wrap.stack',
     el('div.success',
