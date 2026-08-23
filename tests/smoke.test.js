@@ -8,7 +8,9 @@ import './single-shop.js'; // must be first — see that file
 import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { createApp } from '../src/server.js';
-import { initDb, closeDb, supportsFileBackup } from '../src/infrastructure/database/connection.js';
+import {
+  initDb, closeDb, supportsFileBackup, getDb,
+} from '../src/infrastructure/database/connection.js';
 
 
 
@@ -38,10 +40,27 @@ after(async () => {
   await closeDb();
 });
 
+/**
+ * One request, with the header a real client always sends.
+ *
+ * `Idempotency-Key` is minted per submission by all three front ends (see
+ * public/js/core/api.js). A client that sends none is fingerprinted by CONTENT
+ * for ten seconds instead — which is correct behaviour and exactly wrong for a
+ * walkthrough that rings up two identical one-item sales half a second apart on
+ * purpose: the server would rightly call the second one a double-click and
+ * replay the first. A fresh key per call is what a till does, so it is what
+ * this does. See src/api/middleware/idempotency.js.
+ */
+let requestNo = 0;
 async function api(path, { method = 'GET', body } = {}) {
+  requestNo += 1;
   const res = await fetch(`${base}${path}`, {
     method,
-    headers: { 'Content-Type': 'application/json', ...(cookie ? { cookie } : {}) },
+    headers: {
+      'Content-Type': 'application/json',
+      'Idempotency-Key': `smoke-${process.pid}-${Date.now()}-${requestNo}`,
+      ...(cookie ? { cookie } : {}),
+    },
     body: body ? JSON.stringify(body) : undefined,
   });
   const setCookie = res.headers.get('set-cookie');
@@ -580,16 +599,19 @@ test('role permissions are enforced', async () => {
 });
 
 /**
- * Backups mean different things per driver: a local file copy on the shop PC,
- * and the provider's own job on a hosted database. The hosted path must refuse
- * loudly rather than hand back a file that does not exist, so both are asserted.
+ * Copying the database FILE means different things per driver: it is a real
+ * copy on a shop PC and impossible on a hosted database, where there is no file.
+ * The hosted path must refuse loudly rather than hand back a file that does not
+ * exist — and its refusal must carry a code, because the screen has to be able
+ * to say it in Arabic. Taking the shop's own DATA out is a different act that
+ * works on both, and is asserted below.
  */
 test('backup can be created and listed', async () => {
   if (!supportsFileBackup()) {
     await assert.rejects(
       () => api('/api/settings/backups', { method: 'POST' }),
-      (error) => /not available on this deployment/i.test(error.message),
-      'a hosted database must refuse a file backup with an explanation',
+      (error) => error.payload?.error?.code === 'FILE_BACKUP_UNAVAILABLE',
+      'a hosted database must refuse a file backup with a code the screen can translate',
     );
     const list = await api('/api/settings/backups');
     assert.deepEqual(list.rows, [], 'no local backup files exist on a hosted database');
@@ -601,6 +623,52 @@ test('backup can be created and listed', async () => {
   const list = await api('/api/settings/backups');
   assert.ok(list.rows.some((b) => b.file === created.file));
   await api(`/api/settings/backups/${created.file}`, { method: 'DELETE' });
+});
+
+/**
+ * The shop's own copy of its own data, on the build that has no platform at all.
+ *
+ * Everything else about this feature is exercised in `shop-data-export.test.js`,
+ * against a fleet. This one is here because the single-shop build is the case
+ * that file cannot reach: no control plane, no tenant, no slug — a shop PC —
+ * and the promise on the landing page («بياناتك بتاعتك») is made to that shop
+ * as well as to a hosted one.
+ */
+test('the shop can download a copy of its own data', async () => {
+  // This suite runs against the development database, which keeps whatever the
+  // last run left in it — and the rate limit below is deliberately remembered
+  // in `audit_logs`, so the last run's copy would refuse this one. Clearing the
+  // shop's export history is this test's way of starting from "none taken yet".
+  await getDb().prepare("DELETE FROM audit_logs WHERE entity_type = 'data_export'").run();
+
+  const status = await api('/api/settings/data-export');
+  assert.equal(status.available, true);
+  assert.deepEqual(status.redacted, ['users.password_hash']);
+
+  const res = await fetch(`${base}/api/settings/data-export`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', cookie },
+  });
+  assert.equal(res.status, 200);
+  assert.equal(res.headers.get('content-type'), 'application/zip');
+  assert.match(res.headers.get('content-disposition'), /attachment; filename=".*\.zip"/);
+
+  const bytes = Buffer.from(await res.arrayBuffer());
+  assert.equal(bytes.readUInt32LE(0), 0x04034B50, 'it really is a ZIP');
+  const text = bytes.toString('latin1');
+  assert.ok(text.includes('README.txt'), 'with the note that explains it');
+  assert.ok(text.includes('snapshot/manifest.json'), 'the snapshot');
+  assert.ok(/spreadsheets\/.*-ar\.xlsx/.test(text), 'the Arabic workbook');
+  assert.ok(/spreadsheets\/.*-en\.xlsx/.test(text), 'and the English one');
+
+  // A second press, straight away, is refused rather than read the shop again.
+  const again = await fetch(`${base}/api/settings/data-export`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', cookie },
+  });
+  assert.equal(again.status, 429);
+  assert.equal((await again.json()).error.code, 'EXPORT_RATE_LIMITED');
+  assert.ok(again.headers.get('retry-after'));
 });
 
 // --------------------------------------------------------------- new in v1.8

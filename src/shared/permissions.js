@@ -29,6 +29,21 @@ export const MODULES = {
   // costs page and must not be given it, and `requirePermission` enforces that
   // against the matched code's module with no extra work here.
   costs: ['view', 'create', 'update', 'delete'],
+  // فواتيرك — the invoices the shop already had ON PAPER before it had this
+  // system: photographs, a supplier, and the payments recorded against them.
+  //
+  // Its OWN module rather than a corner of `purchases`, for two reasons that
+  // point the same way. The platform SELLS modules, and this is a feature a
+  // shop can be sold or not sold — a small package that bought purchasing has
+  // not bought an archive of its old paperwork, and `requirePermission`
+  // enforces that against the matched code's module with no extra work here.
+  // And the archive is precisely the thing that must NOT be confused with
+  // purchasing: these amounts never touch stock, costs, profit or a supplier
+  // balance (see shared/legacyInvoices.js), so `purchases.view` had better not
+  // be what opens them. `pay` and `reverse_payment` are split off the same way
+  // they are in `purchases` above. Migration 015 grants them to the roles that
+  // already hold the rights they were carved out of.
+  legacy_invoices: ['view', 'create', 'update', 'delete', 'pay', 'reverse_payment'],
   // The people the shop pays. Separate from `users` on purpose: a delivery man
   // has a salary and no login. `pay` is money leaving the shop, which is not
   // the same act as editing somebody's record — see `purchases.pay` above for
@@ -36,7 +51,11 @@ export const MODULES = {
   employees: ['view', 'create', 'update', 'delete', 'pay'],
   users: ['view', 'create', 'update', 'delete', 'reset_password'],
   audit: ['view', 'export'],
-  settings: ['view', 'update', 'backup'],
+  // `backup` is the file copy an on-premise shop keeps on its own PC — it never
+  // leaves the building. `export_data` is the shop taking its WHOLE BOOK out of
+  // the building in one file, which is a different act with a different risk and
+  // therefore a different code; see UNDELEGATABLE below.
+  settings: ['view', 'update', 'backup', 'export_data'],
   labels: ['view', 'print'],
   weborders: ['view', 'confirm', 'cancel'],
 };
@@ -44,6 +63,31 @@ export const MODULES = {
 export const ALL_PERMISSIONS = Object.entries(MODULES).flatMap(([module, actions]) =>
   actions.map((action) => ({ code: `${module}.${action}`, module, action })),
 );
+
+/**
+ * Permissions that the role editor may not hand to anybody.
+ *
+ * Every other code in this file is a decision the shop's administrator makes:
+ * he decides whether his manager may void a sale or his clerk may receive
+ * goods, and if he gets one of those wrong the damage is inside the shop and
+ * inside the audit log. `settings.export_data` is not that kind of decision. It
+ * produces ONE FILE containing every price, every cost, every customer's phone
+ * number and every employee's salary, and the moment it exists it is on a
+ * laptop, in an email, on a phone — outside everything this system can see.
+ *
+ * Today a shop administrator could tick `settings.backup` for the cashier role
+ * in four clicks, and on a shop PC that is defensible: it makes a file on the
+ * machine the cashier is already standing at. Ticking a box that lets the
+ * cashier walk out with the shop's whole book is not the same click, and it is
+ * exactly the click somebody makes at five o'clock without reading it.
+ *
+ * So this one is not delegable at all. It belongs to the administrator role,
+ * which by construction holds every permission and cannot be edited (see
+ * `UserService.updateRolePermissions`), and a shop that wants a second person
+ * able to take a copy makes that person an administrator — a deliberate act,
+ * visible on the Users screen, that nobody performs by accident.
+ */
+export const UNDELEGATABLE = new Set(['settings.export_data']);
 
 const all = () => ALL_PERMISSIONS.map((p) => p.code);
 const forModules = (...modules) =>
@@ -66,7 +110,7 @@ export const ROLE_DEFINITIONS = [
       ...forModules(
         'dashboard', 'suppliers', 'brands', 'categories', 'attributes', 'products',
         'inventory', 'purchases', 'customers', 'sales', 'promotions', 'reports', 'labels',
-        'weborders', 'costs', 'employees',
+        'weborders', 'costs', 'employees', 'legacy_invoices',
       ),
       'audit.view',
       'settings.view',
@@ -114,6 +158,10 @@ export const ROLE_DEFINITIONS = [
       // auditor who cannot see the electricity bill or the wages cannot audit
       // the profit those come off.
       'costs.view', 'employees.view',
+      // And the old paper invoices, read-only: what the shop still owes on
+      // them is a real obligation even though it is deliberately outside the
+      // system's own totals.
+      'legacy_invoices.view',
       'reports.view', 'reports.export',
       'audit.view', 'audit.export',
       'settings.view',

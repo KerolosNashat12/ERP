@@ -184,7 +184,16 @@ html[dir="rtl"] .nav-group { letter-spacing: 0; }
 .grid.cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .grid.cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .grid.cols-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-.stack { display: grid; gap: 14px; }
+/*
+ * One column, pinned to the width available — `minmax(0, 1fr)` and not the
+ * implicit `auto`, which sizes the track to the MAX-CONTENT of its widest
+ * child. A stack holding a wide table therefore used to become as wide as the
+ * table and drag the dialog around it off the side of a phone, taking the
+ * headings and the callout with it. With the track pinned, the table scrolls
+ * inside its own `.table-wrap` — which is what that element is for — and
+ * everything above it stays readable. Same fix as `.modal-backdrop` below.
+ */
+.stack { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
 .muted { color: var(--ink-3); }
 .small { font-size: 12.5px; }
 .strong { font-weight: 600; }
@@ -331,6 +340,20 @@ html[dir="rtl"] .kpi .label { letter-spacing: 0; }
 .kpi .value { font-size: 21px; font-weight: 650; margin-top: 5px; font-variant-numeric: tabular-nums; }
 .kpi .sub { font-size: 12px; color: var(--ink-3); margin-top: 2px; }
 .kpi.accent { border-inline-start: 3px solid var(--gold); }
+/* The one figure a report exists to give. It is the same tile as the others
+   with the same markup; it is just the one the owner asked the question about,
+   and on a screen of seven of them that has to be visible from across a shop
+   counter. */
+.kpi.headline { grid-column: span 2; background: var(--gold-soft); }
+.kpi.headline .value { font-size: 30px; }
+@media (max-width: 900px) {
+  .kpi.headline { grid-column: auto; }
+  /* Stacked, the tiles become a column the length of the screen, and the one
+     the owner opened the report for was the eighth of eight. On a desktop the
+     grid wraps and the reading order of a profit and loss — revenue, costs,
+     what is left — is worth keeping; on a phone the answer goes first. */
+  .kpis .kpi.headline { order: -1; }
+}
 
 .chart { width: 100%; height: 200px; }
 .chart .grid-line { stroke: var(--line); stroke-width: 1; }
@@ -352,6 +375,17 @@ html[dir="rtl"] .kpi .label { letter-spacing: 0; }
   position: fixed; inset: 0; background: rgba(16,21,31,.45); z-index: 100;
   display: grid; place-items: center; padding: 22px; overflow-y: auto;
   backdrop-filter: blur(1.5px);
+  /*
+   * `minmax(0, 1fr)` and not the implicit `auto`, which is what a one-column
+   * grid gives you and which sizes the track to its content's MAX-CONTENT
+   * width. That makes `.modal { width: min(720px, 100%) }` circular: the 100%
+   * resolves against a track that a wide table inside the modal has already
+   * stretched, so the dialog grows past the viewport and a phone loses whatever
+   * is off the edge — the left half of it in Arabic. Pinning the track to the
+   * available width makes the percentage mean what it says, and the table
+   * scrolls inside its own `.table-wrap` as it was always meant to.
+   */
+  grid-template-columns: minmax(0, 1fr);
 }
 .modal {
   background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow);
@@ -730,6 +764,13 @@ html[dir="rtl"] .kpi .label { letter-spacing: 0; }
   font-size: 13px; line-height: 1.55;
 }
 .callout strong { color: var(--ink); }
+.callout p { margin: 0; }
+.callout p + p { margin-top: 7px; padding-top: 7px; border-top: 1px solid var(--line); }
+/* What a report could NOT see. Deliberately a different colour from the note
+   above it: one explains what the numbers mean, the other admits what they are
+   missing, and a reader who skims must be able to tell those apart. */
+.callout.blind { background: var(--warn-soft); border-inline-start-color: var(--warn); }
+.callout.blind strong { color: var(--warn); }
 
 /* The costs screen's tables can carry a long Arabic description; on a phone the
    whole table scrolls rather than the page, which `.table-wrap` already does. */
@@ -739,6 +780,10 @@ html[dir="rtl"] .kpi .label { letter-spacing: 0; }
    phone (see the breakpoint below). */
 .report-layout { grid-template-columns: 250px 1fr; align-items: start; }
 .grid .span-2 { grid-column: span 2; }
+/* A form field that spans columns — see `buildForm` in core/ui.js. The width is
+   carried as a custom property so the breakpoint below can take it away again;
+   an inline `grid-column` could only have been beaten with `!important`. */
+.grid > [data-span] { grid-column: span var(--form-span, 1); }
 
 /* ------------------------------------------------------------ responsive */
 @media (max-width: 1180px) {
@@ -752,7 +797,16 @@ html[dir="rtl"] .kpi .label { letter-spacing: 0; }
      the two places that do it now say so with a class, so the breakpoint can
      undo it. */
   .grid .span-2 { grid-column: auto; }
+  /* And the same for a form field that spans: on a one-column grid `span 2`
+     invents a second column, and the fields overlap. */
+  .grid > [data-span] { grid-column: auto; }
   .report-layout { grid-template-columns: minmax(0, 1fr); }
+  /* Stacked, the catalogue came FIRST — so a shop owner who opened "how much
+     have I spent" on his phone was shown a list of twenty-two other reports
+     and had to scroll past all of them to reach the number he asked for. The
+     answer goes above the menu that led to it; the menu is still there, one
+     screen down, and on a desktop nothing about this changes. */
+  .report-layout > :first-child { order: 2; }
   /* `1fr` alone is not enough: a grid track's automatic minimum is its item's
      MIN-CONTENT, so a wide table inside a card stretches the column past the
      screen even though `.table-wrap` would have scrolled it. `minmax(0, …)`

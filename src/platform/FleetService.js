@@ -45,6 +45,17 @@
  * than all at once, and each shop's read is given a deadline. A shop that fails
  * or times out inside `/overview` comes back as one flagged row; the page still
  * renders for every shop that answered.
+ *
+ * ── Who calls the fan-out now ────────────────────────────────────────────────
+ * `overviewLive()` is no longer what the console's landing screen loads. That
+ * screen reads one control-plane table — see `platform/FleetSummaryService.js`
+ * — because at eighty shops a page load that opened eighty databases was both
+ * unusable and, on a metered database, expensive. The fan-out stays, and stays
+ * exercised, as the two things a summary table cannot do without: the way each
+ * summary is computed in the first place (`shopFigures`, below, is the single
+ * definition both paths read through), and an explicit "rebuild everything"
+ * that an owner can press. A summary table with no way to rebuild it is a
+ * summary table that drifts and can never be trusted again.
  */
 import crypto from 'node:crypto';
 import bcrypt from 'bcryptjs';
@@ -57,7 +68,7 @@ import { round2 } from '../shared/money.js';
 
 /** The widest window any endpoint will read, however large a `days` is asked for. */
 const MAX_DAYS = 365;
-const DEFAULT_DAYS = 30;
+export const DEFAULT_DAYS = 30;
 
 /** Row caps. Long enough to answer the question, short enough to never be a scan. */
 const TOP_PRODUCTS_LIMIT = 10;
@@ -66,8 +77,8 @@ const USERS_LIMIT = 500;
 const ROLES_LIMIT = 100;
 
 /** How many shops are read at once, and how long any one of them may take. */
-const FLEET_CONCURRENCY = Number(process.env.MM_FLEET_CONCURRENCY || 4);
-const SHOP_TIMEOUT_MS = Number(process.env.MM_FLEET_TIMEOUT_MS || 8000);
+export const FLEET_CONCURRENCY = Number(process.env.MM_FLEET_CONCURRENCY || 4);
+export const SHOP_TIMEOUT_MS = Number(process.env.MM_FLEET_TIMEOUT_MS || 8000);
 
 /**
  * What a shop row says when its database did not answer. Deliberately a fixed
@@ -75,11 +86,11 @@ const SHOP_TIMEOUT_MS = Number(process.env.MM_FLEET_TIMEOUT_MS || 8000);
  * is half of a credential. The owner needs "this shop is unreachable, retry",
  * not a stack trace with a token in it.
  */
-const UNREACHABLE = 'This shop\'s database could not be read';
+export const UNREACHABLE = 'This shop\'s database could not be read';
 
 const isoDay = (date) => date.toISOString().slice(0, 10);
-const today = () => isoDay(new Date());
-const daysAgo = (n) => isoDay(new Date(Date.now() - n * 86_400_000));
+export const today = () => isoDay(new Date());
+export const daysAgo = (n) => isoDay(new Date(Date.now() - n * 86_400_000));
 const monthStart = () => `${today().slice(0, 7)}-01`;
 
 /** 1..MAX_DAYS, whatever the query string said. */
@@ -93,7 +104,7 @@ export function clampDays(value, fallback = DEFAULT_DAYS) {
  * A continuous series, whether or not the shop traded every day. A chart with
  * holes in the axis lies about the shape of a trend, so absent days are zero.
  */
-function zeroFilled(rows, fromDay, days) {
+export function zeroFilled(rows, fromDay, days) {
   const byDay = new Map(rows.map((r) => [r.day, r]));
   const start = Date.parse(`${fromDay}T00:00:00.000Z`);
   const out = [];
@@ -106,7 +117,7 @@ function zeroFilled(rows, fromDay, days) {
 }
 
 /** Bounded parallelism: a fleet of eighty shops must not open eighty sockets. */
-async function mapWithConcurrency(items, limit, worker) {
+export async function mapWithConcurrency(items, limit, worker) {
   const results = new Array(items.length);
   let cursor = 0;
   const runners = Array.from({ length: Math.max(1, Math.min(limit, items.length)) }, async () => {
@@ -125,7 +136,7 @@ async function mapWithConcurrency(items, limit, worker) {
  * itself is not cancellable — a driver has no abort — but nothing waits on it
  * any more, and the shop degrades to its flagged row.
  */
-function withTimeout(promise, ms) {
+export function withTimeout(promise, ms) {
   let timer = null;
   return Promise.race([
     promise.finally(() => clearTimeout(timer)),
@@ -148,7 +159,7 @@ async function requireTenantRow(slug) {
   return row;
 }
 
-async function modulesFor(tenantId) {
+export async function modulesFor(tenantId) {
   const rows = await platformDb()
     .prepare('SELECT module FROM tenant_modules WHERE tenant_id = ?').all(tenantId);
   return rows.map((r) => r.module).sort();
@@ -159,7 +170,7 @@ async function modulesFor(tenantId) {
  * database `getDb()` returns — the same mechanism every tenant-scoped request
  * in the codebase uses, so the reads below are ordinary single-shop SQL.
  */
-async function readTenant(row, modules, fn) {
+export async function readTenant(row, modules, fn) {
   const connection = await connectionFor(row.slug, () => openConnection({
     driver: row.driver || 'sqlite',
     file: row.db_file,
@@ -259,24 +270,45 @@ async function seatCounts() {
 
 // ---------------------------------------------------------------- /overview
 
-/** Everything `/overview` needs from one shop, in one pass over its database. */
-async function overviewForShop(row, modules, { trendFrom, trendDays, from30 }) {
-  return readTenant(row, modules, async () => {
-    const [counts, window30, todaySales, monthSales, trend, pending, activity, currency] = await Promise.all([
-      seatCounts(),
-      salesBetween(from30, today()),
-      salesBetween(today(), today()),
-      salesBetween(monthStart(), today()),
-      dailyTrend(trendFrom, today(), trendDays),
-      pendingWebOrders(),
-      lastActivityAt(),
-      currencyOf(),
-    ]);
-    return { counts, window30, todaySales, monthSales, trend, pending, activity, currency };
-  });
+/**
+ * Everything `/overview` needs from one shop, in one pass over its database —
+ * read from whatever connection is already in scope.
+ *
+ * Split out from `overviewForShop` below so that the same reads serve two
+ * callers with two different connections: the console's fan-out, which opens
+ * the shop, and `platform/FleetSummaryService.js`, which is handed a connection
+ * a shop's own request already has open. One definition, so the summary a shop
+ * writes about itself and the figures the fan-out computes can never differ.
+ */
+export async function shopFigures({ trendFrom, trendDays, from30 }) {
+  const [counts, window30, todaySales, monthSales, trend, pending, activity, currency] = await Promise.all([
+    seatCounts(),
+    salesBetween(from30, today()),
+    salesBetween(today(), today()),
+    salesBetween(monthStart(), today()),
+    dailyTrend(trendFrom, today(), trendDays),
+    pendingWebOrders(),
+    lastActivityAt(),
+    currencyOf(),
+  ]);
+  return { counts, window30, todaySales, monthSales, trend, pending, activity, currency };
 }
 
-export async function overview() {
+/** The same, for a shop that has to be opened first. */
+export async function overviewForShop(row, modules, bounds) {
+  return readTenant(row, modules, () => shopFigures(bounds));
+}
+
+/**
+ * The whole fleet, computed now, by opening every shop.
+ *
+ * Costs one connection per shop and is bounded by `FLEET_CONCURRENCY` and
+ * `SHOP_TIMEOUT_MS`. Reachable from the console only as "refresh now" (which
+ * writes what it finds into `tenant_summaries`) and as `?live=1` on the
+ * overview endpoint, which is the escape hatch for the day somebody does not
+ * believe the summaries.
+ */
+export async function overviewLive() {
   const db = platformDb();
   const rows = await db.prepare('SELECT * FROM tenants ORDER BY slug').all();
   const moduleRows = await db.prepare('SELECT tenant_id, module FROM tenant_modules').all();
@@ -656,4 +688,6 @@ export async function resetUserPassword(slug, userId, actor = null) {
   return { username: target.username, oneTimePassword };
 }
 
-export default { overview, report, users, roles, resetUserPassword, clampDays };
+export default {
+  overviewLive, report, users, roles, resetUserPassword, clampDays,
+};

@@ -3,7 +3,7 @@
  * Keeping this deliberately small avoids a build step: the app runs straight
  * from disk, which matters for an offline install.
  */
-import { t, pick } from './i18n.js';
+import { t, tError, pick } from './i18n.js';
 import { guardHandler } from './actions.js';
 
 /** h('div', {class:'x', onclick}, child, child) */
@@ -72,7 +72,14 @@ export function toast(message, kind = 'ok', ttl = 3800) {
   return node;
 }
 
-export const toastError = (error) => toast(error?.message || t('somethingWrong'), 'error', 5200);
+/**
+ * Every refusal the API sends, on the screen, in the reader's own language.
+ *
+ * `tError()` translates the ones that carry a code and falls back to the
+ * server's own sentence for the rest — see the note beside it in i18n.js, and
+ * the photograph that prompted it.
+ */
+export const toastError = (error) => toast(tError(error) || t('somethingWrong'), 'error', 5200);
 
 // ------------------------------------------------------------------ modals
 
@@ -210,7 +217,19 @@ export function buildForm(fields, initial = {}, { columns = 2 } = {}) {
     const holder = spec.type === 'checkbox'
       ? h('div', { class: 'field' }, input)
       : field({ label: spec.label + (spec.required ? ' *' : ''), input, hint: spec.hint });
-    if (spec.span) holder.style.gridColumn = `span ${Math.min(spec.span, columns)}`;
+    /*
+     * A field that spans columns says so as DATA, not as a `grid-column` the
+     * stylesheet cannot argue with. The phone breakpoint collapses these grids
+     * to one column, and an inline `span 2` on a one-column grid conjures a
+     * second column out of nothing: the fields overlap each other and run off
+     * the side of the screen. Every dialog in this app with a full-width notes
+     * box did that at 390 px. See `.grid > [data-span]` in app.css.
+     */
+    if (spec.span) {
+      const span = Math.min(spec.span, columns);
+      holder.dataset.span = String(span);
+      holder.style.setProperty('--form-span', String(span));
+    }
     inputs.set(spec.name, { input, spec, holder });
     wrapper.append(holder);
   }

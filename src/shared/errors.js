@@ -49,3 +49,21 @@ export class BusinessRuleError extends AppError {
     super(message, { status: 400, code: 'BUSINESS_RULE', details });
   }
 }
+
+/**
+ * The platform cannot answer this request right now, and asking again later is
+ * the correct thing to do.
+ *
+ * Distinct from a 500 on purpose. A 500 says "this went wrong"; a 503 with a
+ * `Retry-After` says "nothing is wrong with what you asked, ask again in a
+ * moment" — which is the truth when the control plane is unreachable and this
+ * instance has never resolved the shop being asked for. It is also the only
+ * honest alternative to a 404 there: a 404 is a claim that a shop does not
+ * exist, and an instance that cannot read the control plane does not know that.
+ */
+export class ServiceUnavailableError extends AppError {
+  constructor(message = 'Temporarily unavailable, please try again', { retryAfter = 5, code = 'SERVICE_UNAVAILABLE' } = {}) {
+    super(message, { status: 503, code });
+    this.retryAfter = retryAfter;
+  }
+}

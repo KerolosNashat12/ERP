@@ -33,7 +33,14 @@ CREATE TABLE IF NOT EXISTS purchase_payments (
   created_by        INTEGER REFERENCES users(id),
   created_at        TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
-CREATE INDEX IF NOT EXISTS idx_po_payments ON purchase_payments(purchase_order_id, paid_on DESC, id DESC)
+CREATE INDEX IF NOT EXISTS idx_po_payments ON purchase_payments(purchase_order_id, paid_on DESC, id DESC);
+-- "how much did the shop actually pay its suppliers between these dates" — the
+-- spend report's first question, and the one read that comes at this table by
+-- DATE rather than by order. The index above leads on the order id and cannot
+-- answer it. Restricted to recorded rows because a reversed payment is money
+-- that never left. Added to existing databases by migration 016.
+CREATE INDEX IF NOT EXISTS idx_po_payments_day
+  ON purchase_payments(date(paid_on), purchase_order_id, amount) WHERE status = 'recorded'
 `;
 
 export default PURCHASE_PAYMENTS_SQL;

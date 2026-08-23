@@ -1,5 +1,5 @@
 /**
- * One shop, in depth: Report, Users, Roles, Settings.
+ * One shop, in depth: Report, Users, Roles, Backups, Settings.
  *
  * The shell is one request — `GET /tenants/:slug` — for the things every tab
  * needs: the name, the status, the two links the server built, which modules
@@ -28,6 +28,7 @@ import { showOneTimePassword } from './otp.js';
 import { reportPanel } from './shopReport.js';
 import { usersPanel } from './shopUsers.js';
 import { rolesPanel } from './shopRoles.js';
+import { backupsPanel } from './shopBackups.js';
 import {
   pageHead, backLink, card, linkRow, iconButton, statusCell, tabStrip,
 } from '../ui/page.js';
@@ -37,7 +38,7 @@ import {
 import { date, dateTime } from '../ui/format.js';
 import icons from '../ui/icons.js';
 
-const TABS = ['report', 'users', 'roles', 'settings'];
+const TABS = ['report', 'users', 'roles', 'backups', 'settings'];
 
 export async function tenantDetailView(root, route) {
   const slug = route.segments[1];
@@ -129,7 +130,7 @@ function renderShop(tenant, route, reloadShell) {
   return h('div', {}, head, tabsHost, panelHost);
 }
 
-/** Report / Users / Roles / Settings, in the console's own tab strip. */
+/** Report / Users / Roles / Backups / Settings, in the console's own tab strip. */
 const tabStripFor = (active, onChange) => tabStrip(
   TABS.map((key) => ({ key, label: t(`tab${key[0].toUpperCase()}${key.slice(1)}`) })),
   active,
@@ -150,6 +151,7 @@ function buildPanel(key, tenant, state, reloadShell) {
   }
   if (key === 'users') return usersPanel(tenant.slug);
   if (key === 'roles') return rolesPanel(tenant.slug, { shopModules: tenant.modules });
+  if (key === 'backups') return backupsPanel(tenant.slug);
   return settingsPanel(tenant, reloadShell);
 }
 

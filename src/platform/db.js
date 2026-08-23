@@ -21,9 +21,23 @@ import bcrypt from 'bcryptjs';
 import config from '../config/index.js';
 import { openDriver } from '../infrastructure/database/connection.js';
 import { PLATFORM_SCHEMA_SQL } from './schema.js';
+import { assertControlPlaneIdentity } from './controlPlaneIdentity.js';
 
 /** The single control-plane connection for the life of the process. */
 let connection = null;
+
+/**
+ * A refusal, remembered.
+ *
+ * If the deployment and the control plane disagree about which environment
+ * they are (see controlPlaneIdentity.js), that is not a transient failure and
+ * retrying it is not a kindness — it would re-open a connection to the wrong
+ * database on every request for as long as the mistake stands. The verdict is
+ * cached and re-thrown, so the process refuses identically and cheaply from
+ * then on. Cleared by `closePlatformDb()`, which is what a test uses to put a
+ * fresh deployment in front of the same database.
+ */
+let fatal = null;
 
 function buildConnection(driver) {
   const txStore = new AsyncLocalStorage();
@@ -147,10 +161,33 @@ function controlPlaneDescriptor() {
  * makes a deploy that adds a table actually work, and costs one round trip.
  */
 export async function initPlatformDb() {
+  if (fatal) throw fatal;
   if (connection) return connection.facade;
   const driver = await openDriver(controlPlaneDescriptor());
   connection = buildConnection(driver);
   await driver.applySchema(PLATFORM_SCHEMA_SQL);
+
+  /**
+   * Before anything reads a tenant out of this database, make it prove it is
+   * the database this deployment believes it opened.
+   *
+   * Deliberately after the schema (the identity table has to exist to be read)
+   * and before `seedOwnerIfEmpty` — a deployment that is about to be refused
+   * must not first create an owner account in somebody else's control plane.
+   * On failure the connection is closed and dropped, so nothing anywhere is
+   * holding a handle to a database this process has just disowned.
+   */
+  try {
+    await assertControlPlaneIdentity(connection.facade);
+  } catch (error) {
+    fatal = error;
+    const doomed = connection;
+    connection = null;
+    try { await doomed.close(); } catch { /* it is going away regardless */ }
+    console.error(error.message);
+    throw error;
+  }
+
   await seedOwnerIfEmpty();
   return connection.facade;
 }
@@ -171,6 +208,7 @@ export function platformTransaction(fn) {
 }
 
 export async function closePlatformDb() {
+  fatal = null;
   if (!connection) return;
   await connection.close();
   connection = null;

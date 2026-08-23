@@ -2,7 +2,7 @@
 import { Router } from 'express';
 import config from '../../config/index.js';
 import {
-  asyncHandler, authenticate, requirePermission, sendImage, validate,
+  asyncHandler, authenticate, requirePermission, requireLookup, sendImage, validate,
 } from '../middleware/index.js';
 import { crudRouter } from './crudRouter.js';
 import * as v from '../validators.js';
@@ -19,11 +19,13 @@ import returnService from '../../services/ReturnService.js';
 import promotionService from '../../services/PromotionService.js';
 import reportService from '../../services/ReportService.js';
 import costService from '../../services/CostService.js';
+import legacyInvoiceService from '../../services/LegacyInvoiceService.js';
 import costCategoryService from '../../services/CostCategoryService.js';
 import payrollService, { employeeService } from '../../services/PayrollService.js';
 import labelService from '../../services/LabelService.js';
 import auditService from '../../services/AuditService.js';
 import { userService, settingsService, backupService } from '../../services/AdminService.js';
+import dataExportService from '../../services/DataExportService.js';
 import webAssetService from '../../services/WebAssetService.js';
 import passwordResetService from '../../services/PasswordResetService.js';
 import webOrderService from '../../services/WebOrderService.js';
@@ -32,9 +34,10 @@ import {
   customerService, attributeService,
 } from '../../services/masterDataServices.js';
 import repositories from '../../infrastructure/repositories/index.js';
-import { currentTenant } from '../../infrastructure/database/connection.js';
+import { currentTenant, supportsFileBackup, driverName } from '../../infrastructure/database/connection.js';
 import { buildBranding, companyNameFrom } from '../../shared/branding.js';
 import { NotFoundError } from '../../shared/errors.js';
+import { deploymentInfo } from '../../shared/deploymentInfo.js';
 
 const router = Router();
 
@@ -56,6 +59,11 @@ router.get('/session', asyncHandler(async (req, res) => {
       modules: [...tenant.modules],
       websiteEnabled: tenant.websiteEnabled,
     } : null,
+    // Which deployment this till is on. It rides on the call the shell already
+    // makes before its first paint, so the staging frame is drawn with the
+    // sidebar rather than after a second request — and a production ERP pays
+    // one extra word in a JSON body it was already receiving.
+    deployment: deploymentInfo(),
     // The shop's own identity, so the ERP sidebar shows the shop the staff
     // work for rather than the first tenant's monogram. Same block and the
     // same rules as `/api/shop/config` — built by shared/branding.js from the
@@ -706,6 +714,66 @@ router.use('/employees', crudRouter({
   },
 }));
 
+// ------------------------------------------------------------- فواتيرك
+/**
+ * The invoices the shop already had ON PAPER, before it had this system.
+ *
+ * Its own module (`legacy_invoices`), not a corner of `purchases`, so a shop on
+ * a small package is not silently given it and so that opening the archive is
+ * not the same right as opening purchasing. Nothing under here touches stock,
+ * costs, profit or a supplier balance — read the head of
+ * `shared/legacyInvoices.js` before adding a route that does.
+ *
+ * There are no routes for the photographs: the generic
+ * `/api/attachments/legacy_invoice/:id` endpoints already serve them, because
+ * the service registered the owner type. That is the whole point of the
+ * attachment contract.
+ *
+ * `/summary` is registered BEFORE `/:id`, the same two-segment collision the
+ * costs routes above avoid — otherwise Express hands "summary" to the detail
+ * route as an id.
+ */
+router.get('/legacy-invoices', requirePermission('legacy_invoices.view'),
+  asyncHandler(async (req, res) => res.json(await legacyInvoiceService.list(req.query))));
+router.get('/legacy-invoices/summary', requirePermission('legacy_invoices.view'),
+  asyncHandler(async (req, res) => res.json(await legacyInvoiceService.summary(req.query))));
+router.get('/legacy-invoices/:id', requirePermission('legacy_invoices.view'),
+  asyncHandler(async (req, res) => res.json(await legacyInvoiceService.get(Number(req.params.id)))));
+router.post('/legacy-invoices', requirePermission('legacy_invoices.create'),
+  validate(v.legacyInvoiceSchema), asyncHandler(async (req, res) => res.status(201).json(
+    await legacyInvoiceService.create(req.body, req.context),
+  )));
+router.put('/legacy-invoices/:id', requirePermission('legacy_invoices.update'),
+  validate(v.legacyInvoiceSchema.partial()), asyncHandler(async (req, res) => res.json(
+    await legacyInvoiceService.update(Number(req.params.id), req.body, req.context),
+  )));
+router.delete('/legacy-invoices/:id', requirePermission('legacy_invoices.delete'),
+  asyncHandler(async (req, res) => res.json(
+    await legacyInvoiceService.remove(Number(req.params.id), req.context),
+  )));
+
+/**
+ * Money he paid against one of those invoices, over time, until it is settled.
+ *
+ * `legacy_invoices.pay` rather than `.update`: recording what was paid is not
+ * editing the record, and undoing one is rarer still — the same split
+ * `purchases` makes, and migration 015 grants the codes to the roles that
+ * already held the rights they were carved out of.
+ */
+router.get('/legacy-invoices/:id/payments', requirePermission('legacy_invoices.view'),
+  asyncHandler(async (req, res) => res.json(
+    await legacyInvoiceService.payments(Number(req.params.id)),
+  )));
+router.post('/legacy-invoices/:id/payments', requirePermission('legacy_invoices.pay'),
+  validate(v.legacyInvoicePaymentSchema), asyncHandler(async (req, res) => res.json(
+    await legacyInvoiceService.registerPayment(Number(req.params.id), req.body, req.context),
+  )));
+router.post('/legacy-invoices/:id/payments/:paymentId/reverse',
+  requirePermission('legacy_invoices.reverse_payment'), validate(v.paymentReversalSchema),
+  asyncHandler(async (req, res) => res.json(await legacyInvoiceService.reversePayment(
+    Number(req.params.id), Number(req.params.paymentId), req.body.reason, req.context,
+  ))));
+
 // ----------------------------------------------------------------- reports
 router.get('/reports', requirePermission('reports.view'), asyncHandler((req, res) => {
   res.json({ rows: reportService.catalogue(req.permissions) });
@@ -804,9 +872,103 @@ router.get('/settings', requirePermission('settings.view'), asyncHandler(async (
 router.put('/settings', requirePermission('settings.update'), asyncHandler(async (req, res) => {
   res.json(await settingsService.update(req.body, req.context));
 }));
+/* ------------------------------------------------------- the shop's own data
+ *
+ * «بياناتك بتاعتك، وتقدر تاخد نسخة منها» — the promise the landing page makes,
+ * kept here. Two routes, and they are not the same thing:
+ *
+ *   /settings/data-export   works on EVERY deployment, hosted or on a shop PC.
+ *                           Reads this shop row by row and streams back one
+ *                           .zip holding a restorable snapshot and two
+ *                           bilingual workbooks — the same file the platform
+ *                           console hands over, assembled by the same code.
+ *   /settings/backups       the local database-file copy. Works only where
+ *                           there IS a file (a shop PC), which is what it has
+ *                           always been; nothing about it has been taken away.
+ *
+ * `settings.export_data` rather than `settings.backup`: see UNDELEGATABLE in
+ * shared/permissions.js.
+ *
+ * And `requireLookup` rather than `requirePermission`, which is the one place in
+ * this file where the module ENTITLEMENT is deliberately lifted. The RBAC check
+ * is untouched — this is still the administrator and nobody else — but a shop
+ * whose owner was sold a package without the `settings` module would otherwise
+ * be a shop that cannot get its own books out of a system it pays for. That is
+ * not a smaller ERP, it is a hostage situation, and the landing page this
+ * platform is sold with says the opposite in both languages: «بياناتك بتاعتك».
+ * Taking your own data out is not a feature that is sold; it is the promise
+ * everything else is sold on top of.
+ *
+ * One honest limit on that: the ERP's sidebar hides the whole Settings entry
+ * when the `settings` module is off (see `moduleEnabled` in
+ * public/js/core/store.js), so on such a plan this door is open but the button
+ * to it is not drawn. That is a nav-gating question rather than an entitlement
+ * one, and it is left alone here — a shop that cannot open Settings at all
+ * cannot set its own name either, which is a bigger conversation than this
+ * route. What must never happen is the ANSWER being no, and it is not.
+ */
+router.get('/settings/data-export', requireLookup('settings.export_data'),
+  asyncHandler(async (_req, res) => {
+    res.json(await dataExportService.status());
+  }));
+
+/**
+ * Build it and stream it.
+ *
+ * A POST rather than a link, deliberately: every refusal — no permission, too
+ * soon, one already running — arrives as JSON with a code BEFORE a single byte
+ * of archive is written, which is what lets the screen say it in Arabic. A
+ * `<a download>` would have handed the browser a file called "error.zip".
+ *
+ * No `Content-Length`: the finished size is not known until the last byte, and
+ * counting it first would mean holding a shop's whole book in memory. Back
+ * pressure is respected, so a slow connection slows the build rather than
+ * filling a buffer.
+ */
+router.post('/settings/data-export', requireLookup('settings.export_data'),
+  asyncHandler(async (req, res) => {
+    const { takenAt, filename, names } = await dataExportService.begin(req.context);
+
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Cache-Control', 'no-store');
+
+    try {
+      await dataExportService.stream({
+        takenAt,
+        names,
+        context: req.context,
+        write: async (chunk) => {
+          if (!res.write(chunk)) await new Promise((resolve) => res.once('drain', resolve));
+        },
+      });
+      res.end();
+    } catch (error) {
+      // Once the first chunk is on the wire there is no status code left to
+      // change and no JSON body to send: an error now can only be told by
+      // ABANDONING the response, so the browser sees a failed download rather
+      // than a complete-looking archive that is half a shop. The reason is in
+      // the shop's audit log either way (`EXPORT_FAILED`), which is the copy a
+      // person can actually read afterwards.
+      if (res.headersSent) {
+        res.destroy(error);
+        return;
+      }
+      throw error;
+    }
+  }));
+
 // backupService.list() and .resolve() only touch the filesystem, so they stay sync.
 router.get('/settings/backups', requirePermission('settings.backup'), asyncHandler((_req, res) => {
-  res.json({ rows: backupService.list() });
+  // `fileBackups` is how the screen knows whether to draw this card at all: on
+  // a hosted shop there is no file to copy, and a list that is always empty
+  // with a button that always refuses is the screen that was photographed.
+  res.json({
+    rows: backupService.list(),
+    fileBackups: supportsFileBackup(),
+    driver: driverName(),
+  });
 }));
 router.post('/settings/backups', requirePermission('settings.backup'), asyncHandler(async (req, res) => {
   res.status(201).json(await backupService.create(req.context));

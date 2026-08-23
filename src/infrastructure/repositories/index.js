@@ -15,6 +15,7 @@ import { PromotionRepository } from './PromotionRepository.js';
 import {
   CostRepository, CostCategoryRepository, RecurringCostRepository, EmployeeRepository,
 } from './CostRepository.js';
+import { LegacyInvoiceRepository } from './LegacyInvoiceRepository.js';
 import {
   UserRepository, RoleRepository, AuditRepository, SettingsRepository, SequenceRepository,
 } from './SystemRepository.js';
@@ -39,6 +40,7 @@ export const repositories = {
   costCategories: new CostCategoryRepository(),
   recurringCosts: new RecurringCostRepository(),
   employees: new EmployeeRepository(),
+  legacyInvoices: new LegacyInvoiceRepository(),
   users: new UserRepository(),
   roles: new RoleRepository(),
   audit: new AuditRepository(),

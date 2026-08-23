@@ -9,8 +9,10 @@ import {
   getDb, transaction, backupTo, supportsFileBackup, driverName, currentTenant,
 } from '../infrastructure/database/connection.js';
 import config from '../config/index.js';
-import { BusinessRuleError, ConflictError, NotFoundError, ValidationError } from '../shared/errors.js';
-import { ALL_PERMISSIONS } from '../shared/permissions.js';
+import {
+  AppError, BusinessRuleError, ConflictError, NotFoundError, ValidationError,
+} from '../shared/errors.js';
+import { ALL_PERMISSIONS, UNDELEGATABLE } from '../shared/permissions.js';
 import { normalizeHexColor, booleanOr } from '../shared/branding.js';
 import authService from './AuthService.js';
 import auditService from './AuditService.js';
@@ -158,10 +160,27 @@ export class UserService {
     return ALL_PERMISSIONS;
   }
 
+  /**
+   * A role's permissions, with one code the editor cannot hand out.
+   *
+   * `settings.export_data` produces one file holding every salary and every
+   * customer's phone number, and a role editor is where that gets ticked by
+   * accident. See `UNDELEGATABLE` in shared/permissions.js for the whole
+   * argument; the refusal carries a code so the screen can say it in Arabic.
+   */
   async updateRolePermissions(roleId, permissions, context = {}) {
     return transaction(async () => {
       const role = await this.roleRepository.requireById(roleId, 'role');
       if (role.code === 'admin') throw new BusinessRuleError('The administrator role always keeps every permission');
+
+      const forbidden = (permissions || []).filter((code) => UNDELEGATABLE.has(code));
+      if (forbidden.length) {
+        throw new AppError(
+          `"${forbidden.join('", "')}" cannot be given to a role. Taking a copy of the whole `
+          + 'shop belongs to an administrator; make this person an administrator instead.',
+          { status: 422, code: 'PERMISSION_NOT_DELEGATABLE', details: { codes: forbidden } },
+        );
+      }
       const before = (await this.roleRepository.withPermissions())
         .find((r) => r.id === roleId)?.permissions || [];
       await this.roleRepository.setPermissions(roleId, permissions);
@@ -305,12 +324,31 @@ export class BackupService {
    * Only the local file driver can hand us a copy on disk. On a hosted database
    * we must refuse loudly: a truncated or missing file in the backups folder
    * would pass for a real backup right up to the day someone needed it.
+   *
+   * ── What this message used to say, and why it was wrong twice ──────────────
+   * It used to end "…where backups and restores are handled by the database
+   * provider", in English, on a screen that is in Arabic — and it told a shop
+   * owner that he could not have a copy of his own data, which was untrue the
+   * day it was written and is flatly untrue now: `DataExportService` builds the
+   * whole book, on every deployment, from the same machinery the console uses.
+   *
+   * So this refusal is now narrow and honest. It is ONLY about copying the
+   * database FILE — a thing that exists on a shop PC and does not exist on a
+   * hosted database — and it carries a code so the screen says it in the
+   * language the person is reading. The screen never shows this card on a
+   * hosted deployment anyway; this is what an API caller gets.
    */
   #assertFileBackupSupported(action) {
     if (supportsFileBackup()) return;
-    throw new BusinessRuleError(
-      `${action} is not available on this deployment: the database runs on ${driverName()}, `
-      + 'where backups and restores are handled by the database provider.',
+    throw new AppError(
+      `${action} is not available here: this shop's database runs on ${driverName()}, `
+      + 'which has no file to copy. Use "Download a copy of your data" instead — it '
+      + 'produces the whole shop, spreadsheets included, on every deployment.',
+      {
+        status: 400,
+        code: 'FILE_BACKUP_UNAVAILABLE',
+        details: { driver: driverName(), useInstead: 'settings.export_data' },
+      },
     );
   }
 

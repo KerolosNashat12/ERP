@@ -13,6 +13,7 @@ import { REQUEST_REPLAY_SQL } from '../../shared/requestReplay.js';
 import { ATTACHMENTS_SQL } from '../../shared/attachments.js';
 import { PURCHASE_PAYMENTS_SQL } from '../../shared/supplierPayments.js';
 import { COSTS_SQL } from '../../shared/costs.js';
+import { LEGACY_INVOICES_SQL } from '../../shared/legacyInvoices.js';
 
 export const SCHEMA_SQL = `
 -- =============================================================================
@@ -482,6 +483,22 @@ CREATE INDEX IF NOT EXISTS idx_sales_date     ON sales(sale_date DESC);
 CREATE INDEX IF NOT EXISTS idx_sales_customer ON sales(customer_id);
 CREATE INDEX IF NOT EXISTS idx_sales_user     ON sales(created_by);
 CREATE INDEX IF NOT EXISTS idx_sales_status   ON sales(status);
+-- The console's fleet summary reads every shop through
+--   status = 'completed' AND date(sale_date) BETWEEN … AND …
+-- and groups the trend by date(sale_date). An index on the bare column cannot
+-- serve either, because date() wraps it; this is the expression itself,
+-- restricted to the rows the question is about. See migration 014.
+--
+-- The three trailing columns make it COVERING for both readers, which is where
+-- its speed comes from rather than from the seek: the fleet sweep wants
+-- total_amount, the lifetime profit report wants total_cost and groups by
+-- substr(sale_date, 1, 7), and without sale_date itself in the index that grouping
+-- sends every matched row back to the table. Measured on a 20,000-sale shop,
+-- the lifetime profit query is 19ms without them and 5ms with them, and the
+-- fleet sweep's own read is 13.6ms without and 1.1ms with. See migration 016,
+-- which widens it on databases that already have the narrower version.
+CREATE INDEX IF NOT EXISTS idx_sales_completed_day
+  ON sales(date(sale_date), sale_date, total_amount, total_cost) WHERE status = 'completed';
 
 CREATE TABLE IF NOT EXISTS sale_lines (
   id               INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -501,6 +518,13 @@ CREATE TABLE IF NOT EXISTS sale_lines (
 );
 CREATE INDEX IF NOT EXISTS idx_sale_lines_sale    ON sale_lines(sale_id);
 CREATE INDEX IF NOT EXISTS idx_sale_lines_variant ON sale_lines(variant_id);
+-- "what did we sell without knowing what it cost?" — the honesty check the
+-- lifetime profit report runs, and the one query in the system that wants the
+-- lines nobody normally looks at. A partial index is tiny (a healthy shop has
+-- almost no rows in it) and turns a 60,000-line join into a seek: 32ms to
+-- 3.6ms on a 20,000-sale shop. See migration 016.
+CREATE INDEX IF NOT EXISTS idx_sale_lines_no_cost
+  ON sale_lines(sale_id, quantity, line_total) WHERE unit_cost <= 0;
 
 CREATE TABLE IF NOT EXISTS sale_payments (
   id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -696,6 +720,17 @@ CREATE INDEX IF NOT EXISTS idx_reset_user   ON password_reset_requests(user_id);
 -- shape on a database that already exists. A salary payment is deliberately a
 -- row in costs and not a table of its own — see that file for why.
 ${COSTS_SQL};
+
+-- ---------------------------------------------------------------- فواتيرك
+-- The invoices the shop already had ON PAPER before it had this system: a name,
+-- a supplier, several photographs, and the payments recorded against them until
+-- they are settled. Deliberately its OWN pair of tables and NOT part of
+-- purchase_orders / purchase_payments / costs: nothing that sums the shop's
+-- money may reach these rows, because the goods and the money on them predate
+-- every total in this database and counting them again would double them.
+-- Defined once in shared/legacyInvoices.js — read the head of that file before
+-- changing anything here.
+${LEGACY_INVOICES_SQL};
 
 -- ---------------------------------------------------------------- one save, one document
 -- Every unsafe request stakes a claim here before it runs, so a second copy of

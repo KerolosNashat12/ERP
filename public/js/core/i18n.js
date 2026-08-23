@@ -6,6 +6,14 @@
 
 const dictionary = {
   en: {
+    /*
+     * The staging banner — see public/shared/deploymentBanner.js.
+     *
+     * Only ever drawn on a deployment that is NOT production, so these words
+     * are never on a real shop's screen. `stagingTag` is also what goes in
+     * front of the browser tab's title, which is why it is short.
+     */
+    stagingTag: 'Staging', stagingHere: 'Staging — not the real shop',
     // Neutral, and only ever a fallback: the shop's own name comes from its
     // `company.name` setting. A product category named here would greet the
     // staff of every shop on the platform.
@@ -231,6 +239,57 @@ const dictionary = {
     restartRequired: 'Restore complete — restart the server to load the restored data.',
     module: 'Module', action: 'Action', entity: 'Record', ipAddress: 'IP address',
     before: 'Before', after: 'After', viewChanges: 'View changes', downloadBackup: 'Download',
+
+    /*
+     * The shop's own copy of its own data — Settings → Backups.
+     *
+     * Two different things live on that screen and the words have to keep them
+     * apart: `dataExport*` is the shop's whole book in one file, which works on
+     * every deployment; `localBackup*` is a copy of the database FILE, which
+     * only exists on a shop's own PC.
+     */
+    dataExportCard: 'A copy of your data',
+    dataExportIntro: 'Your data is yours. This builds one file holding everything this shop knows — products, stock, clients, sales, purchases, costs, employees — as two Excel workbooks you can open, and a complete snapshot a computer can restore from.',
+    dataExportButton: 'Download a copy of my data',
+    dataExportPreparing: 'Building your file — this takes a moment on a large shop. Please stay on this page.',
+    dataExportDone: 'Your file has been downloaded',
+    dataExportNoPasswords: 'Passwords are not included. Everything else is.',
+    dataExportWarning: 'This file holds every cost, every client\'s phone number and every salary. Keep it the way you keep the shop\'s books.',
+    dataExportLimits: 'One copy every {cooldown} minutes, up to {limit} a day.',
+    dataExportLast: 'Last copy taken',
+    dataExportNever: 'None taken yet',
+    localBackupsCard: 'Backups on this computer',
+    localBackupsIntro: 'A copy of the database file, kept in this computer\'s backups folder. Available because this shop runs on its own machine.',
+    localBackupsUnavailable: 'This shop\'s database is hosted, so there is no file on this computer to copy. Use “A copy of your data” above — it holds the whole shop.',
+
+    /*
+     * Errors that arrive from the API with a code. See `tError()` at the foot
+     * of this file: the server speaks English, the screen must not.
+     */
+    errExportRateLimited: 'A copy of this shop\'s data was taken recently. The next one can be taken in {minutes} minute(s).',
+    errExportDailyLimit: 'This shop has taken its {limit} copies for today. The next one can be taken in {minutes} minute(s).',
+    errExportInProgress: 'A copy is already being prepared. Wait for it to finish.',
+    errFileBackupUnavailable: 'Copying the database file is not possible here: this shop\'s database is hosted and there is no file on this computer. Use “A copy of your data”, which holds the whole shop.',
+    errPermissionNotDelegatable: 'Taking a copy of the whole shop cannot be given to a role. Make this person an administrator instead.',
+    errBackupTooLarge: 'This shop has more data than one file can hold. Ask for help before trying again — nothing was changed.',
+    errRequestInProgress: 'This is still being processed — it has not been lost. Please wait.',
+    errForbidden: 'You do not have permission to do this.',
+    errModuleNotEnabled: 'This shop\'s plan does not include this section.',
+    sessionExpired: 'Your session has expired — sign in again.',
+
+    /*
+     * The words on the permission checkboxes (Users & Roles → role permissions).
+     * They used to be the raw English action — `view`, `reverse_payment` — on an
+     * Arabic screen. One key per action in `MODULES`; the test beside i18n
+     * fails if an action is added without a pair of words for it.
+     */
+    permView: 'See', permCreate: 'Add', permUpdate: 'Edit', permDelete: 'Delete',
+    permAdjust: 'Adjust', permCount: 'Count stock', permReceive: 'Receive goods',
+    permApprove: 'Approve', permPay: 'Record a payment', permReversePayment: 'Undo a payment',
+    permVoid: 'Void a sale', permReturn: 'Take a return', permReturnNoReceipt: 'Return without a receipt',
+    permDiscount: 'Give a discount', permExport: 'Export', permResetPassword: 'Reset a password',
+    permBackup: 'Back up on this computer', permExportData: 'Download the whole shop',
+    permPrint: 'Print', permConfirm: 'Confirm an order', permCancel: 'Cancel an order',
 
     // labels
     labelPrinting: 'Label printing', labelSize: 'Label size', copies: 'Copies',
@@ -613,6 +672,61 @@ const dictionary = {
     costsPosted: '{count} entered',
     amountFromTemplate: 'The amount you set up. Change it if the bill says something else.',
 
+
+    // ------------------------------------------- فواتيرك (the paper archive)
+    // The one page in this ERP that is NOT part of the shop's accounts, so the
+    // words carry that: `legacyInvoicesNotice` is on the screen permanently and
+    // is the sentence a shop owner reads before he reads a single number.
+    legacyInvoices: 'Your Invoices',
+    legacyInvoicesSubtitle: 'The invoices you already have on paper — photographs, the supplier, and what is still owed',
+    legacyInvoicesNotice: 'A record of old paper, not part of the shop\u2019s accounts. Nothing on this page is counted in your costs, your profit, your stock or your supplier balances.',
+    outsideTheAccounts: 'Outside the shop\u2019s accounts',
+    newLegacyInvoice: 'File an invoice',
+    editLegacyInvoice: 'Edit this record',
+    legacyInvoiceSaved: 'Invoice filed',
+    legacyInvoiceDeleted: 'Record deleted',
+    deleteLegacyInvoiceConfirm: 'Delete this record? Its photographs go with it.',
+    noLegacyInvoices: 'No invoices filed yet',
+    invoiceName: 'Name for this invoice',
+    invoiceNameHint: 'What you would call it when looking for it \u2014 \u201cBags from Ataba, March\u201d',
+    invoiceNumber: 'Number on the paper',
+    invoicePaperDate: 'Date on the paper',
+    invoiceTotal: 'What it came to',
+    invoiceTotalHint: 'Leave it empty if you cannot read it yet \u2014 add it any time later.',
+    invoicePhotos: 'Photos of the invoice',
+    invoicePhotosHint: 'More than one \u2014 a paper invoice is usually several pages.',
+    invoicePhotoNeeded: 'Add at least one photograph of the invoice',
+    addAnotherPhoto: 'Add another page',
+    photoCount: '{count} photos',
+    onePhoto: 'One photo',
+    photoAdded: 'Photograph added',
+    photoRemoved: 'Photograph removed',
+    removePhotoConfirm: 'Remove this photograph from the record?',
+    invoiceNotes: 'Notes',
+    // --- the status, which is derived from the payments and never typed
+    invoiceUnpaid: 'Not paid',
+    invoicePartial: 'Part paid',
+    invoicePaid: 'Paid in full',
+    invoiceUnknown: 'No amount yet',
+    invoiceUnknownHint: 'Add what this invoice came to and the status will follow the payments.',
+    invoiceOverPaid: 'Paid more than the total',
+    invoiceOverPaidBy: 'Over by {amount}',
+    invoiceOverPaidHint: 'Either the total or one of the payments is wrong \u2014 correct whichever it is.',
+    // --- the header, and finding one again six months later
+    filedInvoices: 'Invoices filed',
+    archiveTotal: 'What they came to',
+    archivePaid: 'Paid against them',
+    stillOwed: 'Still owed on paper',
+    withoutAmountYet: 'still without an amount',
+    outstandingOnly: 'Only what I still owe',
+    anyStatus: 'Any status',
+    searchInvoicesHint: 'Name, invoice number or supplier',
+    // --- the payments
+    paymentsOnThisInvoice: 'Payments on this invoice',
+    legacyPaymentHint: 'What you paid against this invoice, whenever you paid it. This is a record \u2014 it does not move any money in the system.',
+    legacyProofHint: 'Optional \u2014 photograph the receipt if you still have it.',
+    payTheRest: 'Pay the rest',
+
     // ------------------------------------------------- employees (الموظفين)
     employees: 'Employees', employeesSubtitle: 'The people the shop pays — not the ERP\u2019s login users',
     newEmployee: 'Add an employee', editEmployee: 'Edit employee',
@@ -647,9 +761,29 @@ const dictionary = {
     profitAfterCosts: 'Profit after costs',
     reportNote: 'About this report',
     costsDue: 'Repeating costs waiting',
+
+    // --- what the shop has spent, all of it
+    // The summary keys arrive from the API in snake_case and come through
+    // `tCode`. `spent_cash` is the headline the owner asked for by name —
+    // "انا صارف كام لحد دلوقتي علي المحل" — so the words on the tile have to be
+    // the words of the question, not an accountant's paraphrase of it.
+    allTime: 'All time',
+    whatThisCannotSee: 'What this report cannot see',
+    spentCash: 'Money out of the shop',
+    goodsPaid: 'Paid to suppliers',
+    costsPaid: 'Shop costs paid',
+    wagesPaid: 'Wages paid',
+    owedToSuppliers: 'Still owed to suppliers',
+    totalCommitted: 'Spent and owed together',
+    firstSpend: 'First recorded spend',
+    firstRecord: 'Records begin',
+    refunds: 'Refunded on returns',
+    wages: 'of which wages',
   },
 
   ar: {
+    // The staging banner — see public/shared/deploymentBanner.js.
+    stagingTag: 'بيئة تجريبية', stagingHere: 'بيئة تجريبية — ليس المتجر الحقيقي',
     appName: 'المتجر', appTag: 'نظام ERP للمحلات يشتغل من غير إنترنت',
     login: 'تسجيل الدخول', logout: 'تسجيل الخروج', username: 'اسم المستخدم', password: 'كلمة المرور',
     signingIn: 'جارٍ تسجيل الدخول…', welcomeBack: 'مرحبًا بعودتك', loginSubtitle: 'سجّل الدخول للمتابعة',
@@ -851,6 +985,39 @@ const dictionary = {
     restartRequired: 'تمت الاستعادة — أعد تشغيل الخادم لتحميل البيانات.',
     module: 'الوحدة', action: 'الإجراء', entity: 'السجل', ipAddress: 'عنوان IP',
     before: 'قبل', after: 'بعد', viewChanges: 'عرض التغييرات', downloadBackup: 'تنزيل',
+
+    dataExportCard: 'نسخة من بياناتك',
+    dataExportIntro: 'بياناتك بتاعتك. الزر ده بيجهّز ملف واحد فيه كل اللي المتجر يعرفه — المنتجات والمخزون والعملاء والمبيعات والمشتريات والتكاليف والموظفين — في ملفَّي Excel تقدر تفتحهما، ومعهما نسخة كاملة يقدر الكمبيوتر يسترجع منها.',
+    dataExportButton: 'نزّل نسخة من بياناتي',
+    dataExportPreparing: 'بنجهّز الملف — بياخد لحظات لو المتجر كبير. من فضلك ابقَ في الصفحة.',
+    dataExportDone: 'تم تنزيل الملف',
+    dataExportNoPasswords: 'كلمات المرور غير مضمّنة. وكل ما عداها موجود.',
+    dataExportWarning: 'الملف ده فيه تكلفة كل صنف ورقم تليفون كل عميل ومرتّب كل موظف. احتفظ به كما تحتفظ بدفاتر المتجر.',
+    dataExportLimits: 'نسخة كل {cooldown} دقيقة، وبحد أقصى {limit} نسخ في اليوم.',
+    dataExportLast: 'آخر نسخة',
+    dataExportNever: 'لم تُؤخذ نسخة بعد',
+    localBackupsCard: 'نسخ على هذا الجهاز',
+    localBackupsIntro: 'نسخة من ملف قاعدة البيانات تُحفظ في مجلد النسخ على هذا الجهاز. متاحة لأن المتجر يعمل على جهازه الخاص.',
+    localBackupsUnavailable: 'قاعدة بيانات هذا المتجر مُستضافة، فلا يوجد ملف على الجهاز لنسخه. استخدم «نسخة من بياناتك» بالأعلى — فهي تحتوي المتجر بالكامل.',
+
+    errExportRateLimited: 'تم أخذ نسخة من بيانات المتجر منذ قليل. النسخة التالية بعد {minutes} دقيقة.',
+    errExportDailyLimit: 'تم أخذ {limit} نسخ اليوم. النسخة التالية بعد {minutes} دقيقة.',
+    errExportInProgress: 'هناك نسخة قيد التجهيز بالفعل. انتظر حتى تنتهي.',
+    errFileBackupUnavailable: 'نسخ ملف قاعدة البيانات غير ممكن هنا: قاعدة بيانات المتجر مُستضافة ولا يوجد ملف على الجهاز. استخدم «نسخة من بياناتك» فهي تحتوي المتجر بالكامل.',
+    errPermissionNotDelegatable: 'أخذ نسخة من بيانات المتجر كلها لا يمكن منحه لدور. اجعل هذا الشخص مديرًا للنظام بدلاً من ذلك.',
+    errBackupTooLarge: 'بيانات هذا المتجر أكبر من أن يحملها ملف واحد. اطلب المساعدة قبل المحاولة مرة أخرى — لم يتغير شيء.',
+    errRequestInProgress: 'الطلب ما زال قيد التنفيذ — لم يضع. من فضلك انتظر.',
+    errForbidden: 'ليست لديك صلاحية للقيام بهذا الإجراء.',
+    errModuleNotEnabled: 'باقة هذا المتجر لا تشمل هذا القسم.',
+    sessionExpired: 'انتهت الجلسة — من فضلك سجّل الدخول مرة أخرى.',
+
+    permView: 'اطّلاع', permCreate: 'إضافة', permUpdate: 'تعديل', permDelete: 'حذف',
+    permAdjust: 'تسوية', permCount: 'جرد المخزون', permReceive: 'استلام بضاعة',
+    permApprove: 'اعتماد', permPay: 'تسجيل دفعة', permReversePayment: 'إلغاء دفعة',
+    permVoid: 'إلغاء فاتورة', permReturn: 'قبول مرتجع', permReturnNoReceipt: 'مرتجع بدون فاتورة',
+    permDiscount: 'منح خصم', permExport: 'تصدير', permResetPassword: 'إعادة تعيين كلمة مرور',
+    permBackup: 'نسخة على هذا الجهاز', permExportData: 'تنزيل بيانات المتجر كاملة',
+    permPrint: 'طباعة', permConfirm: 'تأكيد طلب', permCancel: 'إلغاء طلب',
 
     labelPrinting: 'طباعة الملصقات', labelSize: 'مقاس الملصق', copies: 'عدد النسخ',
     addToSheet: 'إضافة للورقة', printSheet: 'طباعة الورقة', clearSheet: 'إفراغ الورقة',
@@ -1218,6 +1385,55 @@ const dictionary = {
     costsPosted: 'تم تسجيل {count}',
     amountFromTemplate: 'ده المبلغ اللي سجّلته. غيّره لو الفاتورة بتقول رقم تاني.',
 
+
+    // ------------------------------------------------------------ فواتيرك
+    legacyInvoices: 'فواتيرك',
+    legacyInvoicesSubtitle: 'الفواتير اللي عندك على ورق — صورها، والمورد بتاعها، واللي لسه متبقي عليها',
+    legacyInvoicesNotice: 'دي أرشيف للورق القديم، مش جزء من حسابات المحل. ولا رقم في الصفحة دي بيتحسب في التكاليف ولا الأرباح ولا المخزون ولا حسابات الموردين.',
+    outsideTheAccounts: 'خارج حسابات المحل',
+    newLegacyInvoice: 'إضافة فاتورة',
+    editLegacyInvoice: 'تعديل الفاتورة',
+    legacyInvoiceSaved: 'تم حفظ الفاتورة',
+    legacyInvoiceDeleted: 'تم حذف الفاتورة',
+    deleteLegacyInvoiceConfirm: 'تحذف الفاتورة دي؟ صورها هتتحذف معاها.',
+    noLegacyInvoices: 'لسه مفيش فواتير مسجّلة',
+    invoiceName: 'اسم للفاتورة دي',
+    invoiceNameHint: 'الاسم اللي هتدوّر بيه عليها — «شنط العتبة، مارس»',
+    invoiceNumber: 'الرقم المكتوب عليها',
+    invoicePaperDate: 'تاريخ الفاتورة',
+    invoiceTotal: 'الفاتورة جت بكام',
+    invoiceTotalHint: 'سيبها فاضية لو لسه مش قادر تقرا المبلغ — تقدر تضيفه في أي وقت بعدين.',
+    invoicePhotos: 'صور الفاتورة',
+    invoicePhotosHint: 'أكتر من صورة — الفاتورة الورقية غالبًا كذا صفحة.',
+    invoicePhotoNeeded: 'لازم صورة واحدة على الأقل للفاتورة',
+    addAnotherPhoto: 'إضافة صفحة تانية',
+    photoCount: '{count} صور',
+    onePhoto: 'صورة واحدة',
+    photoAdded: 'اتضافت الصورة',
+    photoRemoved: 'اتشالت الصورة',
+    removePhotoConfirm: 'تشيل الصورة دي من الفاتورة؟',
+    invoiceNotes: 'ملاحظات',
+    invoiceUnpaid: 'لسه متدفعتش',
+    invoicePartial: 'متبقي عليها',
+    invoicePaid: 'مدفوعة بالكامل',
+    invoiceUnknown: 'لسه من غير مبلغ',
+    invoiceUnknownHint: 'ضيف إجمالي الفاتورة والحالة هتمشي مع الدفعات لوحدها.',
+    invoiceOverPaid: 'المدفوع أكبر من الإجمالي',
+    invoiceOverPaidBy: 'زيادة {amount}',
+    invoiceOverPaidHint: 'يا إما الإجمالي يا واحدة من الدفعات فيها غلط — صلّح اللي غلط منهم.',
+    filedInvoices: 'عدد الفواتير',
+    archiveTotal: 'إجمالي الفواتير',
+    archivePaid: 'المدفوع منها',
+    stillOwed: 'اللي لسه متبقي',
+    withoutAmountYet: 'لسه من غير مبلغ',
+    outstandingOnly: 'اللي لسه عليا بس',
+    anyStatus: 'كل الحالات',
+    searchInvoicesHint: 'الاسم أو رقم الفاتورة أو المورد',
+    paymentsOnThisInvoice: 'الدفعات على الفاتورة دي',
+    legacyPaymentHint: 'اللي دفعته على الفاتورة دي، في أي وقت دفعته. ده تسجيل بس — مش بيحرّك أي فلوس في السيستم.',
+    legacyProofHint: 'اختياري — صوّر الإيصال لو لسه معاك.',
+    payTheRest: 'ادفع الباقي',
+
     // ------------------------------------------------------------ الموظفين
     employees: 'الموظفين', employeesSubtitle: 'الناس اللي المحل بيدفع لهم — مش مستخدمي النظام',
     newEmployee: 'إضافة موظف', editEmployee: 'تعديل بيانات الموظف',
@@ -1250,6 +1466,19 @@ const dictionary = {
     profitAfterCosts: 'الأرباح بعد التكاليف',
     reportNote: 'عن التقرير ده',
     costsDue: 'تكاليف متكررة مستنية',
+
+    allTime: 'كل الفترة',
+    whatThisCannotSee: 'حاجات التقرير ده مش شايفها',
+    spentCash: 'اللي خرج من المحل',
+    goodsPaid: 'المدفوع للموردين',
+    costsPaid: 'تكاليف المحل المدفوعة',
+    wagesPaid: 'المرتبات المدفوعة',
+    owedToSuppliers: 'لسه مستحق للموردين',
+    totalCommitted: 'المصروف والمستحق مع بعض',
+    firstSpend: 'أول مصروف مسجل',
+    firstRecord: 'السجلات بتبدأ من',
+    refunds: 'المرتجع',
+    wages: 'منها المرتبات',
   },
 };
 
@@ -1288,6 +1517,59 @@ export function t(key, fallback) {
 export const tCode = (code, fallback) => t(
   String(code ?? '').replace(/_([a-z])/g, (_, c) => c.toUpperCase()),
   fallback,
+);
+
+/**
+ * An error from the API, in the language the person is reading.
+ *
+ * The server speaks English. Every one of its refusals used to arrive on the
+ * screen exactly as written — which is how «إنشاء نسخة احتياطية» came to answer
+ * an Arabic screen with "Creating a backup is not available on this deployment:
+ * the database runs on libsql…". A shop owner photographed it.
+ *
+ * So an error carries a CODE as well as a sentence, and a code is a thing this
+ * dictionary can translate. `{placeholders}` are filled from `error.details`,
+ * because "try again in 8 minutes" cannot be assembled out of an English
+ * sentence — the number has to arrive as a number.
+ *
+ * A code nobody has written words for yet falls back to the server's sentence,
+ * which is the same trade `tCode()` makes: an English word on the screen is bad,
+ * a blank toast where a refusal should be is worse.
+ */
+const ERROR_CODES = {
+  EXPORT_RATE_LIMITED: (details) => (details?.reason === 'daily'
+    ? 'errExportDailyLimit' : 'errExportRateLimited'),
+  EXPORT_IN_PROGRESS: 'errExportInProgress',
+  FILE_BACKUP_UNAVAILABLE: 'errFileBackupUnavailable',
+  PERMISSION_NOT_DELEGATABLE: 'errPermissionNotDelegatable',
+  BACKUP_TOO_LARGE: 'errBackupTooLarge',
+  REQUEST_IN_PROGRESS: 'errRequestInProgress',
+  MODULE_NOT_ENABLED: 'errModuleNotEnabled',
+  FORBIDDEN: 'errForbidden',
+  UNAUTHORIZED: 'sessionExpired',
+};
+
+export function tError(error) {
+  const entry = ERROR_CODES[error?.code];
+  const key = typeof entry === 'function' ? entry(error?.details) : entry;
+  if (!key) return error?.message || t('somethingWrong');
+
+  const details = error?.details || {};
+  const values = {
+    ...details,
+    minutes: details.retryAfterSeconds
+      ? Math.max(1, Math.ceil(details.retryAfterSeconds / 60))
+      : undefined,
+  };
+  return t(key).replace(/\{(\w+)\}/g, (whole, name) => (
+    values[name] === undefined ? whole : String(values[name])
+  ));
+}
+
+/** The words on one permission checkbox: `settings.export_data` -> "Download the whole shop". */
+export const tPermission = (action) => t(
+  `perm${String(action || '').replace(/(^|_)([a-z])/g, (_, __, c) => c.toUpperCase())}`,
+  action,
 );
 
 /** Choose a record's localised column: pick(row, 'name') -> name_ar || name_en */

@@ -368,6 +368,35 @@ export const employeeSchema = z.object({
   is_active: z.coerce.boolean().default(true).transform((v) => (v ? 1 : 0)),
 });
 
+/**
+ * فواتيرك — one invoice the shop already has on paper.
+ *
+ * `total_amount` is `.nullable()` on purpose and it is the interesting part of
+ * this schema: he photographs a bill today and reads the amount off it next
+ * week. It is coerced here and rounded again in the service — nothing the
+ * browser calculated is trusted as a total, and this is only the first of the
+ * two gates. `paid_amount` and `status` are absent because a caller may not
+ * send either: both are derived from the payment rows by the database.
+ *
+ * `photos` is a LIST, because a paper invoice runs to several pages —
+ * *"وتكون اكتر من صوره"*. Capped at 20: a longer invoice than that is a folder,
+ * and 20 photographs is already 5 MB of request.
+ */
+export const legacyInvoiceSchema = z.object({
+  title: z.string().trim().min(1, 'Give this invoice a name so you can find it again').max(200),
+  supplier_id: id,
+  invoice_no: optionalString,
+  invoice_date: isoDay.optional().nullable(),
+  total_amount: z.coerce.number().positive('An invoice total must be greater than zero')
+    .optional().nullable(),
+  notes: optionalString,
+  photos: z.array(attachedPhotoSchema).max(20, 'That is more photographs than one invoice needs')
+    .optional().default([]),
+});
+
+/** A payment against one of those records. The receipt is optional — see the service. */
+export const legacyInvoicePaymentSchema = paymentSchema;
+
 /** What was actually handed over, when, for which period. */
 export const salaryPaymentSchema = z.object({
   amount: z.coerce.number().positive('Amount must be greater than zero'),

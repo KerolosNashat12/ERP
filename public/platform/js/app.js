@@ -12,6 +12,7 @@
 import api, { onUnauthorized } from './core/api.js';
 import { h, mount, confirmDialog } from './core/dom.js';
 import { t, setLanguage, getLanguage } from './core/i18n.js';
+import { applyDeploymentBanner } from '../../shared/deploymentBanner.js';
 import { defineRoutes, startRouter, navigate, parseHash } from './core/router.js';
 
 import { renderLogin, renderSetup } from './views/login.js';
@@ -161,9 +162,22 @@ function renderTabs() {
   })));
 }
 
+/**
+ * Drawn from whichever of the console's two boot calls answers — `/auth/me`
+ * when there is a session, `/auth/state` when there is not. Both carry it, so
+ * the frame is on the SIGN-IN screen too, which is precisely where somebody is
+ * about to type the owner's password into the wrong deployment.
+ */
+const showDeployment = (deployment) => applyDeploymentBanner(deployment, {
+  label: t('stagingTag'),
+  detail: t('stagingHere'),
+  lang: getLanguage(),
+});
+
 async function boot() {
   try {
-    const { user } = await api.get('/auth/me');
+    const { user, deployment } = await api.get('/auth/me');
+    showDeployment(deployment);
     currentUser = user;
   } catch {
     // A console with no owner yet asks for one to be made rather than for a
@@ -171,7 +185,9 @@ async function boot() {
     // explains itself and one that looks broken.
     let needsSetup = false;
     try {
-      ({ needsSetup } = await api.get('/auth/state'));
+      const state = await api.get('/auth/state');
+      needsSetup = state.needsSetup;
+      showDeployment(state.deployment);
     } catch {
       // If even that cannot be reached, the sign-in form is the safer guess.
     }

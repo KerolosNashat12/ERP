@@ -47,6 +47,8 @@
                .cell-title (.name .sub)  .row-actions
    STATE       .state (.ico .lead p .btn)   — empty / error / not-found
                .state.error  .state.loading
+               .fleet-banner (.ico .lead p)  — one line of trouble above a
+               list that is otherwise fine (see the Shops screen)
                .sk .sk-line .sk-block .sk-kpi — skeletons, same size as the real
                thing, so nothing on the page moves when the data lands
    CHIPS       .tag[.ok .warn .danger .info .brand .quiet]  .module-chip
@@ -590,6 +592,19 @@ html[dir="rtl"] .meter-cell { justify-self: start; }
   color: var(--danger-ink); font-size: var(--fs-sm);
 }
 
+/* The same strip in the other severity: "these figures are old" is a warning,
+   not a failure, and colouring it red would teach the reader to ignore red.
+   `border-inline-start` rather than `border-left`, so the accent sits on the
+   reading edge in both directions — the rule the whole stylesheet follows. */
+.inline-error.warn {
+  border-inline-start-color: var(--warn); background: var(--warn-soft); color: var(--warn-ink);
+}
+
+/* A figure's age, in the colour of what it means. Used on the "last read"
+   column so a stale row reads as stale at a glance, and a fresh one stays
+   quiet. */
+.warn-text { color: var(--warn-ink); font-weight: 600; }
+
 /* Skeletons are the same height as the content they stand in for, so the
    page does not jump when the answer lands. */
 @keyframes sk-pulse { 0%, 100% { opacity: .55; } 50% { opacity: 1; } }
@@ -763,6 +778,26 @@ html[dir="rtl"] .link-row .link-label { text-transform: none; letter-spacing: 0;
 }
 .danger-zone { border: 1px solid rgba(239, 68, 68, .3); border-radius: var(--r-lg); background: var(--danger-soft); padding: var(--card-pad-y) var(--card-pad-x); }
 .danger-zone h4 { font-size: var(--fs-md); color: var(--danger-ink); margin-bottom: var(--s1); }
+
+/* --------------------------------------------------------- fleet banner
+   One line of trouble across the top of a list, not an empty state. `.state`
+   is the wrong shape for this: it centres, it reserves a screenful, and it
+   says "there is nothing here" — while this sits ABOVE a table that is full.
+   Logical properties throughout, so the stripe is on the reader's start edge
+   in both directions. */
+.fleet-banner {
+  display: flex; gap: var(--s3); align-items: flex-start; text-align: start;
+  padding: var(--s3) var(--s4); border-radius: var(--r-lg);
+  border: 1px solid rgba(239, 68, 68, .28); border-inline-start-width: 4px;
+  background: var(--danger-soft); color: var(--ink-2);
+}
+.fleet-banner .ico {
+  width: 22px; height: 22px; flex: none; color: var(--danger-ink); margin-top: 1px;
+}
+.fleet-banner .ico svg { width: 22px; height: 22px; }
+.fleet-banner .lead { color: var(--danger-ink); font-weight: 700; font-size: var(--fs-md); }
+.fleet-banner p { margin: var(--s1) 0 0; font-size: var(--fs-sm); max-width: 78ch; }
+.fleet-banner .row { margin-top: var(--s2); }
 
 /* ------------------------------------------------------------ migrations */
 .migrate-summary { display: flex; gap: var(--s6); align-items: flex-end; flex-wrap: wrap; }

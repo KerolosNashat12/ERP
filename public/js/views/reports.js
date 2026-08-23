@@ -13,6 +13,10 @@ const PRESETS = [
   { key: 'week', label: () => t('thisWeek'), range: () => [daysAgoIso(6), isoDate()] },
   { key: 'month', label: () => t('thisMonth'), range: () => [startOfMonthIso(), isoDate()] },
   { key: 'days90', label: () => '90d', range: () => [daysAgoIso(89), isoDate()] },
+  // Two empty dates. `api.get` drops empty values, so the server sees no range
+  // at all and answers for the shop's whole history — which is the question
+  // "how much have I spent on this shop" is actually asking.
+  { key: 'all', label: () => t('allTime'), range: () => ['', ''] },
 ];
 
 export async function reportsView(root, route) {
@@ -25,8 +29,34 @@ export async function reportsView(root, route) {
   const state = {
     key: route.segments[1] || catalogue[0]?.key,
     filters: { dateFrom: startOfMonthIso(), dateTo: isoDate() },
+    range: 'month',
     report: null,
   };
+
+  const definitionOf = (key) => catalogue.find((entry) => entry.key === key) || null;
+
+  /**
+   * The window a report opens on.
+   *
+   * Almost every report here answers a question with a month in it, and "this
+   * month so far" is the right thing to show. Two of them do not: "how much
+   * have I put into this shop" and "what has the shop made" are lifetime
+   * questions, and opening them on the current month answers a question nobody
+   * asked with a number that looks like an answer to the one they did.
+   *
+   * So a report declares which kind it is and the screen follows — but only
+   * when the kind CHANGES. Somebody who has typed a date range and is moving
+   * between two lifetime reports keeps his dates; the filters are never taken
+   * away from him, only defaulted differently.
+   */
+  function applyDefaultRange(key) {
+    const wanted = definitionOf(key)?.defaultRange === 'all' ? 'all' : 'month';
+    if (wanted === state.range) return;
+    state.range = wanted;
+    state.filters.dateFrom = wanted === 'all' ? '' : startOfMonthIso();
+    state.filters.dateTo = wanted === 'all' ? '' : isoDate();
+  }
+  applyDefaultRange(state.key);
 
   const resultHost = h('div', { class: 'card-body tight' }, spinner());
   const noteHost = h('div');
@@ -40,32 +70,36 @@ export async function reportsView(root, route) {
       state.report = report;
       mount(titleHost, getLanguage() === 'ar' ? report.titleAr : report.titleEn);
 
-      // What this report means, when it needs saying. It is how a reader of the
-      // sales summary finds out that its "profit" column is before costs and
-      // where the figure that is not lives — a number can change meaning
-      // without changing value, and a report that lets somebody assume is worse
-      // than one that explains itself.
-      mount(noteHost, note(report)
-        ? h('div', { class: 'callout' },
-          h('strong', {}, `${t('reportNote')}: `),
-          note(report))
-        : null);
+      // What this report means, when it needs saying, and what this run of it
+      // could not see. The first is how a reader of the sales summary finds
+      // out that its "profit" column is before costs; the second is how the
+      // owner of a shop that had stock before it had a system finds out that
+      // the money he paid for it is in none of these totals. A number can
+      // change meaning without changing value, and a total can be missing
+      // something without looking like it is — a report that lets somebody
+      // assume either is worse than one that explains itself.
+      mount(noteHost, ...callouts(report));
 
       // The summary keys arrive from the server in snake_case (`net_profit`)
       // and used to be printed with the underscores swapped for spaces — which
       // is English, in the middle of an otherwise Arabic screen. `tCode` is the
       // one conversion; a key nobody has written a word for yet still reads as
       // it always did rather than disappearing.
-      mount(summaryHost, ...Object.entries(report.summary || {}).map(([key, value]) => h('div', { class: 'kpi' },
-        h('div', { class: 'label' }, tCode(key, key.replace(/_/g, ' '))),
-        h('div', { class: 'value' }, formatSummary(key, value)))));
+      // A report may name the one figure that IS its answer — "how much have I
+      // spent on this shop" has exactly one — and that tile is marked so it
+      // does not arrive as the first of seven identical boxes.
+      mount(summaryHost, ...Object.entries(report.summary || {}).map(([key, value]) => h('div', {
+        class: `kpi${key === report.headline ? ' accent headline' : ''}`,
+      },
+      h('div', { class: 'label' }, tCode(key, key.replace(/_/g, ' '))),
+      h('div', { class: 'value' }, formatSummary(key, value)))));
 
       mount(resultHost, dataTable({
         columns: report.columns.map((column) => ({
           key: column.key,
           label: getLanguage() === 'ar' ? column.labelAr : column.labelEn,
           type: column.type,
-          render: (row) => byType(row[column.key], column.type),
+          render: (row) => byType(cell(row, column.key), column.type),
         })),
         rows: report.rows,
         emptyMessage: t('noReportData'),
@@ -116,6 +150,7 @@ export async function reportsView(root, route) {
           const [from, to] = preset.range();
           state.filters.dateFrom = from;
           state.filters.dateTo = to;
+          state.range = preset.key === 'all' ? 'all' : 'month';
           render();
           run();
         },
@@ -129,6 +164,7 @@ export async function reportsView(root, route) {
         style: { justifyContent: 'flex-start' },
         onclick: () => {
           state.key = definition.key;
+          applyDefaultRange(definition.key);
           navigate(`reports/${definition.key}`);
           render();
           run();
@@ -152,8 +188,12 @@ export async function reportsView(root, route) {
       h('div', { class: 'grid report-layout' },
         sidebar(),
         h('div', {},
-          noteHost,
+          // The answer, then what it means, then what it is missing, then the
+          // detail. The note used to come first, which on a phone meant the
+          // owner scrolled through a paragraph about the report to reach the
+          // number the report exists to give him.
           summaryHost,
+          noteHost,
           h('div', { class: 'card' }, filterBar(), resultHost))));
   }
 
@@ -163,9 +203,42 @@ export async function reportsView(root, route) {
 
 const note = (report) => (getLanguage() === 'ar' ? report?.noteAr : report?.noteEn);
 
+/**
+ * One cell, in the reader's language.
+ *
+ * A column key ending in `_en` names the English half of a pair the row
+ * carries both halves of — a supplier, a cost category, the group a spend row
+ * belongs to. The server has been sending `category_name_ar` beside
+ * `category_name_en` on the costs reports since they were written and nothing
+ * ever printed it; the CSV export does the same lookup on the same keys, so an
+ * exported Arabic report and the screen it was exported from say the same
+ * words. `ReportService.localised` is the twin of this function.
+ */
+function cell(row, key) {
+  if (getLanguage() !== 'ar' || !key.endsWith('_en')) return row[key];
+  const arabic = row[`${key.slice(0, -3)}_ar`];
+  return arabic === undefined || arabic === null || arabic === '' ? row[key] : arabic;
+}
+
+/** The note, then everything this run could not see. */
+function callouts(report) {
+  const out = [];
+  if (note(report)) {
+    out.push(h('div', { class: 'callout' },
+      h('p', {}, h('strong', {}, `${t('reportNote')}: `), note(report))));
+  }
+  const warnings = report?.warnings || [];
+  if (warnings.length) {
+    out.push(h('div', { class: 'callout blind' },
+      h('p', {}, h('strong', {}, t('whatThisCannotSee'))),
+      ...warnings.map((warning) => h('p', {}, getLanguage() === 'ar' ? warning.ar : warning.en))));
+  }
+  return out;
+}
+
 function formatSummary(key, value) {
   if (typeof value !== 'number') return String(value);
-  if (/value|cost|cogs|revenue|profit|discount|outstanding|receivab|purchased|refunded|collected|paid|owed|wage/i.test(key)) {
+  if (/value|cost|cogs|revenue|profit|discount|outstanding|receivab|purchased|refund|collected|paid|owed|wage|spent|committed/i.test(key)) {
     return byType(value, 'money');
   }
   return byType(value, 'number');
@@ -187,9 +260,16 @@ function printableReport(report) {
     h('table', {},
       h('thead', {}, h('tr', {}, report.columns.map((c) => h('th', {}, ar ? c.labelAr : c.labelEn)))),
       h('tbody', {}, report.rows.map((row) => h('tr', {},
-        report.columns.map((c) => h('td', {}, byType(row[c.key], c.type))))))),
+        report.columns.map((c) => h('td', {}, byType(cell(row, c.key), c.type))))))),
     h('div', { class: 'doc-totals' },
       Object.entries(report.summary || {}).map(([key, value]) => h('div', { class: 'line' },
         h('span', {}, tCode(key, key.replace(/_/g, ' '))),
-        h('span', {}, formatSummary(key, value))))));
+        h('span', {}, formatSummary(key, value))))),
+    // A printed total that is missing something must say so on the paper. A
+    // sheet handed to an accountant outlives the screen it came from.
+    ...(report.warnings || []).length
+      ? [h('div', { class: 'callout blind' },
+        h('p', {}, h('strong', {}, t('whatThisCannotSee'))),
+        ...report.warnings.map((warning) => h('p', {}, ar ? warning.ar : warning.en)))]
+      : []);
 }

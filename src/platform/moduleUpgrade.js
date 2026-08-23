@@ -58,6 +58,12 @@ export const INTRODUCED_IN = {
   weborders: '0',
   costs: '2026-08-23',
   employees: '2026-08-23',
+  // فواتيرك — the archive of paper invoices. Same release as the two above, so
+  // a full tenant gains all three in one sweep. Dating it a day later would
+  // have been worse than wrong: `upgradeTenantModules` only ever grants the
+  // LATEST release, so moving the frontier forward would strand any shop that
+  // never booted the previous version without `costs` or `employees` for good.
+  legacy_invoices: '2026-08-23',
 };
 
 /** Modules introduced strictly after `since` — the ones a tenant may be short of. */

@@ -8,6 +8,15 @@
  *              products it really has, and whether its database answered at
  *              all. Enrichment: if it fails or is slow, the list is still a
  *              list, with the counts left as "—" rather than invented.
+ *   /backups   when each shop was last backed up. Read from the control plane
+ *              alone and NOT from the shops, which is the whole point of it:
+ *              the case that matters is the shop whose own database is the
+ *              thing that has gone wrong, and a column that had to open that
+ *              database to say "last backed up 31 days ago" would say nothing
+ *              at all in exactly the moment it is needed. It is also why this
+ *              is on the list rather than only inside a shop — a shop silently
+ *              missing its backups for a month is the failure the whole feature
+ *              exists to prevent, and nobody finds that by opening six shops.
  *
  * The links are rendered, never assembled. `links.erp` and `links.shop` come
  * from the server that served this page, so a deployment behind a proxy or a
@@ -28,7 +37,8 @@ import {
   pageHead, card, statusCell, moduleChips, limitCell, linkRow, iconButton,
 } from '../ui/page.js';
 import { loadInto, skRows, skCard, emptyState } from '../ui/states.js';
-import { date, int } from '../ui/format.js';
+import { date, int, relative } from '../ui/format.js';
+import icons from '../ui/icons.js';
 
 export async function tenantsView(root) {
   /**
@@ -43,6 +53,8 @@ export async function tenantsView(root) {
 
   let rows = [];
   let facts = new Map();
+  let backups = new Map();
+  let backupHealth = null;
   let reload = () => {};
 
   const searchInput = textInput({ type: 'search', placeholder: t('search') });
@@ -80,18 +92,21 @@ export async function tenantsView(root) {
   reload = loadInto(body, {
     skeleton: () => skCard(skRows(4, 6), true),
     load: async () => {
-      const [tenants, overview] = await Promise.all([
+      const [tenants, overview, backupStatus] = await Promise.all([
         api.get('/tenants'),
         // Enrichment only — a fleet read that fails must not take the list
         // of shops down with it.
         api.get('/overview').catch(() => null),
+        api.get('/backups').catch(() => null),
       ]);
-      return { rows: tenants.rows, overview };
+      return { rows: tenants.rows, overview, backupStatus };
     },
     render: (data) => {
       rows = data.rows;
       facts = new Map((data.overview?.shops || []).map((shop) => [shop.slug, shop]));
-      const shell = card({
+      backupHealth = data.backupStatus;
+      backups = new Map((data.backupStatus?.shops || []).map((shop) => [shop.slug, shop]));
+      const shell = h('div', { class: 'stack' }, backupBanner(backupHealth), card({
         tight: true,
         body: h('div', {},
           h('div', { class: 'filters' },
@@ -100,7 +115,7 @@ export async function tenantsView(root) {
             h('span', { class: 'spacer' }),
             countLabel),
           tableHost),
-      });
+      }));
       renderTable();
       return shell;
     },
@@ -166,9 +181,17 @@ export async function tenantsView(root) {
           label: t('plan'),
           render: (row) => {
             const fact = facts.get(row.slug);
+            /**
+             * `measured` rather than `!error`: the overview is read from a
+             * summary table now, and a shop that has never been summarised has
+             * no counts at all. Passing null gives the plan cell its dashes,
+             * which is the honest answer — the LIMIT beside them is live from
+             * the control plane either way.
+             */
+            const known = fact?.measured ? fact : null;
             return h('div', { class: 'stack', style: { gap: '7px' } },
-              limitCell(fact && !fact.error ? fact.users : null, row.limits?.maxUsers, t('usersTotal')),
-              limitCell(fact && !fact.error ? fact.products : null, row.limits?.maxProducts, t('productsTotal')));
+              limitCell(known ? known.users : null, row.limits?.maxUsers, t('usersTotal')),
+              limitCell(known ? known.products : null, row.limits?.maxProducts, t('productsTotal')));
           },
         },
         {
@@ -192,6 +215,10 @@ export async function tenantsView(root) {
             })),
         },
         {
+          label: t('backupsColumn'),
+          render: (row) => backupCell(backups.get(row.slug), backupHealth),
+        },
+        {
           label: t('created'),
           class: 'col-lo',
           render: (row) => h('span', { class: 'small muted nowrap' }, date(row.createdAt)),
@@ -208,6 +235,64 @@ export async function tenantsView(root) {
       ],
     }));
   }
+}
+
+/**
+ * One shop's backup age, in the column an owner scans down.
+ *
+ * Three states, and the colour is the message: never (red — this shop has no
+ * backup at all), overdue (orange — it has one, but not a recent one), and a
+ * plain relative time. The threshold comes from the server rather than being
+ * decided here, so the console and the scheduled job agree about what "late"
+ * means.
+ */
+function backupCell(status, health) {
+  if (!status || !status.lastBackupAt) {
+    return h('div', { class: 'stack', style: { gap: '3px' } },
+      h('span', { class: 'tag danger' }, t('backupNever')));
+  }
+  const overdue = health && status.ageHours !== null && status.ageHours > health.staleAfterHours;
+  return h('div', { class: 'stack', style: { gap: '3px' } },
+    h('span', {
+      class: `tag ${overdue ? 'warn' : 'ok'}`,
+      title: status.lastBackupAt,
+    }, relative(status.lastBackupAt) || ''),
+    h('span', { class: 'sub' }, overdue ? t('backupOverdue') : `${int(status.count)} × ${t('backupsTitle')}`));
+}
+
+/**
+ * The banner that exists so nobody has to notice a column.
+ *
+ * Two things are worth interrupting the page for, and only two: a deployment
+ * where the nightly job cannot run at all, and shops that have fallen behind.
+ * Anything else belongs in the column.
+ */
+function backupBanner(health) {
+  if (!health) return null;
+
+  if (!health.scheduleArmed) {
+    return h('div', { class: 'fleet-banner' },
+      h('span', { class: 'ico', html: icons.alert }),
+      h('div', {},
+        h('div', { class: 'lead' }, t('backupsNotArmedTitle')),
+        h('p', {}, t('backupsNotArmedBody'))));
+  }
+
+  const overdue = health.shops.filter((shop) => (
+    !shop.lastBackupAt || (shop.ageHours !== null && shop.ageHours > health.staleAfterHours)
+  ));
+  if (!overdue.length) return null;
+
+  return h('div', { class: 'fleet-banner' },
+    h('span', { class: 'ico', html: icons.alert }),
+    h('div', {},
+      h('div', { class: 'lead' }, t('backupsOverdueTitle', { n: int(overdue.length) })),
+      h('p', {}, t('backupsOverdueBody', { hours: int(health.staleAfterHours) })),
+      h('div', { class: 'row tight', style: { flexWrap: 'wrap' } },
+        overdue.slice(0, 8).map((shop) => h('a', {
+          class: 'tag danger',
+          href: `#/tenants/${shop.slug}?tab=backups`,
+        }, shop.slug)))));
 }
 
 function openCreateDialog(onDone, hostedControlPlane = false) {

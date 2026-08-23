@@ -43,6 +43,16 @@ Two come from the Turso integration, two you set yourself.
 | `TURSO_AUTH_TOKEN` | Turso integration, automatically | yes |
 | `MM_JWT_SECRET` | you generate it (below) | **yes** |
 | `MM_OPEN_BROWSER` | set to `false` | recommended |
+| `MM_DEPLOYMENT` | you set it: `production` on the live project | **yes, once you have two projects** |
+
+**Set `MM_DEPLOYMENT=production` on the live project.** Unset, a hosted
+deployment calls itself *staging* and puts a hazard frame on every screen —
+the ERP, the console and the storefront. That is deliberate: a staging
+deployment mistaken for the real one is silent and expensive, and the real one
+mistaken for staging is loud and free. Setting it also writes "this is
+production" into the control-plane database, which is what later stops a
+staging deployment pointed at the live data from starting at all.
+Second project, and how to promote a release: **`DEPLOY-STAGING.md`**.
 
 Generate the secret:
 
@@ -148,9 +158,47 @@ refused and names the tenant already using it.
 - **Set `secure: true` on the session cookie** if you keep this permanently.
   `src/api/routes/index.js` sets `secure: false` because the local install runs
   on plain-HTTP localhost.
-- **Backups are Turso's job now.** The Settings → Backups screen refuses to run
-  on a hosted database instead of writing a file that would vanish; use Turso's
-  point-in-time restore.
+- **Switch the nightly backups on.** They are the one thing on this deployment
+  that will not start by itself, and the shop that needs a backup is the one
+  nobody was thinking about — so this is five minutes now instead of a bad month
+  later.
+
+  1. Generate a secret and add it to the Vercel project as `CRON_SECRET`:
+
+     ```bash
+     node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+     ```
+
+  2. Redeploy. `vercel.json` already schedules `/api/cron/backups` twice a day;
+     Vercel sends `CRON_SECRET` as a bearer token and the route refuses
+     everything without it.
+
+  3. Open KJ Admin → Shops. Until `CRON_SECRET` exists the page carries a red
+     banner saying automatic backups are not switched on, and the **Backup**
+     column shows every shop as *Never*. Both go away once a run has happened.
+
+  You can trigger one by hand to check:
+
+  ```bash
+  curl -H "Authorization: Bearer $CRON_SECRET" https://<your-app>/api/cron/backups
+  ```
+
+- **What a backup is, and where it lives.** Each backup is a `.zip` containing a
+  complete snapshot of one shop plus two Excel workbooks (Arabic and English).
+  It is stored **inside the control-plane database**, split into chunks, and the
+  console's Backups tab is where an owner takes, downloads and restores one.
+  A year-old shop is about 1.3 MB a night; full retention (14 nightly + 5 manual
+  + 3 pre-restore) is roughly 29 MB per shop.
+
+- **Back up the control plane itself — that part is Turso's job.** Every shop's
+  backups live in the control-plane database, so losing that database loses the
+  register of shops AND every backup of them at once. Turn on point-in-time
+  recovery for the control-plane database in the Turso dashboard. Nothing in
+  this application can close that gap from the inside.
+
+- **The old file-copy backup still refuses on a hosted database**, and now says
+  what to use instead. `scripts/backup.js` copies a SQLite file; there is no
+  file to copy here. `npm run backup:shop -- --all` is the hosted equivalent.
 - **The printer and scanner still work.** Both are driven from the browser on the
   machine the user is sitting at, so Settings → Devices behaves the same.
 
@@ -166,3 +214,11 @@ refused and names the tenant already using it.
   skipped, or the variable was not added to the environment being deployed.
 - **Empty screens after a successful deploy** — step 3 was skipped, so the
   database has no tables.
+- **`CRON_NOT_ARMED` from `/api/cron/backups`** — `CRON_SECRET` is not set on
+  the environment that is actually serving the request. Adding it to Preview
+  and not to Production is the usual cause.
+- **A shop stuck as *Suspended* after a restore** — that is deliberate. A
+  restore that fails leaves the shop stopped rather than trading on data whose
+  state nobody has confirmed. The shop's own data was not changed (the restore
+  is one transaction) and a pre-restore backup was taken; resume it from the
+  shop's Settings tab once you have decided what to do.

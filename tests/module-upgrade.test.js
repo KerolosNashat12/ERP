@@ -21,7 +21,9 @@ import {
 } from '../src/platform/moduleUpgrade.js';
 
 const ALL = Object.keys(MODULES);
-const NEW = ['costs', 'employees'];
+// The modules this release introduced — the ledger's newest date. Adding one
+// without adding it here is the failure the first subtest below catches.
+const NEW = ['costs', 'employees', 'legacy_invoices'];
 const OLD = ALL.filter((m) => !NEW.includes(m));
 
 test('a module that ships late still reaches the shops that should have it', async (ctx) => {

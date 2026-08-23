@@ -7,11 +7,12 @@
  */
 import { el, fill } from './core/dom.js';
 import { api } from './core/api.js';
-import { applyDocumentLanguage, onLanguageChange, t } from './core/i18n.js';
+import { applyDocumentLanguage, onLanguageChange, t, getLanguage } from './core/i18n.js';
 import { setConfig, shop, isOpen } from './core/store.js';
 import { defineRoutes, start, render, href } from './core/router.js';
 import { setPageMeta } from './core/seo.js';
 import { applyBranding, applyFavicon } from './core/branding.js';
+import { applyDeploymentBanner } from '../../shared/deploymentBanner.js';
 import * as cart from './core/cart.js';
 import { buildHeader, buildFooter, refreshCartCount, syncSearchInput, syncNav } from './ui/layout.js';
 import { errorState, closedState, emptyState } from './ui/states.js';
@@ -25,6 +26,13 @@ import successView from './views/success.js';
 import trackView from './views/track.js';
 import contactView from './views/contact.js';
 import favoritesView from './views/favorites.js';
+
+const showDeployment = (deployment) => applyDeploymentBanner(deployment, {
+  label: t('stagingTag'),
+  detail: t('stagingHere'),
+  wide: true,
+  lang: getLanguage(),
+});
 
 const headerSlot = el('div');
 const main = el('main#main.site-main', { tabindex: '-1' });
@@ -75,6 +83,18 @@ async function boot() {
       api.config(), api.categories(), api.brands(),
     ]);
     setConfig(config);
+    /**
+     * A staging storefront quietly taking real customer orders is the whole
+     * reason this exists, so the warning is drawn from the same response that
+     * decides whether there is a shop here at all — never a frame later, never
+     * a page that looks real for a moment first.
+     *
+     * `wide` gives this one a bar along the bottom edge rather than a corner
+     * tag: a customer is being told not to place an order, which needs a
+     * sentence. Still fixed and still un-clickable, so nothing on the page
+     * moves and the checkout button is exactly as reachable as before.
+     */
+    showDeployment(config.deployment);
     shop.categories = categories.rows || [];
     shop.brands = brands.rows || [];
     // Before the first paint of anything but the boot screen: the accent, the
@@ -121,6 +141,9 @@ async function boot() {
   // changed, and the current view, because the product names on it come from a
   // different column.
   onLanguageChange(() => {
+    // The storefront switches language in place rather than reloading, so the
+    // warning has to change language with everything else on the page.
+    showDeployment(shop.config?.deployment);
     paintShell();
     // A monogram is script-dependent — `ح ب` in Arabic, two Latin initials in
     // English — so the mark in the tab changes with the language, exactly as

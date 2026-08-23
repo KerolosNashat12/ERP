@@ -17,9 +17,14 @@ import { publicLandingRouter } from './api/routes/landing.js';
 import { attachRequestContext, errorHandler, notFoundHandler } from './api/middleware/index.js';
 import { idempotency } from './api/middleware/idempotency.js';
 import platformApiRouter from './api/routes/platform.js';
+import cronRouter from './api/routes/cron.js';
+import cronSummariesRouter from './api/routes/cronSummaries.js';
 import { resolveTenant, resolveDefaultTenant } from './api/middleware/tenant.js';
+import { totalOpened, openCount } from './infrastructure/database/connections.js';
 import { currentTenant } from './infrastructure/database/connection.js';
 import { initPlatformDb, platformDb } from './platform/db.js';
+import { deploymentInfo } from './shared/deploymentInfo.js';
+import controlPlaneHealth from './platform/controlPlaneHealth.js';
 import { ensureDefaultTenant } from './platform/bootstrapDefaultTenant.js';
 import { upgradeTenantModules } from './platform/moduleUpgrade.js';
 
@@ -87,6 +92,16 @@ export function createApp() {
   const guardShopWrites = idempotency({ scope: () => currentTenant()?.slug || 'shop' });
   const guardConsoleWrites = idempotency({ db: platformDb, scope: () => 'platform' });
 
+  /**
+   * Alive, and honest about how.
+   *
+   * `controlPlane` is here rather than behind the owner's session on purpose:
+   * the thing it reports on is the thing that would stop anybody signing in.
+   * When a shop is trading on a descriptor this instance remembers rather than
+   * one it just read, this is where somebody outside can see it — and every
+   * tenant response says the same thing in `X-MM-Tenant-Source`. Counts and
+   * timestamps only: no slug, no error message, no database URL.
+   */
   app.get('/api/health', (_req, res) => {
     res.json({
       status: 'ok',
@@ -95,6 +110,25 @@ export function createApp() {
       driver: driverName(),
       database: isHostedDb() ? 'hosted' : path.basename(config.paths.database),
       time: new Date().toISOString(),
+      /**
+       * Which of the two deployments answered. Unauthenticated on purpose and
+       * for the same reason `controlPlane` below is: the question "am I looking
+       * at staging or at the real thing?" must be answerable with `curl`, from
+       * outside, by somebody who cannot sign in — including when the identity
+       * guard has refused to start and this route is the only thing left.
+       */
+      deployment: deploymentInfo(),
+      ...(config.platform.enabled ? {
+        controlPlane: controlPlaneHealth.publicSnapshot(),
+        /**
+         * What this instance has cost in connections. `opened` is cumulative
+         * and `open` is what is held right now, so the difference across two
+         * calls is exactly what happened in between — which is how the claim
+         * "the overview no longer opens a database per shop" is checked from
+         * outside rather than taken on trust.
+         */
+        connections: { opened: totalOpened(), open: openCount() },
+      } : {}),
     });
   });
 
@@ -152,6 +186,22 @@ export function createApp() {
    * 401, never reaching the platform router at all.
    */
   if (config.platform.enabled) {
+    /**
+     * The scheduled job, before everything else under `/api`.
+     *
+     * Its own mount rather than a route inside the console router, because it
+     * has a different caller and a different right: Vercel's scheduler holding
+     * CRON_SECRET, never an owner's cookie and never an ERP session. Registered
+     * ahead of `/api/platform` and of the two `/api` catch-alls below, for the
+     * same reason those are ordered relative to each other — the broader mount
+     * would otherwise swallow it and the scheduler would get a 404 that nobody
+     * is watching for.
+     *
+     * Not behind `guardConsoleWrites`: the scheduler sends no idempotency key,
+     * and taking one backup twice is harmless — the second one prunes the first.
+     */
+    app.use('/api/cron', cronRouter);
+    app.use('/api/cron', cronSummariesRouter);
     app.use('/api/platform', guardConsoleWrites, platformApiRouter);
     // The owner's own dashboard: its own cookie, its own router, never a
     // tenant's data. Mounted before the ERP's own '/' catch-all below, so it

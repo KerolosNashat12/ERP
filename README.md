@@ -72,7 +72,10 @@ npm start
 | Command             | What it does                                                     |
 |---------------------|------------------------------------------------------------------|
 | `npm run dev`       | Start with auto-restart while editing code                       |
-| `npm run backup`    | Write a consistent backup to `data/backups/` (`VACUUM INTO`, safe while trading) |
+| `npm run backup`    | Write a consistent copy of the database file to `data/backups/` (`VACUUM INTO`, safe while trading; file driver only — a hosted shop uses *Settings → Backups → Download a copy of my data*) |
+| `npm run backup:shop -- --all` | On a fleet: back up every active shop into the control plane |
+| `npm run backup:shop -- mm --out ./mm.zip` | …and also write that shop's file to disk |
+| `npm run restore:shop -- mm --list` | List a shop's backups; `--backup <id>` puts one back |
 | `npm run db:demo`   | Add the demo dataset to an existing database                     |
 | `npm test`          | Run the end-to-end API test suite (starts the app itself)         |
 
@@ -105,6 +108,14 @@ byte-for-byte, because libSQL *is* SQLite — only the transport changes.
 online means the shop cannot sell without internet, so keep the local install as
 the fallback. The two have separate data and do not sync.
 
+**Read `DEPLOY-STAGING.md` before the second deployment.** A staging copy is a
+second Vercel project on its own databases, so a release can be tried before the
+shops are on it. Every deployment knows which one it is (`MM_DEPLOYMENT`,
+defaulting to `staging` on anything hosted and to `local` on a shop PC — where
+nothing changes); every screen says so when it is not production; and a
+deployment whose control-plane database disagrees with it refuses to start
+rather than writing to the wrong shops.
+
 ### Your scanner and printers
 
 Everything those two devices need is under **Settings → Devices**, with a live
@@ -125,7 +136,7 @@ test beside each section — see §4.
 | 5 | **QR integration** | Configurable hardware scanner support on every screen, QR label designer with calibration, QR on receipts |
 | 6 | **Client management** | Clients with retail/wholesale/VIP pricing groups, credit limits, balances and loyalty points |
 | 7 | **Promotions** | Percentage and fixed discount codes, category/brand/product scoping, and single-use gift vouchers |
-| 8 | **Reports** | 17 reports across inventory, sales, returns, purchasing, clients, promotions and audit — each printable and exportable to CSV |
+| 8 | **Reports** | 21 reports across inventory, sales, returns, purchasing, costs, payroll, clients, promotions and audit — each printable and exportable to CSV |
 | 9 | **Multi-user** | Five built-in roles, 50+ granular permissions, editable per role |
 | 10 | **Audit logs** | Every mutation recorded with user, timestamp, IP and a before/after field diff |
 
@@ -133,6 +144,20 @@ test beside each section — see §4.
 
 These weren't in the brief but an accessories shop runs badly without them. Each
 is fully implemented, not a stub.
+
+**Costs and payroll — صفحة التكاليف.** Everything the shop spends that is not
+stock: electricity, water, taxes, rent, equipment, maintenance and wages, filed
+under bilingual categories the owner extends himself, against a branch, with a
+photograph of the bill. Rent and the monthly bills are set up once as a
+*repeating cost*, which never posts anything by itself — the months it owes wait
+at the top of the screen to be confirmed, so six weeks away leaves a list to
+check rather than entries nobody saw. Employees are a list of their own,
+separate from the ERP's login users, because a delivery man has a salary and no
+login; each has an amount and a period (day, week or month), and a payment
+recorded against one **is a cost row** — filed beside the rent, counted once,
+and coming off the same profit. Which is the point: **Reports → Profit after
+costs** is what a shop owner means by the word, and the older reports that show
+goods margin now say so on their face.
 
 **Purchase orders with goods receipt.** Draft → sent to supplier → partial or
 full receipt. Receiving is the only way stock enters the system, so "where did
@@ -172,9 +197,21 @@ Essential when a supplier raises prices across a range.
 
 **Held sales.** Park a basket, serve the next customer, resume it later.
 
-**Backup and restore.** Offline means *you* are the only backup. One click makes
-a consistent copy (using SQLite's online backup API — safe while trading), and
-restore keeps a safety copy of what it replaced.
+**Your data is yours.** *Settings → Backups → Download a copy of my data* builds
+one `.zip` holding the whole shop: two Excel workbooks (Arabic and English,
+fifteen tabs, foreign keys resolved into names) that anybody can open, and a
+complete snapshot a computer can restore from. It works on every deployment —
+a shop PC or a hosted database — and it is the same file the platform console
+hands over, built by the same code. Passwords are the one thing it leaves out:
+a file kept on a laptop should not carry them. An administrator may take one;
+the right cannot be given to a role, and it is limited to one copy every ten
+minutes and six a day, because building one reads the whole shop.
+
+**Backup and restore, on a shop PC.** Offline means *you* are the only backup.
+One click makes a consistent copy of the database file (SQLite's online backup
+API — safe while trading), and restore keeps a safety copy of what it replaced.
+A hosted shop has no file to copy and says so; its data still comes out through
+the download above.
 
 **Cashier shift summary.** What should be in the drawer, broken down by payment
 method.
@@ -265,6 +302,67 @@ building. `npm install` is seconds, and it cannot fail for lack of a compiler.
 The cost is the Node 22+ floor; the benefit is that installing on a new till is
 "install Node, double-click START.bat".
 
+### The fleet, when the control plane blinks
+
+On a multi-shop deployment every request resolves its shop through one
+control-plane database. Two things follow from that, and both are worth knowing
+before changing `src/api/middleware/tenant.js` or `src/platform/FleetSummaryService.js`.
+
+**A shop that resolved a minute ago keeps trading if the control plane goes
+away.** A descriptor that was read successfully is kept in memory and used —
+only when a read actually *fails* — for up to `MM_TENANT_GRACE_MS` (15 minutes)
+after the last successful read of that shop. Inside that window the till, the
+ERP and the storefront carry on. Outside it they stop. Three things are never
+decided from a remembered descriptor, at any age:
+
+- **a 404.** "There is no shop here" is a claim an instance that cannot read the
+  control plane is not entitled to make, so an unknown slug during an outage is
+  `503 CONTROL_PLANE_UNAVAILABLE` with a `Retry-After`, not a 404;
+- **a shop this instance has never resolved.** There is nothing to remember, and
+  a cold serverless instance remembers nothing — also a 503;
+- **overturning a refusal.** A suspended shop stays suspended when the refusal
+  cannot be confirmed. Refusals never expire; permissions do.
+
+You can always tell whether an answer came from the control plane or from
+memory, from outside, without a login:
+
+```bash
+curl -sI http://host/t/mm/api/shop/config | grep -i x-mm-      # per request
+curl -s  http://host/api/health | jq .controlPlane            # per instance
+```
+
+`X-MM-Tenant-Source` is `fresh`, `cached` or `remembered`; a remembered answer
+also carries `X-MM-Control-Plane: degraded` and `X-MM-Tenant-Age` in seconds.
+Every outage leaves one `CONTROL_PLANE_RECOVERED` row in `platform_audit`,
+written on recovery — because during the outage the table it would go in is the
+thing that is unreachable.
+
+**The owner's overview is read, not computed.** It used to open every shop's
+database on every page load; at eighty shops that is eighty connections per load
+on a metered database. Each shop's figures are now written into one
+control-plane table (`tenant_summaries`) by three writers — the hourly sweep
+(`/api/cron/summaries`), a shop's own traffic when its summary has gone stale,
+and the owner pressing "Refresh now" — and the console reads that table.
+
+The split that makes it safe: **statistics** come from the summary and always
+travel with the moment they were read; **decisions** — a shop's status, its
+website switch, its modules, its limits, how many shops exist — are read live
+from `tenants` on the same page load and can never be stale. A summary older
+than `MM_FLEET_SUMMARY_STALE_MS` (3 hours) is flagged on the row and named in a
+banner; a shop nobody has measured shows dashes and "not measured yet", never a
+zero. `GET /api/platform/overview?live=1` still does the old fan-out, for the
+day somebody does not believe the table.
+
+| Variable | Default | What it bounds |
+|---|---|---|
+| `MM_TENANT_CACHE_MS` | `15000` | how long a good descriptor is reused while the control plane is healthy |
+| `MM_TENANT_GRACE_MS` | `900000` | how long a remembered descriptor stands in for one that cannot be read |
+| `MM_TENANT_REMEMBER_MAX` | `200` | how many descriptors one instance keeps |
+| `MM_FLEET_SUMMARY_STALE_MS` | `10800000` | when the console starts calling a figure old |
+| `MM_FLEET_BACKFILL_MAX` | `8` | most never-measured shops one page load may read |
+| `MM_FLEET_SUMMARY_ON_REQUEST` | on | set `0` to stop shop traffic refreshing summaries |
+| `MM_SUMMARY_MIN_AGE_MS` | `2700000` | how fresh a summary the hourly sweep will skip |
+
 ### Database
 
 32 tables. The core relationships:
@@ -284,6 +382,11 @@ suppliers ──< brands ──< products ──< product_variants ──< varia
 promotions ──< promotion_targets          users >── roles >── role_permissions >── permissions
 promotions ──< promotion_redemptions >── sales                    │
                                                             audit_logs
+
+cost_categories ──< costs >── warehouses      recurring_costs ──< costs
+                      │                        (a template, never a cost)
+                      └── employees            attachments (owner_type, owner_id)
+                          (a salary payment IS a costs row)
 ```
 
 Two views (`v_variant_details`, `v_stock_on_hand`) keep the read paths simple.
@@ -406,6 +509,11 @@ copies you choose, or deactivate it.
 
 - **Back up.** *Settings → Backups → Create backup now*, or `npm run backup` on a
   schedule. Copy `data/backups/` to a USB stick or cloud drive periodically.
+- **Take your data with you.** *Settings → Backups → Download a copy of my data*
+  gives you the whole shop in one file — spreadsheets you can open and a
+  snapshot that can put the shop back. It works on any deployment, hosted or
+  not. Keep it the way you keep the shop's books: it holds every cost, every
+  client's phone number and every salary.
 - **The database is one file:** `data/mm-accessories.db`. Copying it copies the
   whole business. Stop the server before copying it by hand (or use the backup
   button, which is safe while running).
@@ -424,7 +532,8 @@ sell with a promo code → look the receipt back up by scanning it → return a 
 item and a damaged one → check the fee rules → issue store credit → try a
 no-receipt return as a cashier and as a manager → run a stock count → void a sale
 → run every report → verify the audit trail → check that a cashier is blocked
-from admin screens. 27 tests, all passing on a clean install.
+from admin screens → download the shop's own data as a `.zip` and watch the
+second press be rate-limited. 31 tests, all passing on a clean install.
 
 ```bash
 npm run setup      # a seeded database is all the suite needs
@@ -436,4 +545,10 @@ serving — a staging host, or a hosted database.
 
 `tests/ui-check.mjs` is a headless browser pass over every screen in both
 languages; it needs Playwright (`npm i -D playwright`) and is a development aid
-rather than part of the product.
+rather than part of the product. `tests/backup-ui-check.mjs` is the same idea
+for the fleet's backups: it stands up four shops, takes a backup through KJ
+Admin, downloads it, opens the archive and the workbook inside it, and restores
+it — in Arabic and in English. `tests/shop-export-ui-check.mjs` does the shop's
+half: it stands up one shop on the hosted driver, signs in as that shop's own
+administrator, presses *Download a copy of my data* in both languages, opens
+what came out, and presses it again to see the rate limit refuse in Arabic.

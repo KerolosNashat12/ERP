@@ -15,6 +15,7 @@ import webAssets from '../../services/WebAssetService.js';
 import { currentTenant } from '../../infrastructure/database/connection.js';
 import { confirmTenant } from '../middleware/tenant.js';
 import { NotFoundError } from '../../shared/errors.js';
+import { deploymentInfo } from '../../shared/deploymentInfo.js';
 
 const router = Router();
 
@@ -48,9 +49,19 @@ router.use(async (req, res, next) => {
   return res.status(404).json({ error: { code: 'NOT_FOUND', message: `No route for ${req.method} ${req.path}` } });
 });
 
-/** Shop-wide settings, categories and brands the pages need on first paint. */
+/**
+ * Shop-wide settings, categories and brands the pages need on first paint —
+ * and which deployment is serving them.
+ *
+ * `deployment` is added here rather than inside `StorefrontService` on purpose:
+ * that service's hand-written SQL is the storefront's own by doctrine, and this
+ * is a fact about the process, not about the shop. It rides on the call the
+ * storefront already blocks its first paint on, so a customer on a staging
+ * storefront sees the warning in the same frame as the shop's name — never a
+ * page that looks real for a moment first.
+ */
 router.get('/config', asyncHandler(async (_req, res) => {
-  res.json(await storefront.config());
+  res.json({ ...await storefront.config(), deployment: deploymentInfo() });
 }));
 
 router.get('/home', asyncHandler(async (_req, res) => {

@@ -176,6 +176,48 @@ export const api = {
   post: (path, body) => request(path, { method: 'POST', body }),
   put: (path, body) => request(path, { method: 'PUT', body }),
   del: (path) => request(path, { method: 'DELETE' }),
+  /**
+   * A file that has to be ASKED for rather than linked to.
+   *
+   * `download()` below points an `<a>` at a URL, which is right for a file that
+   * already exists: the browser does the work and a failure is a broken
+   * download. It is wrong for something the server has to build — the shop's
+   * whole data export — because every refusal (no permission, too soon, one
+   * already running) would arrive as a file called `error.zip` instead of as a
+   * message somebody can read in their own language.
+   *
+   * So: a POST, whose refusals are JSON with a code and reach `toastError()`
+   * like every other error in this app, and whose success is bytes turned into
+   * a download here. `clone()` because an identical request already in the air
+   * is handed the same Response by the dedupe above, and a body can only be
+   * read once.
+   */
+  async postDownload(path, body, fallbackName) {
+    const response = await request(path, { method: 'POST', body, raw: true });
+    if (!response.ok) {
+      const text = await response.clone().text();
+      let payload;
+      try { payload = text ? JSON.parse(text) : null; } catch { payload = null; }
+      const error = payload?.error || {};
+      throw new ApiError(error.message || `Request failed (${response.status})`,
+        response.status, error.code, error.details);
+    }
+
+    const disposition = response.headers.get('content-disposition') || '';
+    const match = /filename="?([^";]+)"?/i.exec(disposition);
+    const blob = await response.clone().blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = match ? match[1] : (fallbackName || 'download');
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    // Late enough that the download has started, early enough that a shop's
+    // whole book is not held in the tab for the rest of the session.
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    return { filename: link.download, size: blob.size };
+  },
   download(path, query, filename) {
     const url = new URL(apiBase() + path, window.location.origin);
     if (query) {

@@ -8,9 +8,19 @@
 
 import { detailStrings } from './i18n.detail.js';
 import { landingStrings } from './i18n.landing.js';
+import { backupStrings } from './i18n.backups.js';
+import { fleetStrings } from './i18n.fleet.js';
 
 const dictionary = {
   en: {
+    /*
+     * The staging banner — see public/shared/deploymentBanner.js.
+     *
+     * Only ever drawn on a deployment that is NOT production, so these words
+     * are never on a real shop's screen. `stagingTag` is also what goes in
+     * front of the browser tab's title, which is why it is short.
+     */
+    stagingTag: 'Staging', stagingHere: 'Staging — not the real fleet',
     platformName: 'KJ Admin', platformTag: 'Fleet console — every shop, one place',
     signIn: 'Sign in', signOut: 'Sign out', username: 'Username', password: 'Password',
     signingIn: 'Signing in…', welcome: 'Owner console', signInSubtitle: 'Sign in with your platform account',
@@ -138,7 +148,11 @@ const dictionary = {
     lastActivity: 'Last activity', open: 'Open',
     unreachable: 'Unreachable',
     unreachableTitle: 'Some shops could not be read.',
-    unreachableHint: 'Their figures are left blank rather than shown as zero:',
+    // Not "left blank": a shop that was readable yesterday keeps yesterday's
+    // figures next to the moment the read failed, because the last true numbers
+    // are the only thing anybody can act on. Blank is what a shop that was
+    // never readable shows — and neither of them is ever a zero.
+    unreachableHint: 'Their figures are whatever was last read from them, never a zero:',
     plan: 'Plan', unlimited: 'no limit',
     links: 'Links', erpLink: 'ERP', storeLink: 'Shop',
     websiteOffHint: 'The storefront is switched off for this shop',
@@ -147,6 +161,8 @@ const dictionary = {
   },
 
   ar: {
+    // The staging banner — see public/shared/deploymentBanner.js.
+    stagingTag: 'بيئة تجريبية', stagingHere: 'بيئة تجريبية — ليست المنظومة الحقيقية',
     platformName: 'كي جيه أدمن', platformTag: 'لوحة إدارة الأسطول — كل المتاجر في مكان واحد',
     signIn: 'تسجيل الدخول', signOut: 'تسجيل الخروج', username: 'اسم المستخدم', password: 'كلمة المرور',
     signingIn: 'جارٍ تسجيل الدخول…', welcome: 'لوحة المالك', signInSubtitle: 'سجّل الدخول بحساب المنصّة',
@@ -266,7 +282,7 @@ const dictionary = {
     lastActivity: 'آخر نشاط', open: 'فتح',
     unreachable: 'غير متاح',
     unreachableTitle: 'بعض المتاجر تعذّرت قراءتها.',
-    unreachableHint: 'أرقامها تُركت فارغة بدلًا من إظهارها أصفارًا:',
+    unreachableHint: 'أرقامها هي آخر ما أمكن قراءته منها، وليست أصفارًا:',
     plan: 'الخطة', unlimited: 'بلا حد',
     links: 'الروابط', erpLink: 'ERP', storeLink: 'المتجر',
     websiteOffHint: 'المتجر الإلكتروني موقوف لهذا المتجر',
@@ -279,6 +295,7 @@ const dictionary = {
     customers: 'العملاء', sales: 'المبيعات', promotions: 'العروض والخصومات', reports: 'التقارير',
     users: 'المستخدمون والصلاحيات', audit: 'سجل التدقيق', settings: 'الإعدادات', labels: 'الملصقات',
     weborders: 'طلبات الموقع', costs: 'التكاليف', employees: 'الموظفين والمرتبات',
+    legacy_invoices: 'فواتيرك (أرشيف ورقي)',
   },
 };
 
@@ -290,6 +307,7 @@ Object.assign(dictionary.en, {
   customers: 'Clients', sales: 'Sales', promotions: 'Promotions', reports: 'Reports',
   users: 'Users & Roles', audit: 'Audit Log', settings: 'Settings', labels: 'Labels',
   weborders: 'Web Orders', costs: 'Costs', employees: 'Employees & Salaries',
+  legacy_invoices: 'Your Invoices (paper archive)',
 });
 
 let language = localStorage.getItem('mm.platform.lang') || 'en';
@@ -325,7 +343,7 @@ export function pickName(row) {
  * stray duplicate in an extension file cannot quietly change the wording of a
  * screen somewhere else.
  */
-for (const extension of [detailStrings, landingStrings]) {
+for (const extension of [detailStrings, landingStrings, backupStrings, fleetStrings]) {
   for (const [lang, strings] of Object.entries(extension)) {
     if (!dictionary[lang]) continue;
     for (const [key, value] of Object.entries(strings)) {

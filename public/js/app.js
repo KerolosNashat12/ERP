@@ -6,6 +6,7 @@ import { session, can, loadSession, clearSession, badges, refreshBadges, setTena
 import { defineRoutes, startRouter, navigate } from './core/router.js';
 import { startScanner, onScan, triggerScan } from './core/scanner.js';
 import { shopMark, applyShopIdentity } from './core/brand.js';
+import { applyDeploymentBanner } from '../shared/deploymentBanner.js';
 
 import { renderLogin, promptPasswordChange } from './views/auth.js';
 import { dashboardView } from './views/dashboard.js';
@@ -20,6 +21,7 @@ import { returnsView } from './views/returns.js';
 import { promotionsView } from './views/promotions.js';
 import { reportsView } from './views/reports.js';
 import { costsView, costCategoriesView } from './views/costs.js';
+import { legacyInvoicesView } from './views/legacyInvoices.js';
 import { employeesView } from './views/employees.js';
 import { usersView, auditView, settingsView } from './views/admin.js';
 import { labelsView } from './views/labels.js';
@@ -71,6 +73,16 @@ const NAV = [
     items: [
       { path: 'purchases', label: 'purchases', icon: '⇩', permission: 'purchases.view' },
       { path: 'suppliers', label: 'suppliers', icon: '⌂', permission: 'suppliers.view' },
+      /*
+       * فواتيرك — the invoices the shop already had ON PAPER. Beside الموردون
+       * and أوامر الشراء because that is where he looks for a supplier's
+       * paperwork, but its own MODULE (`legacy_invoices`), so a shop whose plan
+       * does not include the archive never sees this entry — and, more
+       * importantly, so that nothing on it can be mistaken for purchasing: the
+       * page itself says, permanently and in his own language, that its
+       * amounts are outside the shop's accounts.
+       */
+      { path: 'legacy-invoices', label: 'legacyInvoices', icon: '❐', permission: 'legacy_invoices.view' },
     ],
   },
   {
@@ -112,9 +124,24 @@ let tenantInfo = null;
 
 async function loadTenantInfo() {
   try {
-    const { tenant, branding } = await api.get('/api/session');
+    const { tenant, branding, deployment } = await api.get('/api/session');
     tenantInfo = tenant;
     setTenant(tenant);
+    /**
+     * Which deployment this till is on, before the shell is drawn.
+     *
+     * On production and on a shop PC this call does nothing at all and removes
+     * nothing, because there is nothing there. On staging it paints the hazard
+     * frame — outside the layout, un-clickable, no animation — so a cashier
+     * cannot mistake a test deployment for the shop they are standing in. It
+     * rides on this request rather than making its own: the ERP is not allowed
+     * to get slower for it. See public/shared/deploymentBanner.js.
+     */
+    applyDeploymentBanner(deployment, {
+      label: t('stagingTag'),
+      detail: t('stagingHere'),
+      lang: getLanguage(),
+    });
     // Unauthenticated on purpose (see the route): the sidebar, the tab and the
     // login screen all need the shop's mark before anyone has signed in.
     setBranding(branding);
@@ -137,6 +164,7 @@ const ROUTE_PERMISSIONS = {
   movements: 'inventory.view', adjustments: 'inventory.view',
   purchases: 'purchases.view', suppliers: 'suppliers.view', customers: 'customers.view',
   costs: 'costs.view', 'cost-categories': 'costs.view', employees: 'employees.view',
+  'legacy-invoices': 'legacy_invoices.view',
   promotions: 'promotions.view', reports: 'reports.view', users: 'users.view',
   audit: 'audit.view', settings: 'settings.view',
 };
@@ -303,6 +331,7 @@ async function startApp() {
     customers: customersView,
     costs: costsView,
     'cost-categories': costCategoriesView,
+    'legacy-invoices': legacyInvoicesView,
     employees: employeesView,
     promotions: promotionsView,
     reports: reportsView,

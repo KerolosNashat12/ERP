@@ -179,6 +179,21 @@ export function errorHandler(error, req, res, _next) {
     console.error(`[error] ${req.method} ${req.originalUrl}`, error);
   }
 
+  /**
+   * A refusal that will lapse says when to come back. Without it a browser, a
+   * till's retry loop and a CDN each invent their own interval, and the one
+   * that guesses shortest turns a control-plane blink into a stampede on the
+   * way back up.
+   *
+   * Both of the statuses that mean "not now, but later" carry it: 503 (the
+   * control plane is unreachable) and 429 (a rate limit — see
+   * `DataExportService`, where the same number also reaches the screen in
+   * `details` so it can be said in Arabic rather than read out of a header).
+   */
+  if (isApp && (status === 503 || status === 429) && error.retryAfter) {
+    res.setHeader('Retry-After', String(error.retryAfter));
+  }
+
   const payload = {
     error: {
       code: isApp ? error.code : 'INTERNAL_ERROR',

@@ -33,6 +33,23 @@ const MAX_OPEN = Number(process.env.MM_MAX_TENANT_CONNECTIONS || 25);
 
 const cache = new Map();
 
+/**
+ * How many tenant connections this instance has opened since it started.
+ *
+ * Not a statistic for its own sake: on a metered database a connection is a
+ * unit of cost, and "how many databases does one page load open" was the whole
+ * question behind reading the fleet overview from a summary table instead of
+ * computing it. It is reported by `/api/health` so the answer can be measured
+ * from outside rather than argued about — count it before a page load, count it
+ * after, and the difference is what that page cost.
+ *
+ * A counter rather than a gauge: `openCount()` below says how many are open
+ * right now, which LRU eviction keeps small and which therefore cannot show the
+ * churn. This only ever goes up.
+ */
+let openedTotal = 0;
+export const totalOpened = () => openedTotal;
+
 /** Marks a key as most recently used by reinserting it — Map keeps insertion order. */
 function touch(key) {
   const entry = cache.get(key);
@@ -67,6 +84,7 @@ export async function connectionFor(key, open) {
 
   // The promise is cached, not just the result: two concurrent first requests
   // for the same tenant must share one connection attempt, not race to open two.
+  openedTotal += 1;
   const pending = {
     promise: open().then((connection) => {
       cache.set(key, connection);
@@ -102,4 +120,6 @@ export async function closeAll() {
 
 export const openCount = () => cache.size;
 
-export default { tenantStore, connectionFor, forget, closeAll, openCount };
+export default {
+  tenantStore, connectionFor, forget, closeAll, openCount, totalOpened,
+};

@@ -71,7 +71,7 @@ if exist "hosted-db-setup.txt" del /f /q "hosted-db-setup.txt" >> "%LOG%" 2>&1
 echo.
 echo   Committing...
 git add -A >> "%LOG%" 2>&1
-git -c user.email="kerolosnashatestfanous@gmail.com" -c user.name="KerolosNashat12" commit -m "A module that ships after a shop was created now reaches it: costs and employees were live, deployed and answering, and invisible because tenant_modules was written before they existed. A shop holding every earlier module stays full; a shop the owner limited stays limited" >> "%LOG%" 2>&1
+git -c user.email="kerolosnashatestfanous@gmail.com" -c user.name="KerolosNashat12" commit -m "Your data is yours: a shop can download its own books from Settings, every shop gets a guarded backup and restore, an archive for the paper invoices that stays out of the accounts, and two reports answering what the shop has cost and what it has really made" >> "%LOG%" 2>&1
 if errorlevel 1 echo   Nothing new to commit - pushing whatever is outstanding.
 
 echo   Pushing (your connection to GitHub drops sometimes, so this retries)...

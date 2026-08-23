@@ -4,7 +4,7 @@ import {
   h, mount, dataTable, pager, spinner, toast, toastError, textInput, selectInput,
   field, modal, debounce, tag, buildForm, confirmDialog, checkboxInput,
 } from '../core/ui.js';
-import { t, pick, getLanguage } from '../core/i18n.js';
+import { t, pick, getLanguage, tPermission } from '../core/i18n.js';
 import { number, dateTime, money } from '../core/format.js';
 import { session, can, loadSession, setBadge } from '../core/store.js';
 import { devicesPanel } from './devices.js';
@@ -329,7 +329,9 @@ function openRolePermissions(role, catalogue, refresh) {
           },
         }, t('selectAll'))),
       h('div', { class: 'card-body row' }, permissions.map((permission) => checkboxInput({
-        label: permission.action,
+        // The action, in words. It used to be the raw code — an Arabic screen
+        // of checkboxes labelled `reverse_payment` and `return_no_receipt`.
+        label: tPermission(permission.action),
         checked: selected.has(permission.code),
         onchange: (event) => (event.target.checked ? selected.add(permission.code) : selected.delete(permission.code)),
       }))))));
@@ -1264,42 +1266,124 @@ export async function settingsView(root, route) {
     } catch (error) { toastError(error); }
   }
 
-  const backupsHost = h('div', { class: 'card-body tight' });
+  /* ------------------------------------------------------------- backups
+   *
+   * Two cards, and they answer two different questions:
+   *
+   *   "can I have my data?"        — yes, always, on every deployment. One
+   *                                  .zip: two Excel workbooks anybody can
+   *                                  open, plus a complete snapshot a computer
+   *                                  can restore from. Built live and never
+   *                                  stored anywhere.
+   *   "is this machine backed up?" — only where there IS a machine. Copying
+   *                                  the database file needs a database file,
+   *                                  which a hosted shop does not have.
+   *
+   * They used to be one card, whose one button answered a hosted shop with an
+   * English sentence saying backups were not available. That was the screen in
+   * the photograph.
+   */
+  const exportFacts = h('div', { class: 'muted small' });
+  const localBody = h('div', { class: 'card-body tight' }, spinner());
+
+  async function loadExportStatus() {
+    if (!can('settings.export_data')) return;
+    try {
+      const state = await api.get('/api/settings/data-export');
+      mount(exportFacts, h('div', { class: 'stack', style: { gap: '4px' } },
+        h('div', {}, `${t('dataExportLast')}: ${state.lastExportAt ? dateTime(state.lastExportAt) : t('dataExportNever')}`),
+        h('div', {}, t('dataExportLimits')
+          .replace('{cooldown}', String(Math.round(state.cooldownSeconds / 60)))
+          .replace('{limit}', String(state.dailyLimit)))));
+    } catch (error) { toastError(error); }
+  }
+
+  const exportCard = () => h('div', { class: 'card' },
+    h('div', { class: 'card-head' },
+      h('h3', {}, t('dataExportCard')),
+      h('span', { class: 'spacer' }),
+      h('button', {
+        class: 'btn sm primary',
+        onclick: async () => {
+          // The button is disabled for the whole press by core/actions.js, so
+          // the shop is never read twice for one click.
+          const busy = toast(t('dataExportPreparing'), 'warn', 60000);
+          try {
+            await api.postDownload('/api/settings/data-export', {}, 'shop-data.zip');
+            toast(t('dataExportDone'));
+          } catch (error) {
+            toastError(error);
+          } finally {
+            busy.remove();
+            loadExportStatus();
+          }
+        },
+      }, t('dataExportButton'))),
+    h('div', { class: 'card-body stack' },
+      h('p', { class: 'muted small' }, t('dataExportIntro')),
+      h('p', { class: 'muted small' }, t('dataExportNoPasswords')),
+      h('p', { class: 'muted small' }, t('dataExportWarning')),
+      exportFacts));
+
   async function loadBackups() {
     if (!can('settings.backup')) return;
-    const { rows } = await api.get('/api/settings/backups');
-    mount(backupsHost, dataTable({
-      columns: [
-        { key: 'file', label: t('fileName'), class: 'mono small' },
-        { key: 'createdAt', label: t('date'), render: (r) => dateTime(r.createdAt) },
-        { key: 'size', label: t('fileSize'), type: 'number', render: (r) => `${(r.size / 1024 / 1024).toFixed(2)} MB` },
-        {
-          key: '__a',
-          label: '',
-          render: (r) => h('div', { class: 'row nowrap', style: { justifyContent: 'flex-end', gap: '4px' } },
-            h('button', {
-              class: 'btn sm',
-              onclick: () => api.download(`/api/settings/backups/${r.file}/download`, null, r.file),
-            }, t('downloadBackup')),
-            h('button', {
-              class: 'btn sm',
-              onclick: async () => {
-                if (!await confirmDialog({ title: t('restore'), message: t('restoreWarning'), danger: true, confirmLabel: t('restore') })) return;
-                try { await api.post(`/api/settings/backups/${r.file}/restore`, {}); toast(t('restartRequired'), 'warn', 9000); } catch (e) { toastError(e); }
-              },
-            }, t('restore')),
-            h('button', {
-              class: 'btn sm ghost',
-              onclick: async () => {
-                if (!await confirmDialog({ title: t('delete'), message: t('deleteConfirm'), danger: true })) return;
-                await api.del(`/api/settings/backups/${r.file}`);
+    const { rows, fileBackups } = await api.get('/api/settings/backups');
+
+    // A hosted shop keeps the card — so nobody wonders where "backups" went —
+    // but it says what is true here and points at the card above rather than
+    // offering a button that can only refuse.
+    if (!fileBackups) {
+      mount(localBody, h('p', { class: 'muted small' }, t('localBackupsUnavailable')));
+      return;
+    }
+
+    mount(localBody,
+      h('div', { class: 'stack' },
+        h('p', { class: 'muted small' }, t('localBackupsIntro')),
+        h('div', { class: 'row' },
+          h('button', {
+            class: 'btn sm',
+            onclick: async () => {
+              try {
+                await api.post('/api/settings/backups', {});
+                toast(t('saved'));
                 loadBackups();
-              },
-            }, '🗑')),
-        },
-      ],
-      rows,
-    }));
+              } catch (e) { toastError(e); }
+            },
+          }, t('createBackup')),
+          h('span', { class: 'muted small' }, t('restoreWarning'))),
+        dataTable({
+          columns: [
+            { key: 'file', label: t('fileName'), class: 'mono small' },
+            { key: 'createdAt', label: t('date'), render: (r) => dateTime(r.createdAt) },
+            { key: 'size', label: t('fileSize'), type: 'number', render: (r) => `${(r.size / 1024 / 1024).toFixed(2)} MB` },
+            {
+              key: '__a',
+              label: '',
+              render: (r) => h('div', { class: 'row nowrap', style: { justifyContent: 'flex-end', gap: '4px' } },
+                h('button', {
+                  class: 'btn sm',
+                  onclick: () => api.download(`/api/settings/backups/${r.file}/download`, null, r.file),
+                }, t('downloadBackup')),
+                h('button', {
+                  class: 'btn sm',
+                  onclick: async () => {
+                    if (!await confirmDialog({ title: t('restore'), message: t('restoreWarning'), danger: true, confirmLabel: t('restore') })) return;
+                    try { await api.post(`/api/settings/backups/${r.file}/restore`, {}); toast(t('restartRequired'), 'warn', 9000); } catch (e) { toastError(e); }
+                  },
+                }, t('restore')),
+                h('button', {
+                  class: 'btn sm ghost',
+                  onclick: async () => {
+                    if (!await confirmDialog({ title: t('delete'), message: t('deleteConfirm'), danger: true })) return;
+                    await api.del(`/api/settings/backups/${r.file}`);
+                    loadBackups();
+                  },
+                }, '🗑')),
+            },
+          ],
+          rows,
+        })));
   }
 
   async function saveGeneral() {
@@ -1320,7 +1404,8 @@ export async function settingsView(root, route) {
     { key: 'returns', label: t('returnsPolicy') },
     ...(can('settings.view') ? [{ key: 'website', label: t('websiteTab') }] : []),
     { key: 'devices', label: t('devices') },
-    ...(can('settings.backup') ? [{ key: 'backups', label: t('backups') }] : []),
+    ...(can('settings.backup') || can('settings.export_data')
+      ? [{ key: 'backups', label: t('backups') }] : []),
   ];
 
   const body = h('div');
@@ -1335,18 +1420,14 @@ export async function settingsView(root, route) {
       return;
     }
     if (activeTab === 'backups') {
-      mount(body, h('div', { class: 'card' },
-        h('div', { class: 'card-head' },
-          h('h3', {}, t('backups')),
-          h('span', { class: 'spacer' }),
-          h('span', { class: 'muted small' }, t('restoreWarning')),
-          h('button', {
-            class: 'btn sm primary',
-            onclick: async () => {
-              try { await api.post('/api/settings/backups', {}); toast(t('saved')); loadBackups(); } catch (e) { toastError(e); }
-            },
-          }, t('createBackup'))),
-        backupsHost));
+      mount(body,
+        can('settings.export_data') ? exportCard() : null,
+        can('settings.backup')
+          ? h('div', { class: 'card', style: { marginTop: can('settings.export_data') ? '14px' : '0' } },
+            h('div', { class: 'card-head' }, h('h3', {}, t('localBackupsCard'))),
+            localBody)
+          : null);
+      loadExportStatus();
       loadBackups();
       return;
     }

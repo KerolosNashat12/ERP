@@ -15,6 +15,14 @@ const STORAGE_KEY = 'mm.shop.lang';
 
 const dictionary = {
   en: {
+    /*
+     * The staging banner — see public/shared/deploymentBanner.js.
+     *
+     * Only ever drawn on a deployment that is NOT production, so these words
+     * are never on a real shop's screen. `stagingTag` is also what goes in
+     * front of the browser tab's title, which is why it is short.
+     */
+    stagingTag: 'Test shop', stagingHere: 'Test shop — an order placed here is not a real order',
     // --- chrome
     home: 'Home',
     search: 'Search',
@@ -253,6 +261,8 @@ const dictionary = {
   },
 
   ar: {
+    // The staging banner — see public/shared/deploymentBanner.js.
+    stagingTag: 'متجر تجريبي', stagingHere: 'متجر تجريبي — أي طلب هنا ليس طلبًا حقيقيًا',
     // --- chrome
     home: 'الرئيسية',
     search: 'بحث',

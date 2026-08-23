@@ -87,6 +87,20 @@ export function compact(value) {
   return fmt(n, 0);
 }
 
+/**
+ * A file size, in the unit that makes the figure readable. A backup is shown to
+ * somebody deciding whether to download it over a phone connection, so "24 MB"
+ * is the answer and "25165824" is not.
+ */
+export function bytes(value) {
+  const n = Number(value || 0);
+  if (!Number.isFinite(n) || n <= 0) return '0 KB';
+  if (n < 1024) return `${int(n)} B`;
+  if (n < 1024 * 1024) return `${decimal(n / 1024, n < 10240 ? 1 : 0)} KB`;
+  if (n < 1024 * 1024 * 1024) return `${decimal(n / 1048576, n < 10485760 ? 1 : 0)} MB`;
+  return `${decimal(n / 1073741824, 2)} GB`;
+}
+
 export function percent(value, digits = 0) {
   if (value === null || value === undefined || Number.isNaN(Number(value))) return DASH;
   return `${decimal(value, digits)}%`;
@@ -145,5 +159,5 @@ export function relative(value) {
 export { DASH };
 
 export default {
-  locale, int, decimal, money, moneyBig, compact, percent, dayShort, date, dateTime, timeOfDay, relative, DASH,
+  locale, int, decimal, money, moneyBig, compact, bytes, percent, dayShort, date, dateTime, timeOfDay, relative, DASH,
 };

@@ -7,6 +7,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+import { resolveDeployment } from './deployment.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 export const ROOT_DIR = path.resolve(here, '..', '..');
@@ -92,6 +93,29 @@ const PUBLIC_URL = (() => {
   return absolute.replace(/\/+$/, '');
 })();
 
+/**
+ * Is this a deployment at all, or a machine somebody is standing at?
+ *
+ * Three signs, any one of which is enough, and all three describe the same
+ * thing: this process is reachable by people who are not in the room with it.
+ *   - the shop database is hosted (Turso) — there is no disk here;
+ *   - the control plane has a URL — the register lives somewhere else;
+ *   - Vercel is underneath it — it says so itself.
+ *
+ * A shop PC running START.bat matches none of them, which is what keeps the
+ * single-shop build out of every rule in `config.deployment` below.
+ */
+const IS_DEPLOYMENT = Boolean(IS_HOSTED_DB || PLATFORM_DB_URL || process.env.VERCEL);
+
+const DEPLOYMENT = resolveDeployment(process.env, { hosted: IS_DEPLOYMENT });
+
+if (DEPLOYMENT.reason === 'unrecognised') {
+  console.warn(
+    `\u26a0  MM_DEPLOYMENT="${process.env.MM_DEPLOYMENT}" is not a value this build knows. `
+    + 'Treating this deployment as STAGING. Use one of: production, staging, local.',
+  );
+}
+
 const DATA_DIR = process.env.MM_DATA_DIR
   ? path.resolve(process.env.MM_DATA_DIR)
   : path.join(ROOT_DIR, 'data');
@@ -135,6 +159,23 @@ function resolveSecret() {
 
 export const config = Object.freeze({
   env: process.env.NODE_ENV || 'production',
+  /**
+   * Which of the two deployments this is — see `config/deployment.js` for the
+   * three values, for why an unset variable resolves to `staging` on anything
+   * hosted, and for why a shop PC resolves to `local` and is thereby exempt
+   * from both the banner and the control-plane guard.
+   *
+   * `declared` says a human typed it. Only a declared environment may write
+   * itself into a control-plane database; a default or a guess may not.
+   */
+  deployment: Object.freeze({
+    environment: DEPLOYMENT.environment,
+    declared: DEPLOYMENT.declared,
+    reason: DEPLOYMENT.reason,
+    isProduction: DEPLOYMENT.environment === 'production',
+    isStaging: DEPLOYMENT.environment === 'staging',
+    isLocal: DEPLOYMENT.environment === 'local',
+  }),
   server: {
     port: Number(process.env.MM_PORT || 4000),
     host: process.env.MM_HOST || '127.0.0.1',

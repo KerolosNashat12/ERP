@@ -34,7 +34,10 @@ globalThis.localStorage = {
 };
 globalThis.document = { documentElement: {} };
 
-const { t, tCode, setLanguage } = await import('../public/js/core/i18n.js');
+const {
+  t, tCode, tError, tPermission, setLanguage,
+} = await import('../public/js/core/i18n.js');
+const { MODULES } = await import('../src/shared/permissions.js');
 
 /**
  * The codes the server really sends, taken from where it sends them:
@@ -125,6 +128,64 @@ test('API codes are translated, not printed', async (ctx) => {
     assert.equal(tCode('low_stock'), t('lowStock'));
     // A code that is already one word is left exactly as it is.
     assert.equal(tCode('delivered'), t('delivered'));
+  });
+
+  /**
+   * The refusals the API sends, in the language the person is reading.
+   *
+   * This is the fence around the bug in the photograph: a red toast reading
+   * "Creating a backup is not available on this deployment: the database runs
+   * on libsql…" on an Arabic screen. The server writes its sentences in
+   * English and always will; what it must also send is a CODE, and a code this
+   * dictionary can translate. A code with no words for it falls back to the
+   * English sentence — which is exactly the failure this list prevents.
+   */
+  await ctx.test('every error code the API sends is written in both languages', () => {
+    const CODES = [
+      ['EXPORT_RATE_LIMITED', { retryAfterSeconds: 480, reason: 'cooldown', limit: 6 }],
+      ['EXPORT_RATE_LIMITED', { retryAfterSeconds: 3600, reason: 'daily', limit: 6 }],
+      ['EXPORT_IN_PROGRESS', null],
+      ['FILE_BACKUP_UNAVAILABLE', { driver: 'libsql' }],
+      ['PERMISSION_NOT_DELEGATABLE', { codes: ['settings.export_data'] }],
+      ['BACKUP_TOO_LARGE', null],
+      ['REQUEST_IN_PROGRESS', null],
+      ['MODULE_NOT_ENABLED', { module: 'costs' }],
+      ['FORBIDDEN', null],
+      ['UNAUTHORIZED', null],
+    ];
+    const english = 'the English sentence the server sent';
+    for (const [code, details] of CODES) {
+      setLanguage('en');
+      const en = tError({ code, details, message: english });
+      setLanguage('ar');
+      const ar = tError({ code, details, message: english });
+      assert.notEqual(en, english, `${code} falls through to the server's English`);
+      assert.notEqual(ar, english, `${code} has no Arabic — the server's English reaches the screen`);
+      assert.notEqual(ar, en, `${code} is the same in both languages, so the Arabic is missing`);
+      for (const text of [en, ar]) {
+        assert.ok(!/\{\w+\}/.test(text), `${code} left a {placeholder} unfilled: ${text}`);
+      }
+    }
+  });
+
+  /**
+   * The words on the permission checkboxes, read out of `MODULES` rather than
+   * listed here — so a permission added later is covered without anybody
+   * remembering this file. They used to be the raw code: an Arabic screen of
+   * checkboxes labelled `reverse_payment` and `return_no_receipt`.
+   */
+  await ctx.test('every permission action has words in both languages', () => {
+    const actions = [...new Set(Object.values(MODULES).flat())];
+    assert.ok(actions.length > 15, 'the actions were read out of permissions.js');
+    for (const action of actions) {
+      setLanguage('en');
+      const en = tPermission(action);
+      setLanguage('ar');
+      const ar = tPermission(action);
+      assert.notEqual(en, action, `"${action}" has no English label — the code is the label`);
+      assert.notEqual(ar, action, `"${action}" has no Arabic label`);
+      assert.notEqual(ar, en, `"${action}" falls back to English on the Arabic screen`);
+    }
   });
 
   await ctx.test('an unknown code still returns something printable', () => {
