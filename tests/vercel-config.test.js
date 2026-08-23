@@ -88,6 +88,29 @@ test('vercel.json can actually be deployed', async (ctx) => {
     }
   });
 
+  await ctx.test('the console does not promise a cadence this plan cannot keep', () => {
+    /**
+     * The owner's console tells him how fresh a figure is, so a sentence in it
+     * naming an interval is a claim about `vercel.json` written in a different
+     * file. One said "the hourly sweep" long after the schedule became daily —
+     * on the one screen whose entire job is to say when a number was last read.
+     *
+     * The fix was to stop naming the interval rather than to keep two files in
+     * step, so this asserts the absence: no cadence word in the sweep copy.
+     */
+    const copy = fs.readFileSync(
+      path.join(here, '..', 'public', 'platform', 'js', 'core', 'i18n.fleet.js'), 'utf8',
+    );
+    for (const claim of [/hourly/i, /every hour/i, /كل ساعة/]) {
+      assert.ok(
+        !claim.test(copy),
+        `the fleet console still says ${claim} — the schedule lives in vercel.json, `
+        + 'and on a Hobby account it can only be daily. Describe the sweep without '
+        + 'naming an interval.',
+      );
+    }
+  });
+
   await ctx.test('every scheduled path is a route that exists', () => {
     // A cron pointing at nothing is a job that runs and 404s every night in a
     // log nobody reads.

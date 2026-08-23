@@ -34,12 +34,12 @@ export const fleetStrings = {
     neverMeasuredTitle: 'Some shops have never been measured.',
     neverMeasuredHint: 'Their rows show dashes rather than zeros — nobody has read them yet:',
     summarySource: 'Written by',
-    sourceCron: 'the hourly sweep',
+    sourceCron: 'the scheduled sweep',
     sourceRequest: 'the shop itself',
     sourceConsole: 'this console',
     sourceBackfill: 'this page',
     sweepOffTitle: 'Nothing is refreshing these figures automatically.',
-    sweepOffHint: 'This deployment has no CRON_SECRET, so the hourly sweep never runs. '
+    sweepOffHint: 'This deployment has no CRON_SECRET, so the scheduled sweep never runs — and neither do the automatic backups, which the same secret switches on. '
       + 'Add it to the project\'s environment variables and redeploy, or press "Refresh now" when you need current numbers.',
     todayFromShops: 'from {shops} of {total} shops read today',
     todayUnknown: 'not read today',
@@ -67,12 +67,12 @@ export const fleetStrings = {
     neverMeasuredTitle: 'بعض المتاجر لم تُقرأ ولا مرة.',
     neverMeasuredHint: 'صفوفها تعرض شرطات بدلًا من أصفار — لم يقرأها أحد بعد:',
     summarySource: 'كتبها',
-    sourceCron: 'الجولة كل ساعة',
+    sourceCron: 'الجولة المجدولة',
     sourceRequest: 'المتجر نفسه',
     sourceConsole: 'هذه اللوحة',
     sourceBackfill: 'هذه الشاشة',
     sweepOffTitle: 'لا شيء يحدّث هذه الأرقام تلقائيًا.',
-    sweepOffHint: 'هذا النشر ليس فيه CRON_SECRET، فالجولة كل ساعة لا تعمل أبدًا. '
+    sweepOffHint: 'هذا النشر ليس فيه CRON_SECRET، فالجولة المجدولة لا تعمل أبدًا — ولا النسخ الاحتياطية التلقائية، لأن نفس المفتاح هو اللي بيشغّلها. '
       + 'أضِفه إلى متغيرات البيئة في المشروع وأعد النشر، أو اضغط «حدّث الآن» وقت ما تحتاج أرقامًا حالية.',
     todayFromShops: 'من {shops} من {total} متجر قُرئت اليوم',
     todayUnknown: 'لم تُقرأ اليوم',

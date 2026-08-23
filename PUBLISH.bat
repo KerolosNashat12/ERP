@@ -71,7 +71,7 @@ if exist "hosted-db-setup.txt" del /f /q "hosted-db-setup.txt" >> "%LOG%" 2>&1
 echo.
 echo   Committing...
 git add -A >> "%LOG%" 2>&1
-git -c user.email="kerolosnashatestfanous@gmail.com" -c user.name="KerolosNashat12" commit -m "An optimisation that the host refuses must fail like an optimisation: migration 014 ran ANALYZE, Turso rejects the statement outright, and because a migration runs in a transaction the refusal aborted every request on every surface within seconds of the deploy. ANALYZE and PRAGMA optimize now go through a helper that asks the driver first and treats a refusal as carry on, with a source scan so no migration can go round it" >> "%LOG%" 2>&1
+git -c user.email="kerolosnashatestfanous@gmail.com" -c user.name="KerolosNashat12" commit -m "The console stops promising a cadence it does not control: it said the sweep ran hourly long after the schedule became daily, on the one screen whose job is to say how fresh a number is. It now names no interval, says that the same secret also switches on the automatic backups, and a test asserts the absence so the sentence cannot drift back" >> "%LOG%" 2>&1
 if errorlevel 1 echo   Nothing new to commit - pushing whatever is outstanding.
 
 echo   Pushing (your connection to GitHub drops sometimes, so this retries)...
