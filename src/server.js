@@ -5,6 +5,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { exec } from 'node:child_process';
 import config from './config/index.js';
+import { VERIFICATION_FILES } from './shared/siteVerification.js';
 import {
   initDb, applySchema, getDb, closeDb, driverName,
 } from './infrastructure/database/connection.js';
@@ -158,6 +159,30 @@ export function createApp() {
   app.get(['/kj', '/kj/*'], (_req, res) => {
     res.sendFile(path.join(config.paths.public, 'kj', 'index.html'));
   });
+
+  /**
+   * Search-engine ownership files, at the root and under every tenant prefix.
+   *
+   * Registered HERE — before the platform block, before every static mount and
+   * long before the `/t/:slug*` page catch-all — because the catch-all answers
+   * an unknown address with the SPA shell, and a verification file that comes
+   * back as somebody's shop is reported by Google as WRONG CONTENT rather than
+   * as missing. See `shared/siteVerification.js` for the whole story.
+   *
+   * Deliberately not behind `resolveTenant` or the website gate: this proves
+   * who owns an ADDRESS, not who owns a shop, and it has to keep answering
+   * while a shop is suspended or its website is switched off — which is
+   * exactly when an owner is most likely to be in Search Console looking.
+   */
+  for (const [name, body] of Object.entries(VERIFICATION_FILES)) {
+    const serve = (_req, res) => {
+      // `text/plain` because that is what these are; Google accepts either but
+      // sending HTML that is not HTML is how the catch-all caused this.
+      res.type('text/plain').send(body);
+    };
+    app.get(`/${name}`, serve);
+    app.get(`/t/:slug/${name}`, serve);
+  }
 
   /**
    * What that page says, and the pictures on it — public, and mounted in BOTH

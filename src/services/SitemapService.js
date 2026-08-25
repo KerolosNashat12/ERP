@@ -39,6 +39,7 @@
  * for a price. Five minutes, so switching a website off still takes a shop's
  * addresses out of circulation within the same window everything else uses.
  */
+import { verificationPaths } from '../shared/siteVerification.js';
 import storefront from './StorefrontService.js';
 import { shopUrl, slugFor, withLanguage } from '../../public/shared/shopUrls.js';
 
@@ -248,6 +249,20 @@ export function robotsTxt({ sitemapUrl = '', prefixes = [''] } = {}) {
    */
   lines.push('Allow: /shared/');
   lines.push('Allow: /kj');
+  /**
+   * The files Google and Bing fetch to prove the owner controls this address.
+   *
+   * `Disallow: /` above is the default and it stays. But a crawler that will
+   * not fetch the ownership file cannot verify the site, and the failure is
+   * silent from the owner's side — Search Console simply refuses. Each file is
+   * allowed by NAME, never by pattern, so nothing else opens with them.
+   */
+  const verification = verificationPaths(prefixes);
+  if (verification.length) {
+    lines.push('');
+    lines.push('# Proof this address belongs to its owner.');
+    for (const file of verification) lines.push(`Allow: ${file}`);
+  }
   lines.push('');
   lines.push('# One customer\'s session, and a search space with no bottom to it.');
   for (const root of roots) {
