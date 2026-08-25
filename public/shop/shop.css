@@ -2562,12 +2562,22 @@ html[lang="ar"] .foot-col h3 { letter-spacing: .04em; text-transform: none; font
   .checkout-aside { position: sticky; inset-block-start: var(--stick); }
   .foot-inner { grid-template-columns: 2fr 1fr 1fr; gap: var(--sp-8); }
   .panel { padding: var(--sp-6); }
-  .grid { grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); }
+  .grid { grid-template-columns: repeat(auto-fill, minmax(215px, 1fr)); }
 }
 
 @media (min-width: 1100px) {
-  .grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-  .tiles { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  /*
+   * Five across, not four — and by a floor rather than a count.
+   *
+   * Four locked columns on a 1180px page make each card ~280px wide, and the
+   * photo frame is square, so every card is 280px of picture before a word of
+   * it is read: eight products filled a screen and a half. A floor of 210px
+   * lets the page fit what it can — five here, more on a wider screen, four on
+   * a smaller one — and the cards come back to the size of the thing they are
+   * showing.
+   */
+  .grid { grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); }
+  .tiles { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
 }
 
 /* ==========================================================================

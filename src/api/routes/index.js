@@ -474,6 +474,28 @@ router.put('/inventory/adjustments/:id', requirePermission('inventory.adjust'), 
 router.post('/inventory/adjustments/:id/post', requirePermission('inventory.adjust'),
   asyncHandler(async (req, res) => res.json(await inventoryService.postAdjustment(Number(req.params.id), req.context))));
 
+/*
+ * الهدر — what the shop lost. Read by anyone who may see the stock; recorded by
+ * anyone who may adjust it, because writing four broken bottles off IS an
+ * adjustment and must not be a second, looser door onto the same shelf.
+ */
+router.get('/inventory/wastage', requirePermission('inventory.view'), asyncHandler(async (req, res) => {
+  const window = {
+    dateFrom: req.query.dateFrom || null,
+    dateTo: req.query.dateTo || null,
+    warehouseId: req.query.warehouseId ? Number(req.query.warehouseId) : null,
+  };
+  const [summary, rows] = await Promise.all([
+    inventoryService.wastageSummary(window),
+    inventoryService.wastageList(window),
+  ]);
+  res.json({ summary, rows });
+}));
+router.post('/inventory/wastage', requirePermission('inventory.adjust'), validate(v.wastageSchema),
+  asyncHandler(async (req, res) => res.status(201).json(
+    await inventoryService.recordWastage(req.body, req.context),
+  )));
+
 // --------------------------------------------------------------- purchases
 router.get('/purchases', requirePermission('purchases.view'), asyncHandler(async (req, res) => {
   res.json(await purchaseService.list(req.query));

@@ -49,6 +49,12 @@ export const detailStrings = {
     noSalesTitle: 'Nothing sold in this window',
     noSalesBody: 'Widen the window, or check that this shop is ringing up sales.',
     lowStockLabel: 'Low stock',
+    // Beside the takings, not folded into them: a shop that refunded most of
+    // what it sold used to look identical from up here to one that kept it.
+    fleetKept: 'Kept after refunds',
+    fleetRefunds: 'Refunded',
+    fleetWastage: 'Wastage',
+    fleetWastageUnits: 'Pieces lost',
     lowStockHint: 'items at or under their reorder level',
 
     // ── users ──────────────────────────────────────────────────────────────
@@ -202,6 +208,10 @@ export const detailStrings = {
     noSalesTitle: 'لا مبيعات في هذه الفترة',
     noSalesBody: 'وسّع الفترة، أو تأكد أن المتجر يسجّل مبيعاته.',
     lowStockLabel: 'مخزون منخفض',
+    fleetKept: 'الصافي بعد المرتجعات',
+    fleetRefunds: 'المرتجع',
+    fleetWastage: 'الهدر',
+    fleetWastageUnits: 'قطع ضاعت',
     lowStockHint: 'صنف عند حد إعادة الطلب أو أقل منه',
 
     usersTitle: 'من يعمل في هذا المتجر',

@@ -299,14 +299,19 @@ test('the home page is one design, not three', async (ctx) => {
     );
   });
 
-  await ctx.test('every shelf on the home page is a rail', () => {
+  await ctx.test('the rail is for the brands, and the products stay a grid', () => {
+    /**
+     * Every shelf was briefly a rail. The owner looked at it and said put the
+     * products back — and he was right, so this test holds the line rather than
+     * the earlier ambition: a rail is for a long row nobody reads in order,
+     * which sixty brand logos are and eight new arrivals are not.
+     */
     const home = read('public', 'shop', 'js', 'views', 'home.js');
+    assert.match(home, /productGrid\(newest\)/, 'the new arrivals are a grid');
+    assert.match(home, /rail\(brands\.map/, 'the brands are the rail');
     assert.ok(
-      !home.includes('productGrid'),
-      'a grid is back on the home page beside the rails; the point of this pass '
-      + 'was that the page says "here are some things" exactly one way.',
+      !/rail\((newest|featured)\.map/.test(home),
+      'the product shelves are rails again; that was tried and rejected.',
     );
-    // Only the brands move on their own — see the note in home.js.
-    assert.match(home, /drift: false/);
   });
 });

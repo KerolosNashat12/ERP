@@ -168,6 +168,185 @@ function openQuickAdjust(row, refresh) {
 
 // ----------------------------------------------------------------- ledger
 
+/**
+ * الهدر — the losses screen.
+ *
+ * ── Why this page exists ────────────────────────────────────────────────────
+ * The shop could already record a broken bottle: a stock count with the reason
+ * "damage" does it, and always did. Two things were wrong with that as the only
+ * door. The money went nowhere — the stock level moved and the loss appeared in
+ * no report ever again, which is now fixed at the source. And recording one
+ * meant opening a stock count, adding a line, working out what the shelf holds,
+ * typing what is left rather than what was lost, saving, and posting: five
+ * steps and one subtraction, for something that happens with a dustpan in the
+ * other hand.
+ *
+ * Here it is one line: the piece, how many, and why. The document underneath is
+ * exactly the same stock adjustment — same movement, same audit trail, same
+ * everything — because a second mechanism for taking stock off a shelf is a
+ * second version of the truth.
+ */
+export async function wastageView(root, route) {
+  const state = {
+    dateFrom: route.query.from || monthStart(),
+    dateTo: route.query.to || '',
+  };
+
+  const host = h('div', {}, spinner());
+  const recordButton = can('inventory.adjust')
+    ? h('button', { class: 'btn gold', onclick: () => openRecord(load) }, `＋ ${t('recordWastage')}`)
+    : null;
+
+  const filters = h('div', { class: 'row', style: { gap: '8px', flexWrap: 'wrap' } },
+    field(t('from'), textInput({
+      type: 'date',
+      value: state.dateFrom,
+      onchange: (e) => { state.dateFrom = e.target.value; load(); },
+    })),
+    field(t('to'), textInput({
+      type: 'date',
+      value: state.dateTo,
+      onchange: (e) => { state.dateTo = e.target.value; load(); },
+    })));
+
+  mount(root,
+    h('div', { class: 'page-head' },
+      h('div', {},
+        h('h2', {}, t('wastage')),
+        h('p', {}, t('wastageHint'))),
+      h('span', { class: 'spacer' }),
+      recordButton),
+    h('div', { class: 'card' }, h('div', { class: 'card-body tight' }, filters)),
+    host);
+
+  async function load() {
+    mount(host, spinner());
+    try {
+      const data = await api.get('/api/inventory/wastage', {
+        dateFrom: state.dateFrom || undefined,
+        dateTo: state.dateTo || undefined,
+      });
+      render(data);
+    } catch (error) {
+      toastError(error);
+      mount(host, h('div', { class: 'empty' }, error.message));
+    }
+  }
+
+  function render(data) {
+    const s = data.summary;
+    const kpi = (label, value, sub) => h('div', { class: 'kpi' },
+      h('div', { class: 'label' }, label),
+      h('div', { class: 'value' }, value),
+      sub ? h('div', { class: 'sub' }, sub) : null);
+
+    mount(host,
+      h('div', { class: 'kpis' },
+        // The money first. That is the number this page exists to put in front
+        // of somebody: the units are how it happened, the cost is what it did.
+        kpi(t('wastage'), money(s.value), `${number(s.units)} ${t('qty')}`),
+        ...s.byReason.map((row) => kpi(t(camel(row.reason), row.reason),
+          money(row.value), `${number(row.units)} ${t('qty')}`))),
+      h('div', { class: 'card', style: { marginTop: '14px' } },
+        h('div', { class: 'card-body tight' },
+          dataTable({
+            columns: [
+              { key: 'adjustment_no', label: t('document'), class: 'mono small' },
+              { key: 'posted_at', label: t('date'), render: (r) => dateTime(r.posted_at) },
+              { key: 'reason', label: t('reason'), render: (r) => tag(t(camel(r.reason), r.reason), 'warn') },
+              { key: 'items', label: t('items'), render: (r) => h('span', { class: 'small' }, r.items || '—') },
+              { key: 'units', label: t('qty'), align: 'end', render: (r) => number(r.units) },
+              { key: 'value', label: t('cost'), align: 'end', render: (r) => h('span', { class: 'mono' }, money(r.value)) },
+              { key: 'posted_by_name', label: t('user') },
+              {
+                key: '__open',
+                label: '',
+                width: '1%',
+                render: (r) => h('button', {
+                  class: 'btn sm ghost', title: t('view'),
+                  onclick: () => navigate(`adjustments/${r.id}`),
+                }, '👁'),
+              },
+            ],
+            rows: data.rows,
+            empty: t('noWastageYet'),
+          }))));
+  }
+
+  await load();
+}
+
+/** The first of this month — the window this page opens on. */
+function monthStart() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+}
+
+/**
+ * Record a loss: the piece, how many, and why.
+ *
+ * The quantity asked for is what was LOST, not what is left. That is the whole
+ * ergonomic difference from a stock count, and it is the way a person actually
+ * holds the fact: "two broke", never "eighteen remain".
+ */
+function openRecord(refresh) {
+  let chosen = null;
+  const chosenHost = h('div', { class: 'muted small' }, t('pickAnItem'));
+
+  const form = buildForm([
+    {
+      name: 'quantity', label: t('lostQty'), type: 'number', required: true, min: 0.001, step: '0.001',
+    },
+    {
+      name: 'reason',
+      label: t('reason'),
+      type: 'select',
+      required: true,
+      options: ['damage', 'loss', 'theft', 'expiry'].map((v) => ({ value: v, label: t(camel(v)) })),
+    },
+    { name: 'notes', label: t('notes'), type: 'textarea', span: 2 },
+  ], { reason: 'damage', quantity: 1 }, { columns: 2 });
+
+  const picker = variantPicker({
+    onPick: (variant) => {
+      chosen = variant;
+      mount(chosenHost, h('div', {},
+        h('div', { class: 'strong' }, `${pick(variant, 'product_name')} — ${variant.variant_label || ''}`),
+        h('div', { class: 'muted small' }, `${variant.sku} · ${t('onHand')}: ${number(variant.on_hand ?? 0)}`)));
+    },
+  });
+
+  const dialog = modal({
+    title: t('recordWastage'),
+    size: 'wide',
+    body: h('div', { class: 'stack' },
+      picker.node,
+      h('div', { class: 'card' }, h('div', { class: 'card-body tight' }, chosenHost)),
+      form.node),
+    footer: h('div', { class: 'row', style: { gap: '8px', justifyContent: 'flex-end' } },
+      h('button', { class: 'btn ghost', onclick: () => dialog.close() }, t('cancel')),
+      h('button', {
+        class: 'btn gold',
+        onclick: async () => {
+          if (!chosen) { toast(t('pickAnItem'), 'warn'); return; }
+          if (!form.validate()) return;
+          const values = form.values();
+          try {
+            await api.post('/api/inventory/wastage', {
+              variantId: chosen.variant_id,
+              quantity: Number(values.quantity),
+              reason: values.reason,
+              notes: values.notes || null,
+            });
+            toast(t('saved'));
+            dialog.close();
+            refresh();
+          } catch (error) { toastError(error); }
+        },
+      }, t('save'))),
+  });
+}
+
 export async function movementsView(root, route) {
   const state = {
     search: '', variantId: route.query.variantId || '', movementType: '',

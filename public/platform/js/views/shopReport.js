@@ -110,6 +110,29 @@ function renderReport(data) {
       }),
     ),
 
+    /*
+     * What came back, and what was lost.
+     *
+     * The console showed takings and nothing else, so a shop that refunded most
+     * of what it sold looked identical from up here to one that kept all of it.
+     * Beside the revenue rather than folded into it: both halves visible, and
+     * neither number inferred from the other.
+     */
+    metricStrip([
+      { label: t('fleetKept'), value: money(totals.netRevenue, currency) },
+      {
+        label: t('fleetRefunds'),
+        value: money(totals.refunds, currency),
+        tone: totals.refunds > 0 ? 'warn' : '',
+      },
+      {
+        label: t('fleetWastage'),
+        value: money(totals.wastage, currency),
+        tone: totals.wastage > 0 ? 'warn' : '',
+      },
+      { label: t('fleetWastageUnits'), value: int(totals.wastageUnits) },
+    ]),
+
     metricStrip([
       { label: t('usersTotal'), value: int(totals.users) },
       { label: t('productsTotal'), value: int(totals.products) },

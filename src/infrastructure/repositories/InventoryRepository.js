@@ -247,6 +247,44 @@ export class StockAdjustmentRepository extends BaseRepository {
     return { value: row.value, units: row.units, documents: row.documents };
   }
 
+  /**
+   * The documents behind the wastage figure, newest first.
+   *
+   * One row per adjustment rather than per line, because that is the unit a
+   * person recognises: "the four bottles Hoda wrote off on Tuesday".
+   */
+  async wastageDocuments({ dateFrom, dateTo, warehouseId, limit = 100 } = {}) {
+    const where = [
+      "a.status = 'posted'",
+      "a.reason IN ('damage', 'loss', 'theft', 'expiry')",
+    ];
+    const params = [];
+    if (dateFrom) { where.push('date(a.posted_at) >= date(?)'); params.push(dateFrom); }
+    if (dateTo) { where.push('date(a.posted_at) <= date(?)'); params.push(dateTo); }
+    if (warehouseId) { where.push('a.warehouse_id = ?'); params.push(warehouseId); }
+
+    return this.db.prepare(`
+      SELECT a.id            AS id,
+             a.adjustment_no AS adjustment_no,
+             a.reason        AS reason,
+             a.posted_at     AS posted_at,
+             a.notes         AS notes,
+             u.full_name     AS posted_by_name,
+             (SELECT ROUND(SUM(-l.difference), 3) FROM stock_adjustment_lines l
+               WHERE l.adjustment_id = a.id AND l.difference < 0) AS units,
+             (SELECT ROUND(SUM(-l.difference * l.unit_cost), 2) FROM stock_adjustment_lines l
+               WHERE l.adjustment_id = a.id AND l.difference < 0) AS value,
+             (SELECT GROUP_CONCAT(v.sku, ', ') FROM stock_adjustment_lines l
+                JOIN product_variants v ON v.id = l.variant_id
+               WHERE l.adjustment_id = a.id AND l.difference < 0) AS items
+      FROM stock_adjustments a
+      LEFT JOIN users u ON u.id = a.posted_by
+      WHERE ${where.join(' AND ')}
+      ORDER BY a.posted_at DESC, a.id DESC
+      LIMIT ?
+    `).all(...params, Math.min(Number(limit) || 100, 500));
+  }
+
   /** The same loss, split by what caused it — broken, lost, stolen, expired. */
   async wastageByReason({ dateFrom, dateTo, warehouseId } = {}) {
     const where = [

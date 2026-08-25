@@ -256,6 +256,19 @@ export const adjustmentSchema = z.object({
   })).min(1, 'Add at least one line'),
 });
 
+/**
+ * الهدر. The reasons are the losing subset of an adjustment's reasons —
+ * `stock_take` and `correction` are bookkeeping, not loss, and are refused here
+ * so that the wastage figure cannot be polluted from this door.
+ */
+export const wastageSchema = z.object({
+  variantId: id,
+  warehouseId: id.optional().nullable(),
+  quantity: z.coerce.number().positive('How many were lost?'),
+  reason: z.enum(['damage', 'loss', 'theft', 'expiry']),
+  notes: optionalString,
+});
+
 export const quickAdjustSchema = z.object({
   variantId: id,
   warehouseId: id.optional().nullable(),

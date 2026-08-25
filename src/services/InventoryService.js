@@ -137,6 +137,99 @@ export class InventoryService {
     });
   }
 
+  // ------------------------------------------------------------------ wastage
+
+  /**
+   * الهدر — a bottle knocked off the counter, a watch that stopped, a piece
+   * that walked out of the door.
+   *
+   * ── Why it is an adjustment and not a table of its own ───────────────────
+   * Because it IS one. A stock adjustment already carries a warehouse, a
+   * reason — `damage`, `loss`, `theft`, `expiry` — lines with a quantity and a
+   * unit cost, a posted-at, an actor and an audit trail, and posting one moves
+   * the stock through the same `postMovement` every other document uses. A
+   * second table would be a second way to take stock off a shelf, and the day
+   * the two disagreed the shop would have no way of knowing which was right.
+   *
+   * What was missing was never the record. It was that the MONEY went nowhere:
+   * the stock level moved and the loss then appeared in no tile, no report and
+   * no profit figure ever again. That is fixed in the reports; this is the door
+   * the shop records it through, in one step instead of five.
+   *
+   * ── Cost, not price ─────────────────────────────────────────────────────
+   * Valued at the shop's own moving average cost for that shelf. What the piece
+   * WOULD have sold for is not a loss — it was never money — and counting it
+   * would turn every broken bottle into a fictional catastrophe.
+   */
+  async recordWastage({
+    variantId, warehouseId, quantity, reason, notes,
+  }, context = {}) {
+    const WASTE_REASONS = ['damage', 'loss', 'theft', 'expiry'];
+    if (!WASTE_REASONS.includes(reason)) {
+      throw new ValidationError(`"${reason}" is not a kind of loss`);
+    }
+    const lost = round3(Number(quantity));
+    if (!Number.isFinite(lost) || lost <= 0) {
+      throw new ValidationError('How many were lost?');
+    }
+
+    return transaction(async () => {
+      const location = warehouseId || (await this.locationId());
+      const level = await this.inventory.ensureLevel(variantId, location);
+      const onHand = Number(level.quantity || 0);
+      if (lost > onHand) {
+        // Refused rather than allowed negative: a shop that has lost more than
+        // it had has counted something wrong, and writing the shelf negative
+        // hides that instead of surfacing it.
+        throw new BusinessRuleError(
+          `There are ${onHand} on the shelf; ${lost} cannot be written off.`,
+        );
+      }
+
+      const adjustment = await this.adjustments.create({
+        adjustment_no: await this.sequences.next('stock_adjustment'),
+        warehouse_id: location,
+        reason,
+        status: 'draft',
+        notes: notes || null,
+        created_by: context.actor?.id || null,
+      });
+      await this.adjustments.replaceLines(adjustment.id, [{
+        variant_id: variantId,
+        system_qty: onHand,
+        counted_qty: round3(onHand - lost),
+        difference: round3(-lost),
+        unit_cost: Number(level.average_cost || 0),
+        notes: notes || null,
+      }]);
+
+      // Drafted and posted in one act, inside one transaction: a loss recorded
+      // but not posted is a shelf the system still believes is full.
+      await this.postAdjustment(adjustment.id, context);
+      return this.getAdjustment(adjustment.id);
+    });
+  }
+
+  /** The loss, in money and by cause, over a window. */
+  async wastageSummary({ dateFrom, dateTo, warehouseId } = {}) {
+    const window = { dateFrom, dateTo, warehouseId: warehouseId || null };
+    const [totals, byReason] = await Promise.all([
+      this.inventory.wastageTotals(window),
+      this.inventory.wastageByReason(window),
+    ]);
+    return {
+      value: round2(totals.value),
+      units: round3(totals.units),
+      documents: totals.documents,
+      byReason: byReason.map((row) => ({ ...row, value: round2(row.value) })),
+    };
+  }
+
+  /** The documents behind that figure, newest first. */
+  async wastageList(query = {}) {
+    return this.inventory.wastageDocuments(query);
+  }
+
   // -------------------------------------------------------------- adjustments
 
   async listAdjustments(query) {

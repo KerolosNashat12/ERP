@@ -13,7 +13,9 @@ import { dashboardView } from './views/dashboard.js';
 import { posView } from './views/pos.js';
 import { productsView } from './views/catalog.js';
 import { suppliersView, brandsView, categoriesView, customersView, attributesView } from './views/masterData.js';
-import { inventoryView, movementsView, adjustmentsView } from './views/inventory.js';
+import {
+  inventoryView, movementsView, adjustmentsView, wastageView,
+} from './views/inventory.js';
 import { purchasesView } from './views/purchasing.js';
 import { salesView } from './views/sales.js';
 import { webOrdersView } from './views/webOrders.js';
@@ -66,6 +68,13 @@ const NAV = [
       { path: 'inventory', label: 'stockOnHand', icon: '▥', permission: 'inventory.view' },
       { path: 'movements', label: 'movements', icon: '⇄', permission: 'inventory.view' },
       { path: 'adjustments', label: 'adjustments', icon: '✓', permission: 'inventory.view' },
+      /*
+       * الهدر. In المخزون rather than in a group of its own, because a broken
+       * bottle is a stock document before it is a money one — and the money it
+       * costs is already on the dashboard and in the profit report, which is
+       * where a loss is looked FOR rather than looked UP.
+       */
+      { path: 'wastage', label: 'wastage', icon: '⚠', permission: 'inventory.view' },
     ],
   },
   {
@@ -161,7 +170,7 @@ const ROUTE_PERMISSIONS = {
   'web-orders': 'weborders.view',
   products: 'products.view', brands: 'brands.view', categories: 'categories.view',
   attributes: 'attributes.view', labels: 'labels.view', inventory: 'inventory.view',
-  movements: 'inventory.view', adjustments: 'inventory.view',
+  movements: 'inventory.view', adjustments: 'inventory.view', wastage: 'inventory.view',
   purchases: 'purchases.view', suppliers: 'suppliers.view', customers: 'customers.view',
   costs: 'costs.view', 'cost-categories': 'costs.view', employees: 'employees.view',
   'legacy-invoices': 'legacy_invoices.view',
@@ -326,6 +335,7 @@ async function startApp() {
     inventory: inventoryView,
     movements: movementsView,
     adjustments: adjustmentsView,
+    wastage: wastageView,
     purchases: purchasesView,
     suppliers: suppliersView,
     customers: customersView,

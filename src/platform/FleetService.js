@@ -443,6 +443,7 @@ export async function report(slug, { days } = {}) {
     const db = getDb();
     const [
       currency, window, trend, items, counts, lowStock, pending, topProducts, staff,
+      refunded, wasted,
     ] = await Promise.all([
       currencyOf(),
       salesBetween(from, to),
@@ -501,6 +502,36 @@ export async function report(slug, { days } = {}) {
         ORDER BY revenue DESC, u.username ASC
         LIMIT ${STAFF_LIMIT}
       `).all(from, to),
+
+      /**
+       * What came back, and what was lost.
+       *
+       * The console showed a shop's takings and nothing else, so a shop that
+       * refunded most of what it sold and one that kept all of it looked
+       * identical from up here. Revenue above is still gross — the file header
+       * explains why that number must not quietly shrink — so these are shown
+       * BESIDE it rather than folded into it: the owner of the fleet can see
+       * both halves and neither figure has to be inferred from the other.
+       */
+      db.prepare(`
+        SELECT COUNT(*) AS documents, COALESCE(SUM(total_amount), 0) AS amount
+        FROM sales_returns
+        WHERE date(return_date) >= date(?) AND date(return_date) <= date(?)
+      `).get(from, to),
+
+      // الهدر: broken, lost, stolen, expired — at what it cost the shop. The
+      // same definition the shop's own screens use (see
+      // InventoryRepository.wastageTotals), so the two cannot disagree.
+      db.prepare(`
+        SELECT COALESCE(SUM(-l.difference * l.unit_cost), 0) AS amount,
+               COALESCE(SUM(-l.difference), 0) AS units
+        FROM stock_adjustment_lines l
+        JOIN stock_adjustments a ON a.id = l.adjustment_id
+        WHERE a.status = 'posted'
+          AND a.reason IN ('damage', 'loss', 'theft', 'expiry')
+          AND l.difference < 0
+          AND date(a.posted_at) >= date(?) AND date(a.posted_at) <= date(?)
+      `).get(from, to),
     ]);
 
     return {
@@ -519,6 +550,13 @@ export async function report(slug, { days } = {}) {
         products: counts.products,
         lowStock: Number(lowStock?.n || 0),
         webOrdersPending: pending,
+        refunds: round2(refunded?.amount || 0),
+        returns: Number(refunded?.documents || 0),
+        // What the shop kept, said once here so no reader has to do the
+        // subtraction in his head and get it wrong.
+        netRevenue: round2(window.revenue - Number(refunded?.amount || 0)),
+        wastage: round2(wasted?.amount || 0),
+        wastageUnits: round2(wasted?.units || 0),
       },
       trend,
       topProducts: topProducts.map((p) => ({

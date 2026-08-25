@@ -647,6 +647,51 @@ test('what the shop has spent, and what it has actually made', async (t) => {
             + 'would then read as a disaster');
         });
 
+        await wt.test('and the shop can record one in a single act', async () => {
+          /**
+           * The five-step version — open a stock count, add a line, work out
+           * what the shelf holds, type what is LEFT, save, post — is still
+           * there and still correct. This is the door a person uses with a
+           * dustpan in the other hand: the piece, how many were lost, and why.
+           */
+          const before = (await profit()).summary.wastage;
+          const created = await call('/api/inventory/wastage', {
+            method: 'POST',
+            body: {
+              variantId: 1, quantity: 2, reason: 'theft', notes: 'taken from the counter',
+            },
+          });
+          assert.equal(created.status, 201, JSON.stringify(created.data));
+          assert.equal(created.data.status, 'posted',
+            'a loss that is recorded but not posted is a shelf the system still believes is full');
+          await backdate(created.data.id, '2026-03-24T10:00:00.000Z');
+          /*
+           * Valued at the shelf's OWN moving average cost, whatever that is —
+           * asserted against the line the service wrote rather than against a
+           * number copied out of the fixture, because the point being held is
+           * that the two agree.
+           */
+          const line = created.data.lines[0];
+          assert.equal(line.difference, -2);
+          assert.equal(
+            (await profit()).summary.wastage,
+            round(before + 2 * Number(line.unit_cost)),
+          );
+          assert.ok(Number(line.unit_cost) > 0,
+            'a loss valued at zero is a loss the books will never see');
+        });
+
+        await wt.test('and it refuses to write off more than is on the shelf', async () => {
+          const refused = await call('/api/inventory/wastage', {
+            method: 'POST',
+            body: { variantId: 1, quantity: 9999, reason: 'damage' },
+          });
+          // A shop that has lost more than it had has counted something wrong,
+          // and a negative shelf hides that instead of surfacing it.
+          assert.ok(refused.status >= 400 && refused.status < 500,
+            `expected a refusal, got ${refused.status}`);
+        });
+
         await wt.test('the row a person reads still adds up', async () => {
           const march = (await profit()).rows.find((row) => row.month === '2026-03');
           assert.equal(

@@ -8,7 +8,7 @@ import { routePath, slugFor } from '../../../shared/shopUrls.js';
 import { setPageMeta } from '../core/seo.js';
 import { shop, deliverySettings } from '../core/store.js';
 import { money, number } from '../core/format.js';
-import { productCard, taxonomyTile, sectionHead, brandCard, rail } from '../ui/cards.js';
+import { productGrid, taxonomyTile, sectionHead, brandCard, rail } from '../ui/cards.js';
 import { skeletonGrid, errorState, emptyState } from '../ui/states.js';
 
 /**
@@ -195,21 +195,22 @@ export default async function homeView(root) {
   const sections = [];
 
   /*
-   * Every shelf on this page is the same object now: a rail that runs the full
-   * width of its band, scrolls when there is more than fits, and centres itself
-   * when there is not. The page used to be one grid, one wrapped strip of pills
-   * and another grid — three ways of saying "here are some things" stacked on
-   * top of each other.
+   * A GRID, not a rail — and this is a decision that was made twice.
    *
-   * Only the brands drift on their own. A moving row is a pleasure to look at
-   * and a nuisance to read, and it earns its place exactly once: on the strip of
-   * sixty logos nobody reads in order. Categories and products hold still.
+   * Every shelf on this page was briefly a rail, for consistency with the
+   * brands. The shop's owner looked at it and said put the products back, which
+   * is the right call and worth writing down rather than quietly reverting: a
+   * rail is for a long row nobody reads in order, and sixty brand logos are
+   * exactly that. A shopper's categories, and the newest pieces in the shop,
+   * are the opposite — a short set, all of it worth seeing at once, and a grid
+   * shows every one of them without asking anybody to push anything.
+   *
+   * So the rail earns its place once, on the brands, where it started.
    */
   if (categories.length) {
     sections.push(el('section.section',
       sectionHead(t('shopByCategory')),
-      rail(categories.map((row) => taxonomyTile(row, 'category')),
-        { label: t('shopByCategory'), bleed: true, drift: false })));
+      el('div.tiles', categories.map((row) => taxonomyTile(row, 'category')))));
   }
 
   // The white band. The design alternates paper and white full-bleed bands
@@ -230,8 +231,7 @@ export default async function homeView(root) {
     sections.push(el('section.section',
       sectionHead(t('newArrivals'), t('newArrivalsNote'),
         { href: href('products'), label: t('viewAll') }),
-      rail(newest.map((card, index) => productCard(card, { eager: index < 4 })),
-        { label: t('newArrivals'), bleed: true, drift: false })));
+      productGrid(newest)));
   }
 
   /*
@@ -252,8 +252,7 @@ export default async function homeView(root) {
     sections.push(el('section.section.section-band',
       sectionHead(t('bestSellers'), t('bestSellersNote'),
         { href: href('products'), label: t('viewAll') }),
-      rail(featured.map((card) => productCard(card)),
-        { label: t('bestSellers'), bleed: true, drift: false })));
+      productGrid(featured, { eagerCount: 0 })));
   }
 
   if (!sections.length) {
