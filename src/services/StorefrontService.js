@@ -516,9 +516,11 @@ export class StorefrontService {
       SELECT b.id       AS id,
              b.name_en  AS name_en,
              b.name_ar  AS name_ar,
-             -- The storefront never used to read this. The brands rail does:
-             -- a logo where the shop recorded one, a letter where it did not.
+             -- The storefront never used to read either of these. The brands
+             -- rail does: a picture the shop uploaded, a URL it recorded, or the
+             -- brand's first letter — in that order.
              b.logo_url AS logo_url,
+             EXISTS (SELECT 1 FROM web_assets w WHERE w.slot = 'brand:' || b.id) AS has_logo,
              NULL       AS parent_id,
              (SELECT COUNT(*) FROM products p
                WHERE p.brand_id = b.id AND ${PUBLISHED_PRODUCT}) AS product_count
@@ -635,7 +637,7 @@ export class StorefrontService {
     if (!row) throw new NotFoundError('Product', id);
 
     // Independent reads: the photos do not depend on the variants.
-    const [variants, images] = await Promise.all([
+    const [variants, images, options] = await Promise.all([
       this.#variants([productId], { includeAvailable: true }),
       this.db.prepare(`
         SELECT i.id     AS id,
@@ -646,6 +648,7 @@ export class StorefrontService {
         WHERE i.product_id = ?
         ORDER BY i.display_order, i.id
       `).all(productId),
+      this.#variantOptions(productId),
     ]);
 
     return {
@@ -689,6 +692,12 @@ export class StorefrontService {
         available: v.available === null || v.available === undefined
           ? null
           : Number(v.available),
+        /**
+         * What this variant IS, in the shop's own words: `الحجم: ٣٠ مل`,
+         * `اللون: أسود`. Empty for a shop that never set an attribute up, which
+         * is why the storefront still falls back to `variant_label`.
+         */
+        options: options.get(v.id) || [],
       })),
     };
   }
@@ -842,6 +851,57 @@ export class StorefrontService {
         AND v.product_id IN (${placeholders})
       ORDER BY v.product_id, v.id
     `).all(threshold, ...productIds);
+  }
+
+  /**
+   * The attributes behind a product's variants — the NAMES, not just the labels.
+   *
+   * `variant_label` is a shorthand somebody typed ("30ml / Black"); it is one
+   * string and it does not say what either half of it means. The shop has
+   * already recorded the real thing — an attribute with a name, and a value with
+   * a name and sometimes a colour — and until now the storefront never read it,
+   * so a customer picking between nine options was picking between nine
+   * transliterated words with no heading over them.
+   *
+   * One query per product page. Only the detail page needs this: a listing
+   * shows a card, not a choice.
+   */
+  async #variantOptions(productId) {
+    const rows = await this.db.prepare(`
+      SELECT vav.variant_id        AS variant_id,
+             a.id                  AS attribute_id,
+             a.name_en             AS attribute_en,
+             a.name_ar             AS attribute_ar,
+             a.input_type          AS input_type,
+             av.id                 AS value_id,
+             av.value_en           AS value_en,
+             av.value_ar           AS value_ar,
+             av.color_hex          AS color_hex
+      FROM variant_attribute_values vav
+      JOIN product_variants v  ON v.id = vav.variant_id
+      JOIN attributes a        ON a.id = vav.attribute_id
+      JOIN attribute_values av ON av.id = vav.attribute_value_id
+      WHERE v.product_id = ? AND v.is_active = 1
+        AND a.is_active = 1 AND av.is_active = 1
+      ORDER BY a.display_order, a.id, av.display_order, av.id
+    `).all(productId);
+
+    const byVariant = new Map();
+    for (const row of rows) {
+      const list = byVariant.get(row.variant_id) || [];
+      list.push({
+        attribute_id: row.attribute_id,
+        attribute_en: row.attribute_en,
+        attribute_ar: row.attribute_ar,
+        input_type: row.input_type,
+        value_id: row.value_id,
+        value_en: row.value_en,
+        value_ar: row.value_ar,
+        color_hex: row.color_hex,
+      });
+      byVariant.set(row.variant_id, list);
+    }
+    return byVariant;
   }
 
   async #lowStockThreshold() {

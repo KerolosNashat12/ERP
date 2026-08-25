@@ -197,6 +197,63 @@ test('purchase order: create, approve, receive — stock and cost update', async
   state.poId = po.id;
 });
 
+test('a brand carries its own logo', async (ctx) => {
+  /**
+   * The storefront's brands rail shows a picture where the shop has one and a
+   * letter where it does not, and until this existed no shop had one: the only
+   * way to fill `logo_url` was to type a link to somebody else\'s website into a
+   * text field. The bytes now live in `web_assets` under a slot named for the
+   * brand — the same table, service and audit trail as the banner and the shop\'s
+   * own logo, rather than a second way to store a picture.
+   */
+  // A 1×1 transparent PNG. The point is the round trip, not the picture.
+  const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+  const brands = await api('/api/brands?all=1');
+  const brand = brands.rows[0];
+  assert.ok(brand, 'the seed has no brands to hang a logo on');
+
+  await ctx.test('it starts with none, and the list says so', async () => {
+    const state = await api(`/api/brands/${brand.id}/logo`);
+    assert.equal(state.hasImage, false);
+    const listed = await api('/api/brands?all=1');
+    assert.equal(listed.rows.find((row) => row.id === brand.id).has_logo, 0);
+  });
+
+  await ctx.test('it is stored as the type it was sent as', async () => {
+    const saved = await api(`/api/brands/${brand.id}/logo`, { method: 'PUT', body: { dataUrl: png } });
+    assert.equal(saved.hasImage, true);
+    // A logo re-encoded to JPEG would arrive with a white rectangle behind it
+    // and wear that rectangle on every dark band of the site.
+    assert.equal(saved.contentType, 'image/png');
+  });
+
+  await ctx.test('the list can then be scanned for the ones still missing one', async () => {
+    const listed = await api('/api/brands?all=1');
+    assert.equal(listed.rows.find((row) => row.id === brand.id).has_logo, 1);
+  });
+
+  await ctx.test('and the public storefront serves it without a login', async () => {
+    const res = await fetch(`${base}/api/shop/brands/${brand.id}/logo`);
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get('content-type'), 'image/png');
+    // Not `immutable`: the address has no id in it, so a replaced logo must not
+    // be answered from a year-old cache.
+    assert.match(res.headers.get('cache-control') || '', /max-age=300/);
+  });
+
+  await ctx.test('an id that is not a brand gets a 404, not a slot', async () => {
+    await assert.rejects(
+      () => api('/api/brands/999999/logo', { method: 'PUT', body: { dataUrl: png } }),
+      (error) => error.status === 404,
+    );
+  });
+
+  await ctx.test('and removing it puts the letter back', async () => {
+    const cleared = await api(`/api/brands/${brand.id}/logo`, { method: 'DELETE' });
+    assert.equal(cleared.hasImage, false);
+  });
+});
+
 test('a purchase order discount is a rate, and the money follows the lines', async (ctx) => {
   /**
    * The supplier says five percent; nobody should be doing his arithmetic by

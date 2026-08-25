@@ -446,6 +446,11 @@ const dictionary = {
     photoCompressHint: 'Resized to 1400 px and compressed here in the browser — a phone photo ends up around 120 KB',
     savePhotosFirst: 'Save the product first — photos are attached to a product that already exists.',
     noPhotosYet: 'No photos yet',
+    // A brand's own mark, shown in the storefront's brands rail.
+    logo: 'Logo',
+    replace: 'Replace',
+    brandLogoHint: 'Shown on the website beside the brand\u2019s name. A PNG with a '
+      + 'transparent background looks best; anything larger than 250 KB is scaled down.',
     mainPhoto: 'Main',
     makeMainPhoto: 'Make this the main photo',
     removePhoto: 'Remove photo',
@@ -1173,6 +1178,10 @@ const dictionary = {
     photoCompressHint: 'الصورة بتتصغّر لـ ١٤٠٠ بكسل وبتتضغط في المتصفح — صورة الموبايل بتبقى حوالي ١٢٠ كيلوبايت',
     savePhotosFirst: 'احفظ المنتج الأول — الصور بتتربط بمنتج موجود بالفعل.',
     noPhotosYet: 'لا توجد صور بعد',
+    logo: 'الشعار',
+    replace: 'تغيير الصورة',
+    brandLogoHint: 'بتظهر في الموقع جنب اسم الماركة. أفضل حاجة PNG بخلفية شفافة، '
+      + 'وأي صورة أكبر من ٢٥٠ كيلوبايت بتصغّر لوحدها.',
     mainPhoto: 'رئيسية',
     makeMainPhoto: 'اجعلها الصورة الرئيسية',
     removePhoto: 'حذف الصورة',

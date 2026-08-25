@@ -104,8 +104,8 @@ test('the option picker is a set of choices, not a staircase', async (ctx) => {
 
   await ctx.test('a price is shown only where it actually differs', () => {
     assert.match(
-      productJs, /priceVaries/,
-      'variantPicker prints a price on every chip again — under a heading that '
+      productJs, /pricesVary/,
+      'the picker prints a price on every chip again — under a heading that '
       + 'already says it, in the largest type on the page.',
     );
     assert.match(
@@ -120,6 +120,29 @@ test('the option picker is a set of choices, not a staircase', async (ctx) => {
       productJs, /field-chosen/,
       'nothing writes the chosen option into the field label — which leaves "which '
       + 'one am I buying" answerable only by spotting which of nine borders is darker.',
+    );
+  });
+
+  await ctx.test("the heading is the shop's own word for the attribute", () => {
+    /**
+     * `variant_label` is a shorthand somebody typed. The ERP already holds the
+     * real thing — an attribute named الحجم with values named ٣٠ مل — and the
+     * storefront read none of it, so nine options sat under a generic heading.
+     */
+    assert.match(
+      productJs, /attributeGroups/,
+      'the picker no longer groups by the shop\'s own attributes, so the page is '
+      + 'back to nine transliterated words with nothing over them.',
+    );
+    assert.match(
+      productJs, /groupName/,
+      "the attribute's own name must head its row — that is the whole point of "
+      + 'reading the attributes at all.',
+    );
+    assert.match(
+      productJs, /labelPicker/,
+      'the fallback for a shop that has not set attributes up is gone; that is '
+      + 'most shops on their first day.',
     );
   });
 });
@@ -158,19 +181,45 @@ test('the brands rail scrolls when it is pushed and holds still when it is not',
     );
   });
 
-  await ctx.test('nothing animates it on its own', () => {
+  await ctx.test('it drifts, and it stops the moment somebody goes near it', () => {
     /**
-     * A marquee looks alive in a screenshot and is miserable to use: every
-     * target is moving, so clicking the brand you spotted means chasing it. If
-     * one is ever added, this is the test that should be argued with first.
+     * The objection to a moving row of links is that every target is moving, so
+     * clicking the brand you spotted means chasing it. The drift is only
+     * defensible because these four lines are here: pointer over it, keyboard
+     * focus inside it, a finger on it, or a wheel turned, and it halts. Delete
+     * any one of them and the row becomes the thing the objection describes.
      */
-    const rail = ruleFor('.rail-track');
-    assert.ok(
-      !/animation/.test(rail),
-      'the brands rail animates itself — a moving row of links is a row of links '
-      + 'that has to be caught before it can be clicked.',
+    for (const guard of ['pointerenter', 'focusin', 'touchstart', 'wheel']) {
+      assert.match(
+        cardsJs, new RegExp(`'${guard}'`),
+        `the rail no longer pauses on ${guard} — a moving row of links has to be `
+        + 'caught before it can be clicked.',
+      );
+    }
+    assert.match(
+      cardsJs, /prefers-reduced-motion/,
+      'the drift ignores a reader who asked their system for less motion.',
     );
-    assert.match(rail, /overflow-x:\s*auto/, 'the rail must scroll by finger, wheel and keyboard');
+    assert.match(
+      cardsJs, /document\.hidden/,
+      'the drift keeps running in a background tab, on somebody\'s phone battery.',
+    );
+    assert.match(
+      ruleFor('.rail-track'), /overflow-x:\s*auto/,
+      'the rail must still scroll by finger, wheel and keyboard',
+    );
+  });
+
+  await ctx.test('the second copy that makes the loop seamless is hidden from readers', () => {
+    assert.match(
+      cardsJs, /'aria-hidden': 'true'[\s\S]{0,80}cloneNode/,
+      'the cloned half of the rail is announced too, so the shop appears to stock '
+      + 'twice as many brands as it does.',
+    );
+    assert.match(
+      cardsJs, /link\.tabIndex = -1/,
+      'the clones are still in the tab order — Tab would walk sixty brands twice.',
+    );
   });
 
   await ctx.test('the arrows disappear when there is nothing to scroll to', () => {

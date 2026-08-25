@@ -170,6 +170,17 @@ export const api = {
 export const imageUrl = (id) => (id ? `${apiBase()}/api/shop/images/${id}` : null);
 
 /**
+ * A brand's own logo, uploaded against the brand in the ERP.
+ *
+ * Its own function rather than `imageUrl`, because it is not a product photo:
+ * it lives in `web_assets` under a slot named for the brand, and the address
+ * carries the brand's id rather than an image's — so replacing the picture does
+ * not change the URL, which is why the server serves it with a short cache
+ * rather than the year a product photo gets.
+ */
+export const brandLogoUrl = (brandId) => `${apiBase()}/api/shop/brands/${Number(brandId)}/logo`;
+
+/**
  * A root-relative asset path from `/api/shop/config` (`branding.logo`,
  * `banner.image`), moved into this tenant's own space.
  *

@@ -40,8 +40,22 @@ const SLOTS = {
   logo: { maxBytes: 400 * 1024, label: 'logo' },
 };
 
+/**
+ * A brand's own logo, as a slot per brand: `brand:12`.
+ *
+ * `web_assets.slot` is UNIQUE TEXT, so one row per brand needs no new table, no
+ * new service and no second way of storing a picture — the same BLOB, the same
+ * sniffing, the same audit trail as the banner and the shop's own logo. The
+ * ceiling is smaller because a brand mark is drawn at 64px in a rail; anything
+ * approaching the shop logo's 400 KB is a photograph somebody uploaded by
+ * mistake.
+ */
+const BRAND_SLOT = /^brand:([1-9][0-9]*)$/;
+export const brandSlot = (brandId) => `brand:${Number(brandId)}`;
+
 /** A slot name always comes from this codebase; an unknown one is a bug, not a shop's typo. */
 function rulesFor(slot) {
+  if (BRAND_SLOT.test(slot)) return { maxBytes: 250 * 1024, label: 'brand logo' };
   const rules = SLOTS[slot];
   if (!rules) throw new ValidationError(`Unknown website image slot "${slot}"`);
   return rules;

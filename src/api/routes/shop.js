@@ -11,7 +11,7 @@ import { Router } from 'express';
 import { asyncHandler, sendImage } from '../middleware/index.js';
 import storefront from '../../services/StorefrontService.js';
 import images from '../../services/ImageService.js';
-import webAssets from '../../services/WebAssetService.js';
+import webAssets, { brandSlot } from '../../services/WebAssetService.js';
 import { websiteGate } from '../middleware/websiteGate.js';
 import { NotFoundError } from '../../shared/errors.js';
 import { deploymentInfo } from '../../shared/deploymentInfo.js';
@@ -140,6 +140,24 @@ router.get('/banner', asyncHandler(async (req, res) => {
 router.get('/logo', asyncHandler(async (req, res) => {
   const image = await webAssets.bytes('logo');
   if (!image) throw new NotFoundError('Logo image', 'logo');
+  sendImage(req, res, { ...image, created_at: image.updated_at }, { cacheControl: 'public, max-age=300' });
+}));
+
+/**
+ * A brand's logo, for the brands rail on the home page.
+ *
+ * Public and unauthenticated like everything else in this file, and gated by
+ * nothing — a brand mark is the least secret thing a shop owns, and the rail
+ * that asks for it has already been through `home()`, which only lists brands
+ * that are published and hold a visible product. Serving one for an unpublished
+ * brand leaks nothing that the picture itself does not already say.
+ *
+ * Same five-minute cache as the banner, for the same reason: the address has no
+ * id in it, so an owner who replaces a logo must not wait a year to see it.
+ */
+router.get('/brands/:id/logo', asyncHandler(async (req, res) => {
+  const image = await webAssets.bytes(brandSlot(req.params.id));
+  if (!image) throw new NotFoundError('Brand logo', req.params.id);
   sendImage(req, res, { ...image, created_at: image.updated_at }, { cacheControl: 'public, max-age=300' });
 }));
 

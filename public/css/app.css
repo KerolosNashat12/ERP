@@ -114,7 +114,16 @@ button, input, select, textarea { font: inherit; color: inherit; }
   font-family: Georgia, "Noto Naskh Arabic", serif; font-size: 22px;
   color: var(--gold); line-height: 1; white-space: nowrap; flex: none;
 }
-.sidebar-brand .mark-logo { height: 30px; width: auto; max-width: 96px; object-fit: contain; flex: none; }
+/* Bigger than it was — 30px was a stamp beside the shop's name, not a mark. The
+   width ceiling grows with it so a wordmark stays legible, and `.sidebar-brand-text`
+   still shrinks first, so the name beside it is never the thing that breaks. */
+/* Two maxima, no fixed size: a square badge grows to the full 46, a wide
+   wordmark hits the width ceiling first and stays proportional, and neither can
+   overflow the sidebar when the shop's name beside it is a long one. */
+.sidebar-brand .mark-logo {
+  height: auto; width: auto; max-height: 46px; max-width: 140px;
+  object-fit: contain; flex: 0 1 auto; min-width: 0;
+}
 .sidebar-brand-text { min-width: 0; }
 .sidebar-brand .name {
   color: #fff; font-weight: 600; font-size: 14.5px;
@@ -823,3 +832,25 @@ html[dir="rtl"] .kpi .label { letter-spacing: 0; }
 }
 .menu-toggle { display: none; }
 @media (max-width: 900px) { .menu-toggle { display: inline-flex; } }
+
+
+/* ------------------------------------------------------------ brand logos ---
+ * A brand's own mark, on the brands screen and in the dialog that sets it.
+ * Shown on white with a hairline rather than on the app's tinted surface: a
+ * trademark on somebody else's colour is not the trademark.
+ */
+.brand-logo-chip {
+  width: 34px; height: 34px; flex: none;
+  border-radius: 8px; border: 1px solid var(--line);
+  background: #fff; object-fit: contain; padding: 3px;
+}
+.brand-logo-chip.is-empty {
+  display: grid; place-items: center;
+  font-weight: 700; color: var(--gold); background: #fff;
+}
+.brand-logo-preview { display: grid; justify-items: start; gap: 4px; }
+.brand-logo-shot {
+  max-width: 220px; max-height: 120px; width: auto; height: auto;
+  object-fit: contain; border: 1px solid var(--line); border-radius: 10px;
+  background: #fff; padding: 10px;
+}

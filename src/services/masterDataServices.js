@@ -5,7 +5,7 @@
 import repositories from '../infrastructure/repositories/index.js';
 import { CrudService, referencedBy, referencedByAny } from './CrudService.js';
 import { BusinessRuleError, ValidationError } from '../shared/errors.js';
-import { transaction } from '../infrastructure/database/connection.js';
+import { transaction, getDb } from '../infrastructure/database/connection.js';
 import { likeParam } from '../infrastructure/database/productSearch.js';
 import auditService from './AuditService.js';
 
@@ -49,8 +49,29 @@ export class BrandService extends CrudService {
   }
 
   async list(query) {
-    if (query?.all) return { rows: await this.repository.listWithCounts(), total: undefined };
-    return super.list(query);
+    if (query?.all) return { rows: await this.#withLogos(await this.repository.listWithCounts()) };
+    const page = await super.list(query);
+    return { ...page, rows: await this.#withLogos(page.rows) };
+  }
+
+  /**
+   * Which of these brands has a picture, in one query rather than one per row.
+   *
+   * The brands screen shows the mark beside the name, because the question an
+   * owner actually has on that screen is "which of my brands still looks like a
+   * letter on the website". The bytes live in `web_assets` under a slot named
+   * for the brand (see WebAssetService); only the fact that a row exists is
+   * needed here, never the BLOB — reading a page of logos to draw a list would
+   * be megabytes to answer a yes/no.
+   */
+  async #withLogos(rows) {
+    if (!rows.length) return rows;
+    const slots = rows.map((row) => `brand:${row.id}`);
+    const found = await getDb().prepare(
+      `SELECT slot FROM web_assets WHERE slot IN (${slots.map(() => '?').join(', ')})`,
+    ).all(...slots);
+    const has = new Set(found.map((row) => row.slot));
+    return rows.map((row) => ({ ...row, has_logo: has.has(`brand:${row.id}`) ? 1 : 0 }));
   }
 }
 

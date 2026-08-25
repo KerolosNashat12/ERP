@@ -26,7 +26,7 @@ import labelService from '../../services/LabelService.js';
 import auditService from '../../services/AuditService.js';
 import { userService, settingsService, backupService } from '../../services/AdminService.js';
 import dataExportService from '../../services/DataExportService.js';
-import webAssetService from '../../services/WebAssetService.js';
+import webAssetService, { brandSlot } from '../../services/WebAssetService.js';
 import passwordResetService from '../../services/PasswordResetService.js';
 import webOrderService from '../../services/WebOrderService.js';
 import {
@@ -172,7 +172,50 @@ router.use('/suppliers', crudRouter({
 }));
 
 router.use('/brands', crudRouter({
-  service: brandService, module: 'brands', schema: v.brandSchema,
+  service: brandService,
+  module: 'brands',
+  schema: v.brandSchema,
+  /**
+   * A brand's own logo — the picture a shopper actually recognises.
+   *
+   * The storefront's brands rail used to be sixty identical text pills, and the
+   * shop's answer to "which of these is ديور" was to read all sixty. A mark is
+   * what makes that scannable, so a brand gets a picture the same way the
+   * banner and the shop's own logo do: a row in `web_assets`, in a slot named
+   * after the brand. No new table, no second mechanism, and the same audit
+   * trail — see WebAssetService.
+   *
+   * Uploading one is `brands.update`: it is editing the brand, not a settings
+   * change, and the person who may rename a brand may give it a logo.
+   */
+  extend: (r, { perm }) => {
+    const slotOf = async (req) => {
+      // 404 before anything else, so an id that is not a brand cannot be used
+      // to probe or to occupy a slot.
+      await brandService.get(Number(req.params.id));
+      return brandSlot(req.params.id);
+    };
+
+    r.get('/:id/logo', perm('view'), asyncHandler(async (req, res) => {
+      res.json(await webAssetService.get(await slotOf(req)));
+    }));
+
+    r.get('/:id/logo/raw', perm('view'), asyncHandler(async (req, res) => {
+      const image = await webAssetService.bytes(await slotOf(req));
+      if (!image) throw new NotFoundError('Brand logo', req.params.id);
+      // One URL that outlives the bytes behind it, exactly as the banner's is:
+      // an owner who replaces a logo must not be told it worked by a cache.
+      sendImage(req, res, { ...image, created_at: image.updated_at }, { cacheControl: 'private, no-cache' });
+    }));
+
+    r.put('/:id/logo', perm('update'), validate(v.websiteLogoSchema), asyncHandler(async (req, res) => {
+      res.json(await webAssetService.set(req.body.dataUrl, req.context, await slotOf(req)));
+    }));
+
+    r.delete('/:id/logo', perm('update'), asyncHandler(async (req, res) => {
+      res.json(await webAssetService.clear(req.context, await slotOf(req)));
+    }));
+  },
 }));
 
 router.use('/categories', crudRouter({

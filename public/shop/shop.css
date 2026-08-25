@@ -687,9 +687,28 @@ body:not(.is-booting) .boot-screen { display: none; }
  * band without a white rectangle around it.
  */
 .brand-logo {
-  height: 32px;
-  width: auto;
-  max-width: 116px;
+  /*
+   * Bigger than it was, and bounded in BOTH directions.
+   *
+   * The owner asked for a larger logo "considering the name beside it", and
+   * that is exactly the tension: the brand block is an `auto` grid track, so
+   * every pixel the mark takes is a pixel the search box does not get — the bug
+   * this header already had once, with the strapline.
+   *
+   * `height: 32px; width: auto` was the old rule and it had a subtler problem
+   * than being small: a fixed height cannot give way. Squeeze the row and the
+   * image kept its 32px and overflowed its own block instead of scaling. Two
+   * MAXIMA and no fixed size means the browser scales it, preserving the
+   * shape — a square badge grows to the full 44 (52 on a desktop), a wide
+   * wordmark hits the width ceiling first and stays proportional, and on a
+   * narrow phone both give way rather than pushing anything off the row.
+   */
+  block-size: auto;
+  inline-size: auto;
+  max-block-size: 44px;
+  max-inline-size: min(150px, 40vw);
+  /* A flex item will not shrink below its intrinsic width without this. */
+  min-inline-size: 0;
   object-fit: contain;
 }
 /*
@@ -708,7 +727,7 @@ body:not(.is-booting) .boot-screen { display: none; }
  * cap belongs here in `ch` — wide enough to read, narrow enough that no shop
  * can type its way out of the layout.
  */
-.brand-text { display: grid; min-width: 0; max-width: 30ch; }
+.brand-text { display: grid; min-width: 0; max-width: 28ch; }
 .brand-name {
   font-family: var(--font-display);
   font-weight: 700;
@@ -1171,13 +1190,22 @@ html[lang="ar"] .hero-title { max-width: 20ch; }
   display: flex;
   gap: var(--sp-4);
   overflow-x: auto;
-  scroll-snap-type: x proximity;
+  /*
+   * No scroll snapping, deliberately. Snap points fight the drift: every
+   * one-pixel step the animation takes is pulled back to the nearest card, so
+   * the row sits still and looks broken. Snapping buys very little on a row of
+   * small cards and costs the whole behaviour.
+   */
   scrollbar-width: none;
   /* Room for the cards' own shadow, which a tight overflow box would clip. */
   padding-block: var(--sp-2);
   padding-inline: 2px;
 }
 .rail-track::-webkit-scrollbar { display: none; }
+/* The second copy of the row, which is what makes the drift's wrap invisible.
+   `display: contents` so the clones sit in the same flex line as the originals
+   rather than as one wide block beside them. */
+.rail-clones { display: contents; }
 .rail-btn {
   flex: none;
   inline-size: var(--tap);
@@ -1201,7 +1229,6 @@ html[dir="rtl"] .rail-next svg { transform: rotate(180deg); }
 .brand-card {
   flex: none;
   inline-size: 132px;
-  scroll-snap-align: start;
   display: grid;
   justify-items: center;
   gap: var(--sp-2);
@@ -1212,14 +1239,17 @@ html[dir="rtl"] .rail-next svg { transform: rotate(180deg); }
   text-align: center;
 }
 .brand-card-face {
-  inline-size: 64px;
-  block-size: 64px;
+  inline-size: 68px;
+  block-size: 68px;
   border-radius: var(--radius-pill);
   background: var(--accent-soft);
   display: grid;
   place-items: center;
   overflow: hidden;
 }
+/* A real logo is shown on white and given the whole circle: a brand mark on a
+   tinted disc is somebody else's colour behind somebody else's trademark. */
+.brand-card-face.has-logo { background: var(--surface); box-shadow: inset 0 0 0 1px var(--line); }
 .brand-mark-badge {
   font-family: var(--font-display);
   font-weight: 700;
@@ -1755,6 +1785,9 @@ html[lang="ar"] .product-brand { letter-spacing: 0; text-transform: none; font-s
  * The chosen option's name is printed into the field's own label, so the row of
  * chips is a set of choices rather than the only place the answer lives.
  */
+/* One block per attribute — الحجم, then اللون — with air between the rows. */
+.field-groups { display: grid; gap: var(--sp-4); }
+
 .field-chosen {
   font-weight: 700;
   color: var(--ink-1);
@@ -1810,6 +1843,9 @@ html[lang="ar"] .product-brand { letter-spacing: 0; text-transform: none; font-s
   display: grid;
   place-items: center;
 }
+/* A colour value from the ERP, drawn as itself. The hairline is what keeps a
+   white or a cream from disappearing into the chip behind it. */
+.variant-swatch.is-colour { border: 1px solid rgb(0 0 0 / .12); }
 .variant-swatch img {
   inline-size: 100%;
   block-size: 100%;
@@ -1831,7 +1867,9 @@ html[lang="ar"] .product-brand { letter-spacing: 0; text-transform: none; font-s
   background: var(--line-2);
 }
 .variant.is-out .variant-label { text-decoration: line-through; }
+/* Sold out is said in grey, on the picture as well as on the words. */
 .variant.is-out .variant-swatch img { filter: grayscale(1); }
+.variant.is-out .variant-swatch.is-colour { filter: grayscale(1); }
 .variant-out { font-size: var(--fs-xs); font-weight: 700; color: var(--ink-3); }
 
 /*
@@ -2402,6 +2440,9 @@ html[lang="ar"] .foot-col h3 { letter-spacing: .04em; text-transform: none; font
      every sticky column moves down with it, in one place. */
   :root { --stick: 108px; }
   .head-main { padding-block: var(--sp-4); }
+  /* There is room here, so the mark takes it — and the search box still has a
+     floor beneath it that nothing on this row can push it below. */
+  .brand-logo { max-block-size: 52px; max-inline-size: min(190px, 20vw); }
   .section-band { padding-block: var(--sp-7); }
   .hero-wrap { padding-block-start: var(--sp-6); }
   .head-inner {

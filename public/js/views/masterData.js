@@ -74,6 +74,115 @@ export const suppliersView = resourceView({
   },
 });
 
+
+/**
+ * A brand's logo, uploaded from the brands screen.
+ *
+ * The storefront's brands rail shows a picture where the shop has one and the
+ * brand's first letter where it does not — and until this dialog existed, no
+ * shop had one, because the only way to fill `logo_url` was to type a link to
+ * somebody else's website into a text field. This puts the file itself in the
+ * shop's own database, next to the banner and the shop's own logo, through the
+ * same service.
+ *
+ * ── Why the picture is NOT re-encoded to JPEG ────────────────────────────────
+ * A product photo is compressed to JPEG on the way out of the browser, which is
+ * right for a photograph and wrong for a logo: JPEG has no transparency, so a
+ * cut-out mark would arrive with a white rectangle behind it and wear that
+ * rectangle on every dark band of the site. A small file is sent exactly as it
+ * was chosen; only an oversized one is redrawn, and then to PNG, which keeps
+ * the alpha channel.
+ */
+const LOGO_MAX_BYTES = 250 * 1024;
+const LOGO_MAX_EDGE = 512;
+
+function readAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(new Error(t('photoUnreadable')));
+    reader.readAsDataURL(file);
+  });
+}
+
+async function prepareLogo(file) {
+  const asIs = await readAsDataUrl(file);
+  // Roughly the decoded size: base64 is a third larger than the bytes it carries.
+  if (asIs.length * 0.75 <= LOGO_MAX_BYTES) return asIs;
+
+  return new Promise((resolve, reject) => {
+    const objectUrl = URL.createObjectURL(file);
+    const image = new Image();
+    image.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      const longest = Math.max(image.naturalWidth, image.naturalHeight) || 1;
+      const scale = Math.min(1, LOGO_MAX_EDGE / longest);
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+      canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+      // No white fill and no JPEG: a logo keeps whatever it was drawn on, which
+      // for most of them is nothing at all.
+      canvas.getContext('2d').drawImage(image, 0, 0, canvas.width, canvas.height);
+      resolve(canvas.toDataURL('image/png'));
+    };
+    image.onerror = () => { URL.revokeObjectURL(objectUrl); reject(new Error(t('photoUnreadable'))); };
+    image.src = objectUrl;
+  });
+}
+
+function openBrandLogo(row, refresh) {
+  const preview = h('div', { class: 'brand-logo-preview' });
+  const input = h('input', {
+    type: 'file', accept: 'image/*', style: { display: 'none' },
+    onchange: async (event) => {
+      const file = event.target.files?.[0];
+      event.target.value = '';
+      if (!file) return;
+      try {
+        mount(preview, spinner());
+        await api.put(`/api/brands/${row.id}/logo`, { dataUrl: await prepareLogo(file) });
+        toast(t('saved'));
+        await load();
+        refresh();
+      } catch (error) { toastError(error); await load(); }
+    },
+  });
+
+  let current = null;
+  const host = h('div', { class: 'stack' }, input, preview);
+  const dialog = modal({ title: `${t('logo')} — ${pick(row, 'name')}`, body: host });
+
+  async function load() {
+    try { current = await api.get(`/api/brands/${row.id}/logo`); } catch { current = null; }
+    mount(preview,
+      current?.hasImage
+        // A cache-buster: the address has no id in it, so a replaced logo would
+        // otherwise be answered from the browser's own copy of the old one.
+        ? h('img', { class: 'brand-logo-shot', src: `/api/brands/${row.id}/logo/raw?v=${encodeURIComponent(current.updatedAt || '')}`, alt: '' })
+        : h('div', { class: 'empty' }, h('span', { class: 'ico' }, '◍'), h('div', {}, t('noPhotosYet'))),
+      h('div', { class: 'row', style: { gap: '8px', marginTop: '10px' } },
+        h('button', { class: 'btn sm', type: 'button', onclick: () => input.click() },
+          current?.hasImage ? t('replace') : t('addPhoto')),
+        current?.hasImage
+          ? h('button', {
+            class: 'btn sm ghost danger', type: 'button',
+            onclick: async () => {
+              try {
+                await api.del(`/api/brands/${row.id}/logo`);
+                toast(t('saved'));
+                await load();
+                refresh();
+              } catch (error) { toastError(error); }
+            },
+          }, t('removePhoto'))
+          : null),
+      h('p', { class: 'muted small' }, t('brandLogoHint')));
+  }
+
+  load();
+  return dialog;
+}
+
 // --------------------------------------------------------------------- brands
 
 export const brandsView = resourceView({
@@ -84,7 +193,17 @@ export const brandsView = resourceView({
   label: (row) => row.name_en,
   columns: () => [
     { key: 'code', label: t('code'), class: 'mono small' },
-    { key: 'name', label: t('name'), render: (r) => h('span', { class: 'strong' }, pick(r, 'name')) },
+    {
+      key: 'name',
+      label: t('name'),
+      render: (r) => h('div', { class: 'row', style: { gap: '10px', alignItems: 'center' } },
+        // The mark first, because on this screen it is the thing being checked:
+        // "which of my brands still has no picture on the website".
+        r.has_logo
+          ? h('img', { class: 'brand-logo-chip', src: `/api/brands/${r.id}/logo/raw`, alt: '', loading: 'lazy' })
+          : h('span', { class: 'brand-logo-chip is-empty' }, String(pick(r, 'name') || '?').trim().charAt(0)),
+        h('span', { class: 'strong' }, pick(r, 'name'))),
+    },
     { key: 'country', label: t('country') },
     { key: 'description', label: t('description'), render: (r) => h('span', { class: 'muted small' }, r.description || '—') },
     { key: 'is_active', label: t('status'), render: activeTag },
@@ -102,6 +221,11 @@ export const brandsView = resourceView({
     ];
   },
   defaults: { is_active: 1 },
+  rowActions: (row, refresh) => (can('brands.update')
+    ? [h('button', {
+      class: 'btn sm ghost', title: t('logo'), onclick: () => openBrandLogo(row, refresh),
+    }, '◍')]
+    : []),
 });
 
 // ----------------------------------------------------------------- categories

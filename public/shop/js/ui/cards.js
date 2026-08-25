@@ -1,6 +1,6 @@
 /** Product cards, availability badges and the grids they live in. */
 import { el, icon, chevron, ICONS } from '../core/dom.js';
-import { imageUrl } from '../core/api.js';
+import { imageUrl, brandLogoUrl } from '../core/api.js';
 import { t, pick, isRtl } from '../core/i18n.js';
 import { monogramText } from '../core/branding.js';
 import { priceRange } from '../core/format.js';
@@ -232,39 +232,60 @@ export function taxonomyTile(row, kind) {
 export function brandCard(row) {
   const name = pick(row, 'name');
   const mark = el('span.brand-mark-badge', { 'aria-hidden': 'true' }, categoryLetter(name));
-  const logo = String(row.logo_url || '').trim();
-  if (logo) {
+  /*
+   * Three sources, in order of how much the shop meant it:
+   *   1. a picture uploaded against the brand in the ERP — `has_logo`;
+   *   2. `logo_url`, a link somebody typed into the brand record years ago;
+   *   3. the brand's first letter, which every brand has.
+   */
+  const source = row.has_logo ? brandLogoUrl(row.id) : String(row.logo_url || '').trim();
+  const face = el('span.brand-card-face', { class: source ? 'has-logo' : '' });
+
+  if (source) {
     const img = el('img.brand-logo-img', {
-      src: logo, alt: '', loading: 'lazy', decoding: 'async', referrerPolicy: 'no-referrer',
+      src: source, alt: '', loading: 'lazy', decoding: 'async', referrerPolicy: 'no-referrer',
     });
-    img.addEventListener('error', () => { img.remove(); mark.hidden = false; });
-    mark.hidden = true;
-    // Both are appended; whichever survives is the one that could be shown.
-    return el('a.brand-card', { href: href(routePath('brand', { id: row.id, slug: slugFor(row) })) },
-      el('span.brand-card-face', img, mark),
-      el('span.brand-card-name', name),
-      el('span.brand-card-count', t('itemsCount', Number(row.product_count || 0))));
+    // A logo that will not load leaves the letter behind rather than the
+    // browser's broken-image glyph in a shop window.
+    img.addEventListener('error', () => {
+      img.remove();
+      face.classList.remove('has-logo');
+      face.append(mark);
+    });
+    face.append(img);
+  } else {
+    face.append(mark);
   }
+
   return el('a.brand-card', { href: href(routePath('brand', { id: row.id, slug: slugFor(row) })) },
-    el('span.brand-card-face', mark),
+    face,
     el('span.brand-card-name', name),
     el('span.brand-card-count', t('itemsCount', Number(row.product_count || 0))));
 }
 
 /**
- * A row that scrolls sideways, with buttons for the people who are not going to
- * drag it.
+ * A row that scrolls sideways — by itself, and by hand.
  *
- * Deliberately NOT a marquee. A strip that slides on its own looks alive in a
- * screenshot and is miserable to use: every target is moving, so clicking the
- * brand you spotted means chasing it, and a shopper who stops to read is fought
- * by the page. This scrolls when it is pushed — by finger, by wheel, by the
- * arrows, by the keyboard — and holds still when it is not.
+ * ── The argument, and how it was settled ─────────────────────────────────────
+ * A strip that slides on its own looks alive and is normally miserable to use:
+ * every target is moving, so clicking the brand you spotted means chasing it.
+ * That is why this was built as a plain scroller first. The shop's owner asked
+ * twice for it to move, and he is right that a still row of sixty brands reads
+ * as a list rather than as a shop — so it moves, and the objection is answered
+ * rather than ignored: IT STOPS THE MOMENT YOU GO NEAR IT. Pointer over the
+ * rail, keyboard focus inside it, a finger on it, or a hand on the wheel, and
+ * the drift halts; nothing has to be caught. It also never starts at all for a
+ * reader who has asked their system for less motion, and it gives up while the
+ * tab is in the background rather than burning a phone battery on a page nobody
+ * is looking at.
  *
- * The arrows hide themselves when there is nothing to scroll to, so a shop with
- * six brands does not get a control that does nothing.
+ * ── The loop ─────────────────────────────────────────────────────────────────
+ * The items are rendered twice and the scroll position wraps at the halfway
+ * point, so the row never reaches an end to bounce off. The clones are
+ * `aria-hidden` and not focusable: a screen reader and the Tab key see sixty
+ * brands, not a hundred and twenty.
  */
-export function rail(items, { label } = {}) {
+export function rail(items, { label, drift = true } = {}) {
   const track = el('div.rail-track', { role: 'list', 'aria-label': label || '' }, items);
   const back = el('button.rail-btn.rail-back', {
     type: 'button', 'aria-label': t('previous'), tabIndex: -1, 'aria-hidden': 'true',
@@ -275,9 +296,10 @@ export function rail(items, { label } = {}) {
 
   /*
    * `scrollLeft` runs negative in a right-to-left row in every current browser,
-   * so the sums below are written in terms of distance travelled rather than
-   * position, and read the same in both directions.
+   * so everything below is written in terms of distance travelled rather than
+   * position, and reads the same in both directions.
    */
+  const away = isRtl() ? -1 : 1;
   const travelled = () => Math.abs(track.scrollLeft);
   const room = () => track.scrollWidth - track.clientWidth;
 
@@ -288,26 +310,90 @@ export function rail(items, { label } = {}) {
       button.tabIndex = scrollable ? 0 : -1;
       button.setAttribute('aria-hidden', scrollable ? 'false' : 'true');
     }
-    if (!scrollable) return;
-    back.disabled = travelled() <= 4;
-    next.disabled = travelled() >= room() - 4;
   }
 
   function nudge(direction) {
     const step = Math.max(track.clientWidth * 0.8, 200);
-    // `by` is in logical inline pixels: positive is "further along the row",
-    // which the browser mirrors for us when the document does.
-    track.scrollBy({ left: isRtl() ? -direction * step : direction * step, behavior: 'smooth' });
+    track.scrollBy({ left: away * direction * step, behavior: 'smooth' });
   }
 
   back.addEventListener('click', () => nudge(-1));
   next.addEventListener('click', () => nudge(1));
-  track.addEventListener('scroll', paint, { passive: true });
-  // The width is not known until this is in the document; a frame later it is.
-  requestAnimationFrame(paint);
   window.addEventListener('resize', paint, { passive: true });
+  requestAnimationFrame(paint);
 
-  return el('div.rail', back, track, next);
+  const node = el('div.rail', back, track, next);
+  if (drift) startDrift(node, track, items, away);
+  return node;
+}
+
+/** How fast the rail drifts, in CSS pixels per second. A reading pace, not a ride. */
+const DRIFT_SPEED = 26;
+/** How long after a person stops touching it before it picks up again. */
+const RESUME_AFTER = 2500;
+/** A moment of stillness at load, while the logos arrive. */
+const SETTLE = 900;
+
+function startDrift(node, track, items, away) {
+  const calmer = window.matchMedia?.('(prefers-reduced-motion: reduce)');
+  if (calmer?.matches) return;
+
+  // The second copy is what makes the wrap invisible. Cloned rather than
+  // re-rendered so the two halves cannot drift apart, and hidden from assistive
+  // technology so the shop does not appear to stock twice as many brands.
+  const clones = el('div.rail-clones', { 'aria-hidden': 'true' },
+    items.map((item) => item.cloneNode(true)));
+  for (const link of clones.querySelectorAll('a')) link.tabIndex = -1;
+  track.append(clones);
+
+  let held = 0;             // pointer, focus or finger currently on the rail
+  /*
+   * When the person last moved it themselves — and, at load, a deliberate
+   * settle: a row that is already sliding while its logos are still arriving
+   * looks like a page that has not finished rendering.
+   */
+  let touchedAt = performance.now() - RESUME_AFTER + SETTLE;
+  let last = 0;
+  let carry = 0;            // sub-pixel remainder: scrollLeft is an integer
+
+  const hold = () => { held += 1; };
+  const release = () => { held = Math.max(0, held - 1); };
+
+  node.addEventListener('pointerenter', hold);
+  node.addEventListener('pointerleave', release);
+  node.addEventListener('focusin', hold);
+  node.addEventListener('focusout', release);
+  track.addEventListener('touchstart', hold, { passive: true });
+  track.addEventListener('touchend', release, { passive: true });
+  // A wheel or a drag is the clearest "I am reading this" there is.
+  const touched = () => { touchedAt = performance.now(); };
+  track.addEventListener('wheel', touched, { passive: true });
+  track.addEventListener('pointerdown', touched);
+
+  function step(now) {
+    const elapsed = last ? Math.min(now - last, 100) : 0;
+    last = now;
+
+    const half = track.scrollWidth / 2;
+    const paused = held > 0
+      || document.hidden
+      || (now - touchedAt) < RESUME_AFTER
+      || half <= track.clientWidth;
+
+    if (!paused && elapsed) {
+      carry += (DRIFT_SPEED * elapsed) / 1000;
+      const whole = Math.floor(carry);
+      if (whole) {
+        carry -= whole;
+        track.scrollLeft += away * whole;
+      }
+      // One copy travelled: jump back by exactly that copy's width. The pixels
+      // under the reader are identical, so the seam cannot be seen.
+      if (Math.abs(track.scrollLeft) >= half) track.scrollLeft -= away * half;
+    }
+    requestAnimationFrame(step);
+  }
+  requestAnimationFrame(step);
 }
 
 /** A section heading with an optional "view all" on the far inline end. */
