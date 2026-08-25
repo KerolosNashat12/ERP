@@ -195,23 +195,42 @@ export function decodeValue(value) {
 }
 
 /**
- * Thrown when the shop was written to WHILE it was being read.
+ * Thrown when a row that WAS in the shop disappeared WHILE it was being read.
  *
- * Not a failure of the database and not a bug: somebody rang up a sale during
- * the backup. It matters because the archive is read table by table, so a sale
- * that lands between `sales` and `sale_lines` would be stored as an invoice
- * with no lines — and a backup that is quietly wrong is worse than no backup at
- * all, because it is the thing you reach for on the day it has to be right.
+ * Not every concurrent write is a problem, and treating them all as one is how
+ * a shop that is open for business ends up with no backups at all. Rows added
+ * during the read are excluded by the rowid ceilings, so a sale rung up in the
+ * middle is simply not part of this copy. Rows edited during the read are
+ * recorded and allowed: every reference still points at something that exists,
+ * and holding a value as it was thirty seconds ago is what a backup IS.
  *
- * The caller retries once. A shop busy enough to lose the race twice gets a
- * refusal it can read, not a file it should not trust.
+ * A DELETE is the one that tears. The archive is read table by table, so a sale
+ * removed after its invoice was read but before its lines were leaves lines
+ * belonging to an invoice that is not there — and a backup that is quietly
+ * wrong is worse than no backup at all, because it is the thing you reach for
+ * on the day it has to be right.
+ *
+ * The caller retries once. Deletes are rare in this shop by design — almost
+ * everything is deactivated rather than removed — so a second failure means
+ * something more than bad luck and is reported as itself.
  */
 export class SnapshotRaceError extends Error {
-  constructor() {
-    super('The shop was written to while it was being read, so this copy could be '
-      + 'half of one moment and half of another. Nothing was stored. Try again.');
+  constructor(changes = []) {
+    /**
+     * `count:maxRowid:latestUpdatedAt` for each table, before and after. It
+     * reads like machinery because it is meant to be forwarded verbatim: the
+     * shop owner cannot use it, but it is the difference between "try again"
+     * and knowing whether a sale was rung up or something here is wrong.
+     */
+    const detail = changes
+      .map(({ table, before, after }) => `${table} ${before} → ${after}`)
+      .join(', ');
+    super('Something was deleted from the shop while it was being read, so this copy '
+      + 'could be half of one moment and half of another. Nothing was stored. Try again.'
+      + (detail ? ` What moved: ${detail}` : ''));
     this.name = 'SnapshotRaceError';
     this.code = 'SNAPSHOT_RACE';
+    this.changes = changes;
   }
 }
 
@@ -251,14 +270,8 @@ export class SnapshotRaceError extends Error {
  */
 export async function shopSignature(tables, terms = SIGNATURE_TERMS) {
   if (!tables.length) return 'empty';
-  const rows = [];
-  const size = Math.max(1, terms);
-  for (let i = 0; i < tables.length; i += size) {
-    // eslint-disable-next-line no-await-in-loop
-    rows.push(...await signatureRows(tables.slice(i, i + size)));
-  }
-  const line = rows
-    .map((r) => `${r.t}:${r.n}:${r.m}:${r.u}`)
+  const line = [...(await shopCounts(tables, terms))]
+    .map(([name, mark]) => `${name}:${mark.rows}:${mark.top}:${mark.edited}`)
     // Sorted, so how the tables were split across statements cannot change the
     // answer — the same shop signs the same whatever the batch size is.
     .sort()
@@ -266,10 +279,60 @@ export async function shopSignature(tables, terms = SIGNATURE_TERMS) {
   return crypto.createHash('sha256').update(line).digest('hex');
 }
 
+/**
+ * The same measurement, kept per table instead of hashed down to one string.
+ *
+ * A hash can only ever say "something moved", and that is not enough to act on:
+ * the first hosted shop to reach this check failed it three times in a row, and
+ * the difference between a till ringing up a sale and a defect in this file is
+ * entirely in WHICH table moved. So the comparison keeps the readings, and a
+ * failure names them.
+ */
+export async function shopCounts(tables, terms = SIGNATURE_TERMS, ceilings = null) {
+  const marks = new Map();
+  const size = Math.max(1, terms);
+  for (let i = 0; i < tables.length; i += size) {
+    // eslint-disable-next-line no-await-in-loop
+    const rows = await signatureRows(tables.slice(i, i + size), ceilings);
+    for (const row of rows) marks.set(row.t, { rows: Number(row.n), top: Number(row.m), edited: String(row.u) });
+  }
+  return marks;
+}
+
+/**
+ * What moved between two readings, split by whether it can tear the archive.
+ *
+ * `removed` — a row that WAS below the ceiling is not there any more. This is
+ * the dangerous one: delete a sale after its invoice was read but before its
+ * lines were, and the archive keeps lines belonging to nothing. It fails the
+ * backup.
+ *
+ * `edited` — a row below the ceiling changed in place. Nothing structural
+ * happened: every reference still points at something that exists. The archive
+ * simply holds that row as it was a few seconds earlier, which is what a backup
+ * is. It is recorded in the manifest and does not fail anything, because a shop
+ * that is being used would otherwise never complete one.
+ */
+export function countDifferences(before, after) {
+  const removed = [];
+  const edited = [];
+  for (const [name, mark] of before) {
+    const now = after.get(name);
+    if (!now) { removed.push({ table: name, before: `${mark.rows} rows`, after: 'absent' }); continue; }
+    if (now.rows !== mark.rows) {
+      removed.push({ table: name, before: `${mark.rows} rows`, after: `${now.rows} rows` });
+    } else if (now.edited !== mark.edited) {
+      edited.push(name);
+    }
+  }
+  return { removed, edited };
+}
+
 /** One statement covering a handful of tables, with a per-table way out. */
-async function signatureRows(batch) {
+async function signatureRows(batch, ceilings = null) {
+  const term = (table) => signatureTerm(table, ceilings?.get(table.name));
   try {
-    return await getDb().prepare(batch.map(signatureTerm).join(' UNION ALL ')).all();
+    return await getDb().prepare(batch.map(term).join(' UNION ALL ')).all();
   } catch (error) {
     if (batch.length === 1 || !/compound SELECT/i.test(String(error?.message || ''))) throw error;
     // The ceiling turned out to be lower here than it is there. One table per
@@ -277,13 +340,13 @@ async function signatureRows(batch) {
     const rows = [];
     for (const table of batch) {
       // eslint-disable-next-line no-await-in-loop
-      rows.push(...await getDb().prepare(signatureTerm(table)).all());
+      rows.push(...await getDb().prepare(term(table)).all());
     }
     return rows;
   }
 }
 
-function signatureTerm(table) {
+function signatureTerm(table, ceiling = null) {
   const name = quoteName(table.name);
   // `MAX(updated_at)` only where the column is really there: naming a column
   // that does not exist is an error, not an empty answer.
@@ -297,8 +360,15 @@ function signatureTerm(table) {
    * already refused anything that is not a bare identifier, so the literal
    * below cannot carry a quote of its own.
    */
+  /**
+   * The ceiling is what makes a busy shop backable at all: measured a second
+   * time, only the rows that were there when the read STARTED are counted, so
+   * a sale rung up in the meantime is invisible to the comparison exactly as it
+   * is invisible to the archive.
+   */
+  const below = Number.isFinite(ceiling) ? ` WHERE rowid <= ${Math.trunc(ceiling)}` : '';
   return `SELECT '${table.name}' AS t, COUNT(*) AS n, `
-    + `COALESCE(MAX(rowid), 0) AS m, COALESCE(${stamp}, '') AS u FROM ${name}`;
+    + `COALESCE(MAX(rowid), 0) AS m, COALESCE(${stamp}, '') AS u FROM ${name}${below}`;
 }
 
 /**
@@ -325,11 +395,28 @@ export async function readSnapshot(options) {
    */
   if (driverName() === 'sqlite') return transaction(() => readTables(options));
 
-  const before = await shopSignature(await describeTables());
-  const result = await readTables(options);
-  const after = await shopSignature(await describeTables());
-  if (before !== after) throw new SnapshotRaceError();
-  return result;
+  const described = await describeTables();
+  const before = await shopCounts(described);
+
+  /**
+   * The highest rowid in each table at the moment the read begins, and the
+   * whole reason a shop that is open for business can still be backed up.
+   *
+   * Every table is read only up to its own ceiling, so a sale rung up during
+   * the read is not in the archive AT ALL — not the invoice, not its lines, not
+   * the stock movements — instead of being in some tables and missing from
+   * others. The tear this check exists to prevent is prevented by construction
+   * rather than detected afterwards, and the check that follows is left with
+   * the two things a ceiling cannot cover: rows deleted, and rows edited.
+   */
+  const ceilings = new Map([...before].map(([name, mark]) => [name, mark.top]));
+
+  const result = await readTables(options, ceilings);
+
+  const after = await shopCounts(described, SIGNATURE_TERMS, ceilings);
+  const { removed, edited } = countDifferences(before, after);
+  if (removed.length) throw new SnapshotRaceError(removed);
+  return { ...result, concurrentEdits: edited };
 }
 
 /** Every shop table with its column list — what a signature is taken over. */
@@ -345,7 +432,7 @@ async function describeTables() {
 
 async function readTables({
   onPart, onRows, budget = Infinity, redact = null,
-}) {
+}, ceilings = null) {
   const tables = await shopTables();
     const manifestTables = [];
     const redacted = [];
@@ -363,8 +450,13 @@ async function readTables({
       for (const column of blank) redacted.push(`${table.name}.${column}`);
 
       const quoted = columns.map(quoteName).join(', ');
+      // Rows added after the read began are not part of this moment (see the
+      // ceilings in `readSnapshot`). Without one — the file driver, which holds
+      // a real transaction — the read is unbounded exactly as it was.
+      const ceiling = ceilings?.get(table.name);
+      const upTo = Number.isFinite(ceiling) ? ` AND rowid <= ${Math.trunc(ceiling)}` : '';
       const select = table.hasRowid
-        ? `SELECT rowid AS __rid, ${quoted} FROM ${quoteName(table.name)} WHERE rowid > ? ORDER BY rowid LIMIT ${READ_BATCH}`
+        ? `SELECT rowid AS __rid, ${quoted} FROM ${quoteName(table.name)} WHERE rowid > ?${upTo} ORDER BY rowid LIMIT ${READ_BATCH}`
         : `SELECT ${quoted} FROM ${quoteName(table.name)} LIMIT ${READ_BATCH} OFFSET ?`;
 
       const parts = [];

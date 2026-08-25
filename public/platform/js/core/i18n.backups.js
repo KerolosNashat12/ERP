@@ -128,7 +128,12 @@ export const backupStrings = {
     backupsStored: 'المحفوظ', backupsKept: 'المحتفظ به',
     backupCeiling: 'الحد الأقصى للنسخة',
     backupCeilingHint: 'المتجر الأكبر من كده بتترفض نسخته بدل ما تتاخد ناقصة — والرفض بيبان هنا بالأحمر.',
-    keepRule: '{scheduled} ليلية · {manual} يدوية · {pre_restore} قبل الاسترجاع',
+    // The separator used to be a middot. In a right-to-left line it settles
+    // hard against the digit before it — `5 ·` renders as `5·`, which at this
+    // size is read as fifty, and the owner asked why the console was showing
+    // him numbers his shop does not have. An Arabic comma cannot be misread
+    // as a digit wherever the algorithm decides to put it.
+    keepRule: '{scheduled} ليلية، {manual} يدوية، {pre_restore} قبل الاسترجاع',
   },
 };
 

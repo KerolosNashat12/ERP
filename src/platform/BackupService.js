@@ -316,6 +316,13 @@ export async function take(slug, { kind = 'manual', actor = null } = {}) {
       app: { version: '1.0.0', controlPlane: config.platform.driver },
       tables: result.snapshot.tables,
       totals: { rows: result.snapshot.totalRows, rawBytes: result.snapshot.totalBytes },
+      /**
+       * Tables somebody edited in place while this was being read. Not a
+       * failure — those rows are simply as they were a few seconds before the
+       * rest — but an archive should say so rather than imply a stillness the
+       * shop did not have.
+       */
+      concurrentEdits: result.snapshot.concurrentEdits || [],
     };
     await zip.add(MANIFEST_NAME, JSON.stringify(manifest, null, 2));
     await zip.finish();

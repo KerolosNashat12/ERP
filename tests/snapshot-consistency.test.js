@@ -192,40 +192,81 @@ test('the signature notices anything that could tear a backup', async (ctx) => {
   });
 });
 
-test('a shop written to mid-read fails the backup instead of storing half of it', async (ctx) => {
+test('a shop that is open for business can still be copied', async (ctx) => {
   const slug = await makeShop('race');
   await fill(slug, 60);
 
-  await ctx.test('the read refuses when the shop moves under it', async () => {
+  /** Reads the whole shop, running `during` once between two tables. */
+  async function readWith(db, during) {
+    let fired = false;
+    const rows = new Map();
+    const result = await readSnapshot({
+      budget: Infinity,
+      onPart: async () => {
+        if (fired) return;
+        fired = true;
+        await during(db);
+      },
+      onRows: (table, columns, batch) => {
+        const seen = rows.get(table) || [];
+        for (const row of batch) seen.push(row);
+        rows.set(table, seen);
+      },
+    });
+    assert.ok(fired, 'the test never actually wrote anything, so it proved nothing');
+    return { result, rows };
+  }
+
+  await ctx.test('a sale rung up mid-read is left out, not half in', async () => {
+    /**
+     * The insert is the common case by far, and the one that used to fail the
+     * whole backup. It cannot tear anything now: the read stops at the rowid
+     * each table had when it started, so the new row is in NO part of the
+     * archive rather than in some of them.
+     */
     await withShop(slug, async (db) => {
-      let injected = false;
-      await assert.rejects(
-        () => readSnapshot({
-          budget: Infinity,
-          // `onPart` fires between tables, which is exactly the window a real
-          // sale would land in. One write is enough — the point is that a
-          // single till keystroke cannot be silently absorbed.
-          onPart: async () => {
-            if (injected) return;
-            injected = true;
-            await db.prepare('INSERT INTO customers (code, name) VALUES (?, ?)')
-              .run('C-DURING', 'أثناء النسخ');
-          },
-        }),
-        (error) => {
-          assert.ok(error instanceof SnapshotRaceError, `expected SnapshotRaceError, got ${error}`);
-          assert.equal(error.code, 'SNAPSHOT_RACE');
-          return true;
-        },
-      );
-      assert.ok(injected, 'the test never actually wrote anything, so it proved nothing');
+      const { result, rows } = await readWith(db, (handle) => handle
+        .prepare('INSERT INTO customers (code, name) VALUES (?, ?)')
+        .run('C-DURING', 'أثناء النسخ'));
+      const codes = (rows.get('customers') || []).map((row) => row.code);
+      assert.ok(!codes.includes('C-DURING'), 'a row written mid-read got into the archive');
+      assert.ok(result.totalRows > 0, 'the snapshot read nothing at all');
     });
   });
 
-  await ctx.test('a quiet shop is not accused of moving', async () => {
+  await ctx.test('an edit mid-read is allowed, and the archive says so', async () => {
+    await withShop(slug, async (db) => {
+      const { result } = await readWith(db, (handle) => handle
+        .prepare('UPDATE customers SET name = ?, updated_at = ? WHERE code = ?')
+        .run('اسم اتغير', new Date(Date.now() + 60_000).toISOString(), 'C-3'));
+      assert.ok(result.concurrentEdits.includes('customers'),
+        `an in-place edit went unrecorded: ${JSON.stringify(result.concurrentEdits)}`);
+    });
+  });
+
+  await ctx.test('a DELETE mid-read fails it, and names the table', async () => {
+    await withShop(slug, async (db) => {
+      await assert.rejects(
+        () => readWith(db, (handle) => handle
+          .prepare('DELETE FROM customers WHERE code = ?').run('C-7')),
+        (error) => {
+          assert.ok(error instanceof SnapshotRaceError, `expected SnapshotRaceError, got ${error}`);
+          assert.equal(error.code, 'SNAPSHOT_RACE');
+          // The message is forwarded to whoever has to decide what to do about
+          // it, so it has to carry the evidence, not just the verdict.
+          assert.match(error.message, /customers/);
+          assert.deepEqual(error.changes.map((c) => c.table), ['customers']);
+          return true;
+        },
+      );
+    });
+  });
+
+  await ctx.test('a quiet shop is not accused of anything', async () => {
     await withShop(slug, async () => {
       const result = await readSnapshot({ budget: Infinity, onPart: async () => {} });
       assert.ok(result.totalRows > 0, 'the snapshot read nothing at all');
+      assert.deepEqual(result.concurrentEdits, []);
     });
   });
 });
@@ -251,7 +292,7 @@ test('a hosted backup is taken, stored, and readable', async (ctx) => {
 });
 
 
-test('one sale mid-read costs a retry, not the backup', async (ctx) => {
+test('a delete mid-read costs a retry, not the backup', async (ctx) => {
   const slug = await makeShop('retry');
   await fill(slug, 60);
 
@@ -262,7 +303,9 @@ test('one sale mid-read costs a retry, not the backup', async (ctx) => {
 
   /**
    * The till: a genuinely separate connection, because the point is a write
-   * from OUTSIDE the read, the way a cashier's is.
+   * from OUTSIDE the read, the way a cashier's is. It DELETES, because that is
+   * the only kind of write that still fails a backup — an insert is excluded by
+   * the ceiling and an edit is recorded and allowed.
    */
   const till = await openConnection(descriptor);
   const reader = await openConnection(descriptor);
@@ -293,8 +336,7 @@ test('one sale mid-read costs a retry, not the backup', async (ctx) => {
             .prepare('SELECT COUNT(*) AS n FROM tenant_backup_chunks').get();
           chunksWrittenByFirstAttempt = counted.n;
           await runWithTenant({ slug }, till, () => till.facade
-            .prepare('INSERT INTO customers (code, name) VALUES (?, ?)')
-            .run('C-MID', 'بيع أثناء النسخ'));
+            .prepare('DELETE FROM customers WHERE code = ?').run('C-9'));
         }
         return rows;
       },
@@ -313,7 +355,7 @@ test('one sale mid-read costs a retry, not the backup', async (ctx) => {
     assert.equal(view.status, 'ready', `backup did not recover: ${JSON.stringify(view)}`);
   });
 
-  await ctx.test('and the archive is the SECOND read, whole', async () => {
+  await ctx.test('and the second attempt is the one that was stored', async () => {
     const parts = await platformDb()
       .prepare('SELECT bytes FROM tenant_backup_chunks WHERE backup_id = ? ORDER BY seq')
       .all(view.id);
