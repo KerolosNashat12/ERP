@@ -56,6 +56,23 @@ export const READ_BATCH = Number(process.env.MM_BACKUP_READ_BATCH || 500);
 export const PART_BYTES = Number(process.env.MM_BACKUP_PART_BYTES || 4 * 1024 * 1024);
 
 /**
+ * How many tables one signature statement may cover.
+ *
+ * The signature was written as a single `UNION ALL` over every table — one
+ * round trip whatever the shop's size, which was the point. Forty-four tables
+ * is nowhere near SQLite's own ceiling of five hundred compound terms, and the
+ * shop PC ran it without blinking. Turso would not:
+ *
+ *     SQLITE_UNKNOWN: SQLite error: too many terms in compound SELECT
+ *
+ * The same lesson as `ANALYZE`, learned twice now — the hosted database sets
+ * limits the local one does not, and no test against a `file:` database can
+ * find them. Eight is far under any plausible ceiling, and `signatureRows`
+ * falls back to one table per statement if even that is too many somewhere.
+ */
+const SIGNATURE_TERMS = Number(process.env.MM_BACKUP_SIGNATURE_TERMS || 8);
+
+/**
  * How many bind parameters one INSERT may carry on the way back in. SQLite's
  * historical limit is 999 and libSQL's is far higher; staying under the lower
  * one means the restore does not have to ask which database it is talking to.
@@ -232,34 +249,56 @@ export class SnapshotRaceError extends Error {
  * One statement, one round trip, whatever the shop's size — the cost of the
  * check has to stay far below the cost of the read it is checking.
  */
-export async function shopSignature(tables) {
+export async function shopSignature(tables, terms = SIGNATURE_TERMS) {
   if (!tables.length) return 'empty';
-  const parts = [];
-  for (const table of tables) {
-    const name = quoteName(table.name);
-    // `MAX(updated_at)` only where the column is really there: naming a column
-    // that does not exist is an error, not an empty answer.
-    const stamp = table.columns.includes('updated_at') ? 'MAX(updated_at)' : "''";
-    /**
-     * SINGLE quotes around the table's own name, and it matters.
-     *
-     * `"web_order_lines"` is not a string in SQLite, it is an identifier — so
-     * labelling each row with a double-quoted name asks for a COLUMN by that
-     * name and fails with `no such column: web_order_lines`. `quoteName` has
-     * already refused anything that is not a bare identifier, so the literal
-     * below cannot carry a quote of its own.
-     */
-    parts.push(
-      `SELECT '${table.name}' AS t, COUNT(*) AS n, `
-      + `COALESCE(MAX(rowid), 0) AS m, COALESCE(${stamp}, '') AS u FROM ${name}`,
-    );
+  const rows = [];
+  const size = Math.max(1, terms);
+  for (let i = 0; i < tables.length; i += size) {
+    // eslint-disable-next-line no-await-in-loop
+    rows.push(...await signatureRows(tables.slice(i, i + size)));
   }
-  const rows = await getDb().prepare(parts.join(' UNION ALL ')).all();
   const line = rows
     .map((r) => `${r.t}:${r.n}:${r.m}:${r.u}`)
+    // Sorted, so how the tables were split across statements cannot change the
+    // answer — the same shop signs the same whatever the batch size is.
     .sort()
     .join('|');
   return crypto.createHash('sha256').update(line).digest('hex');
+}
+
+/** One statement covering a handful of tables, with a per-table way out. */
+async function signatureRows(batch) {
+  try {
+    return await getDb().prepare(batch.map(signatureTerm).join(' UNION ALL ')).all();
+  } catch (error) {
+    if (batch.length === 1 || !/compound SELECT/i.test(String(error?.message || ''))) throw error;
+    // The ceiling turned out to be lower here than it is there. One table per
+    // statement always fits, and a slow signature beats no backup.
+    const rows = [];
+    for (const table of batch) {
+      // eslint-disable-next-line no-await-in-loop
+      rows.push(...await getDb().prepare(signatureTerm(table)).all());
+    }
+    return rows;
+  }
+}
+
+function signatureTerm(table) {
+  const name = quoteName(table.name);
+  // `MAX(updated_at)` only where the column is really there: naming a column
+  // that does not exist is an error, not an empty answer.
+  const stamp = table.columns.includes('updated_at') ? 'MAX(updated_at)' : "''";
+  /**
+   * SINGLE quotes around the table's own name, and it matters.
+   *
+   * `"web_order_lines"` is not a string in SQLite, it is an identifier — so
+   * labelling each row with a double-quoted name asks for a COLUMN by that
+   * name and fails with `no such column: web_order_lines`. `quoteName` has
+   * already refused anything that is not a bare identifier, so the literal
+   * below cannot carry a quote of its own.
+   */
+  return `SELECT '${table.name}' AS t, COUNT(*) AS n, `
+    + `COALESCE(MAX(rowid), 0) AS m, COALESCE(${stamp}, '') AS u FROM ${name}`;
 }
 
 /**

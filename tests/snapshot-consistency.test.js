@@ -106,13 +106,13 @@ async function withShop(slug, fn) {
 }
 
 /** The signature, taken the way `readSnapshot` takes it. */
-async function signature() {
+async function signature(terms) {
   const tables = await shopTables();
   const described = [];
   for (const table of tables) {
     described.push({ name: table.name, columns: await columnsOf(table.name) });
   }
-  return shopSignature(described);
+  return shopSignature(described, terms);
 }
 
 async function fill(slug, rows = 40) {
@@ -136,6 +136,22 @@ test('the signature notices anything that could tear a backup', async (ctx) => {
     await withShop(slug, async () => {
       const value = await signature();
       assert.match(value, /^[0-9a-f]{64}$/, 'expected a sha256 of the shop, got: ' + value);
+    });
+  });
+
+  await ctx.test('how many statements it takes cannot change the answer', async () => {
+    /**
+     * The signature began as ONE `UNION ALL` over all forty-four tables — one
+     * round trip whatever the shop's size. SQLite allows five hundred compound
+     * terms and ran it happily; Turso answered every hosted backup with
+     * `SQLITE_UNKNOWN: SQLite error: too many terms in compound SELECT`. It is
+     * split into batches now, which only works if the split is invisible: the
+     * same shop has to sign the same whether that took one statement or forty.
+     */
+    await withShop(slug, async () => {
+      const whole = await signature(1000);
+      assert.equal(await signature(8), whole, 'batching changed the signature');
+      assert.equal(await signature(1), whole, 'one table per statement changed it');
     });
   });
 
