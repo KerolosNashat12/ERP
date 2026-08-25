@@ -99,6 +99,7 @@
 import { platformDb } from '../../platform/db.js';
 import { connectionFor, forget as forgetConnection } from '../../infrastructure/database/connections.js';
 import { openConnection, runWithTenant } from '../../infrastructure/database/connection.js';
+import { ensureMigrated, forgetSchema } from '../../platform/tenantSchema.js';
 import { MODULES } from '../../shared/permissions.js';
 import { ServiceUnavailableError } from '../../shared/errors.js';
 import health from '../../platform/controlPlaneHealth.js';
@@ -259,6 +260,9 @@ async function confirmRefusal(slug) {
 export async function forgetTenant(slug) {
   cache.delete(slug);
   remembered.delete(slug);
+  // Its schema too: the connection is being dropped, so whatever this process
+  // knew about that database's shape was tied to a connection it no longer has.
+  forgetSchema(slug);
   await forgetConnection(slug);
 }
 
@@ -335,6 +339,13 @@ async function resolve(slug, req, res, next) {
       url: tenant.dbUrl,
       authToken: tenant.dbAuthToken,
     }));
+
+    /**
+     * This shop's schema, brought up to date the first time this process serves
+     * it — once per slug, and never fatal. See platform/tenantSchema.js for why
+     * a platform needs this and a single shop does not.
+     */
+    await ensureMigrated(slug, connection);
 
     const tenantContext = {
       slug: tenant.slug,
