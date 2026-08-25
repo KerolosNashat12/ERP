@@ -71,7 +71,7 @@ if exist "hosted-db-setup.txt" del /f /q "hosted-db-setup.txt" >> "%LOG%" 2>&1
 echo.
 echo   Committing...
 git add -A >> "%LOG%" 2>&1
-git -c user.email="kerolosnashatestfanous@gmail.com" -c user.name="KerolosNashat12" commit -m "A search engine can prove who owns this address: the ownership file is served at the root and under every tenant prefix and allowed by name in robots.txt. It needed code because the property is one shop rather than the host, and because the SPA catch-all answered the missing file with a shop page - so Google reported wrong content rather than not found, which reads as a mistake the owner made instead of a file nobody had uploaded yet" >> "%LOG%" 2>&1
+git -c user.email="kerolosnashatestfanous@gmail.com" -c user.name="KerolosNashat12" commit -m "Bing gets its own ownership file, and the sitemap is allowed to be read: robots.txt named a map at the foot of the file that Disallow slash had refused a few lines above it, so Search Console reported a map it could not read while the address answered fine in a browser. Each verification file is now served at three depths and typed as what it actually is - a line of text is not HTML because its name ends in it" >> "%LOG%" 2>&1
 if errorlevel 1 echo   Nothing new to commit - pushing whatever is outstanding.
 
 echo   Pushing (your connection to GitHub drops sometimes, so this retries)...

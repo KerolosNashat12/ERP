@@ -263,6 +263,23 @@ export function robotsTxt({ sitemapUrl = '', prefixes = [''] } = {}) {
     lines.push('# Proof this address belongs to its owner.');
     for (const file of verification) lines.push(`Allow: ${file}`);
   }
+  /**
+   * The sitemap and its shards, allowed explicitly.
+   *
+   * `Sitemap:` at the foot of this file NAMES an address; it does not grant
+   * permission to fetch it, and `Disallow: /` above refuses everything it does
+   * not except. So this file was telling crawlers where the sitemap is and, one
+   * line earlier, that they may not read it — a contradiction whose only symptom
+   * is Search Console reporting the sitemap as unreadable, with nothing on the
+   * site apparently wrong. A sitemap exists to be fetched by machines; refusing
+   * it is never what the default was for.
+   */
+  lines.push('');
+  lines.push('# The map itself. Naming it below is not permission to read it.');
+  for (const prefix of prefixes) {
+    lines.push(`Allow: ${prefix}/sitemap.xml`);
+    lines.push(`Allow: ${prefix}/sitemap/`);
+  }
   lines.push('');
   lines.push('# One customer\'s session, and a search space with no bottom to it.');
   for (const root of roots) {

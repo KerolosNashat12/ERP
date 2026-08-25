@@ -45,7 +45,33 @@ export const VERIFICATION_FILES = {
   // Google Search Console, property https://erp-rust-one.vercel.app/t/mm/
   // Added 2026-08-24 for M&M Accessories.
   'googled257427171a03a47.html': 'google-site-verification: googled257427171a03a47.html',
+
+  /**
+   * Bing Webmaster Tools, site https://erp-rust-one.vercel.app/t/mm/shop
+   * Added 2026-08-25.
+   *
+   * Bing needed its own entry rather than importing the Google one: its
+   * "Import from Google Search Console" only understands sites verified at the
+   * level of a whole host, and this property is one shop inside one — a path.
+   * It reported that as "we didn't find any sites from GSC", which reads like
+   * the Google side is broken when nothing about it is.
+   */
+  'BingSiteAuth.xml': '<?xml version="1.0"?>\n<users>\n\t<user>CD107F304499F62AF81FDC7F3D680E97</user>\n</users>',
 };
+
+/**
+ * What to answer a verification request with.
+ *
+ * These files are named `.html` and `.xml` but only one of them is really
+ * either: Google's is a single line of text that happens to end in `.html`, and
+ * sending it as HTML would be calling it something it is not. Bing's genuinely
+ * is XML and is parsed as XML, so it gets the type that says so. Derived from
+ * the extension rather than stored per entry, because the registry above should
+ * stay exactly what the search engine handed over and nothing else.
+ */
+export const contentTypeFor = (name) => (
+  name.toLowerCase().endsWith('.xml') ? 'application/xml' : 'text/plain'
+);
 
 /** The filenames, in the order they were added. */
 export const verificationNames = () => Object.keys(VERIFICATION_FILES);

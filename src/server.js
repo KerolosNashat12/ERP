@@ -5,7 +5,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { exec } from 'node:child_process';
 import config from './config/index.js';
-import { VERIFICATION_FILES } from './shared/siteVerification.js';
+import { VERIFICATION_FILES, contentTypeFor } from './shared/siteVerification.js';
 import {
   initDb, applySchema, getDb, closeDb, driverName,
 } from './infrastructure/database/connection.js';
@@ -176,12 +176,21 @@ export function createApp() {
    */
   for (const [name, body] of Object.entries(VERIFICATION_FILES)) {
     const serve = (_req, res) => {
-      // `text/plain` because that is what these are; Google accepts either but
-      // sending HTML that is not HTML is how the catch-all caused this.
-      res.type('text/plain').send(body);
+      // Named by extension, not assumed — see `contentTypeFor`. Sending a line
+      // of text as HTML because the file ends in `.html` is the same category
+      // of lie the catch-all told.
+      res.type(contentTypeFor(name)).send(body);
     };
+    /**
+     * Three depths, because a "site" means a different thing to each service.
+     * Google was given the shop's prefix `/t/mm/`; Bing was given the shop
+     * itself, `/t/mm/shop`; and a future move to a real domain will be the
+     * root. Registering all three costs nothing — the tokens are public and
+     * confer nothing — and saves discovering the fourth one by failing.
+     */
     app.get(`/${name}`, serve);
     app.get(`/t/:slug/${name}`, serve);
+    app.get(`/t/:slug/shop/${name}`, serve);
   }
 
   /**
