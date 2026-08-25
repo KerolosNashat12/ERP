@@ -10,6 +10,7 @@
 import BaseRepository from './BaseRepository.js';
 import { getDb } from '../database/connection.js';
 import { SALARY_CATEGORY_CODE } from '../../shared/costs.js';
+import { notInBin } from '../../shared/trashFilter.js';
 
 export class CostCategoryRepository extends BaseRepository {
   constructor() {
@@ -59,6 +60,15 @@ export function costFilter(filters = {}, alias = 'k') {
     const like = `%${String(filters.search).trim()}%`;
     params.push(like, like);
   }
+  /*
+   * A cost in the recycle bin has left the ledger — that is what the delete
+   * dialog promises out loud: "the profit for that month goes up by the same
+   * amount". Because every screen and every report is built on this one
+   * builder, the promise is kept in exactly one place: the list, the totals,
+   * the profit report and the console all stop seeing it at the same instant,
+   * and restoring it puts it back in all of them at once.
+   */
+  where.push(notInBin('cost', q('id')));
   return { sql: where.length ? `WHERE ${where.join(' AND ')}` : '', params };
 }
 
@@ -66,6 +76,7 @@ export class CostRepository extends BaseRepository {
   constructor() {
     super({
       table: 'costs',
+      trashType: 'cost',
       columns: [
         'category_id', 'warehouse_id', 'spent_on', 'amount', 'description', 'reference',
         'payment_method', 'source', 'recurring_id', 'period_key', 'employee_id',

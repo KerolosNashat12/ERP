@@ -20,12 +20,13 @@
 import api from '../core/api.js';
 import {
   h, mount, dataTable, spinner, toast, toastError, textInput, field, modal,
-  debounce, buildForm, confirmDialog, tag,
+  debounce, buildForm, tag,
 } from '../core/ui.js';
 import { t, pick } from '../core/i18n.js';
 import { money, number, date, isoDate, startOfMonthIso } from '../core/format.js';
 import { session, can, invalidate } from '../core/store.js';
 import { proofThumbs, proofPicker } from '../core/proof.js';
+import { confirmDelete } from './trash.js';
 
 const METHODS = ['cash', 'card', 'transfer', 'wallet', 'cheque'];
 const PERIODS = [
@@ -148,17 +149,9 @@ export async function employeesView(root, route) {
               ? h('button', {
                 class: 'btn sm ghost',
                 title: t('delete'),
-                onclick: async () => {
-                  const ok = await confirmDialog({
-                    title: t('delete'), message: t('deleteConfirm'), danger: true, confirmLabel: t('delete'),
-                  });
-                  if (!ok) return;
-                  try {
-                    const result = await api.del(`/api/employees/${row.id}`);
-                    toast(result?.deactivated ? `${t('saved')} (${t('inactive')})` : t('deleted'));
-                    load();
-                  } catch (error) { toastError(error); }
-                },
+                onclick: () => confirmDelete({
+                  entityType: 'employee', entityId: row.id, onDone: load,
+                }),
               }, '🗑')
               : null),
         },

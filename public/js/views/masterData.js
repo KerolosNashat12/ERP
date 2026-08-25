@@ -17,6 +17,7 @@ export const suppliersView = resourceView({
   subtitle: t('navPurchasing'),
   endpoint: '/api/suppliers',
   module: 'suppliers',
+  trashType: 'supplier',
   createLabel: t('suppliers'),
   formSize: 'wide',
   label: (row) => row.name_en,
@@ -189,6 +190,7 @@ export const brandsView = resourceView({
   title: t('brands'),
   endpoint: '/api/brands',
   module: 'brands',
+  trashType: 'brand',
   createLabel: t('brands'),
   label: (row) => row.name_en,
   columns: () => [
@@ -234,6 +236,7 @@ export const categoriesView = resourceView({
   title: t('categories'),
   endpoint: '/api/categories',
   module: 'categories',
+  trashType: 'category',
   createLabel: t('categories'),
   label: (row) => row.name_en,
   columns: () => [
@@ -262,6 +265,7 @@ export const customersView = resourceView({
   title: t('customers'),
   endpoint: '/api/customers',
   module: 'customers',
+  trashType: 'customer',
   createLabel: t('newCustomer'),
   formSize: 'wide',
   label: (row) => row.name,

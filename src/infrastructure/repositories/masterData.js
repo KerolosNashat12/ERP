@@ -9,6 +9,7 @@ export class SupplierRepository extends BaseRepository {
   constructor() {
     super({
       table: 'suppliers',
+      trashType: 'supplier',
       columns: [
         'code', 'name_en', 'name_ar', 'contact_person', 'phone', 'email', 'address',
         'city', 'country', 'tax_number', 'payment_terms_days', 'credit_limit',
@@ -36,6 +37,7 @@ export class BrandRepository extends BaseRepository {
   constructor() {
     super({
       table: 'brands',
+      trashType: 'brand',
       columns: ['code', 'name_en', 'name_ar', 'description', 'country', 'supplier_id',
         'logo_url', 'is_active', 'created_by'],
       searchable: ['code', 'name_en', 'name_ar', 'country'],
@@ -57,6 +59,7 @@ export class CategoryRepository extends BaseRepository {
   constructor() {
     super({
       table: 'categories',
+      trashType: 'category',
       columns: ['code', 'name_en', 'name_ar', 'parent_id', 'description', 'is_active', 'created_by'],
       searchable: ['code', 'name_en', 'name_ar'],
       defaultSort: 'name_en ASC',
@@ -146,6 +149,7 @@ export class CustomerRepository extends BaseRepository {
   constructor() {
     super({
       table: 'customers',
+      trashType: 'customer',
       columns: [
         'code', 'name', 'phone', 'email', 'address', 'city', 'customer_group',
         'tax_number', 'credit_limit', 'balance', 'loyalty_points', 'notes',

@@ -1,6 +1,7 @@
 /** Purchase order persistence (header + lines). */
 import { BaseRepository } from './BaseRepository.js';
 import { matchReasonColumns } from '../database/productSearch.js';
+import { notInBin } from '../../shared/trashFilter.js';
 
 export class PurchaseOrderRepository extends BaseRepository {
   constructor() {
@@ -28,6 +29,7 @@ export class PurchaseOrderRepository extends BaseRepository {
     if (supplierId) { where.push('po.supplier_id = ?'); params.push(supplierId); }
     if (dateFrom) { where.push('po.order_date >= ?'); params.push(dateFrom); }
     if (dateTo) { where.push('po.order_date <= ?'); params.push(dateTo); }
+    where.push(notInBin('purchase_order', 'po.id'));
     const whereSql = `WHERE ${where.join(' AND ')}`;
 
     // The supplier join is part of the filter now, so the count and the summary

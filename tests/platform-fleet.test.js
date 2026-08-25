@@ -535,3 +535,64 @@ test('web orders are pipeline until they are delivered, and are never counted tw
   const erp = await ok(`/t/${s.slug}/api/reports/sales_summary`, { cookie: s.cookie });
   assert.equal(sold.totals.revenue, round2(erp.summary.revenue));
 });
+
+// ---------------------------------------------------------------------- 9
+/**
+ * الهدر and سلة المهملات, seen from the console.
+ *
+ * The owner asked for both to be visible from up here, in those words, twice:
+ * a module he cannot see from the console is a module he cannot sell, and a
+ * bin he cannot see is thirty days of a shop's deleted records that nobody
+ * outside that shop knows exist.
+ *
+ * Three things are checked, and each one is a figure the console prints:
+ *   · what the shop LOST — the same definition its own الهدر screen uses;
+ *   · what is in its bin right now, and how much of it is about to go;
+ *   · that a refund the bin UNDID stops being counted as a refund. That last
+ *     one is the money question: an undone refund that still shows up here
+ *     would mean the console reports money the shop never paid out.
+ */
+test('the console sees a shop\'s wastage and its recycle bin', async () => {
+  const s = await shop('fleet-bin', 'Bin Shop');
+  const { variant } = await stockedProduct(s, 'Bin Widget', { price: 100, quantity: 20 });
+
+  const sale = await sell(s, variant, 2);
+  const refund = await returnLine(s, sale, 1);
+  assert.ok(refund.total_amount > 0, 'the return really did refund money');
+
+  // Two bottles broken: الهدر, at what they cost the shop.
+  await ok(`/t/${s.slug}/api/inventory/wastage`, {
+    method: 'POST',
+    cookie: s.cookie,
+    body: { variantId: variant.id, quantity: 2, reason: 'damage', notes: 'fleet test' },
+  });
+
+  const withRefund = await fleet(`/api/platform/tenants/${s.slug}/report?days=30`);
+  assert.equal(withRefund.totals.refunds, round2(refund.total_amount),
+    'the refund the shop actually paid out is reported');
+  assert.equal(withRefund.totals.returns, 1);
+  assert.equal(withRefund.totals.netRevenue,
+    round2(withRefund.totals.revenue - refund.total_amount),
+    'and what the shop KEPT is revenue minus that refund');
+  assert.ok(withRefund.totals.wastage > 0, 'the loss is reported, not hidden');
+  assert.equal(withRefund.totals.wastageUnits, 2);
+  assert.equal(withRefund.totals.trashInBin, 0, 'nothing has been deleted yet');
+
+  // Now the shop deletes that return — which UNDOES it.
+  const binned = await ok(`/t/${s.slug}/api/trash`, {
+    method: 'POST',
+    cookie: s.cookie,
+    body: { entityType: 'sales_return', entityId: refund.id, reason: 'rung up by mistake' },
+  });
+  assert.equal(binned.effect.reversed, true);
+
+  const after = await fleet(`/api/platform/tenants/${s.slug}/report?days=30`);
+  assert.equal(after.totals.refunds, 0,
+    'a refund the bin undid is not a refund, and the console must not report one');
+  assert.equal(after.totals.returns, 0);
+  assert.equal(after.totals.netRevenue, after.totals.revenue,
+    'so the shop kept everything it took');
+  assert.equal(after.totals.trashInBin, 1, 'and the console can see the bin is not empty');
+  assert.equal(after.totals.trashDueSoon, 0,
+    'thirty days out, nothing is about to be destroyed');
+});

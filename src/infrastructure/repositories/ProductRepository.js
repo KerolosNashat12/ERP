@@ -14,6 +14,7 @@ export class ProductRepository extends BaseRepository {
   constructor() {
     super({
       table: 'products',
+      trashType: 'product',
       columns: [
         'sku_prefix', 'name_en', 'name_ar', 'description_en', 'description_ar',
         'brand_id', 'category_id', 'supplier_id', 'unit', 'tax_rate', 'base_cost',
@@ -182,7 +183,7 @@ export class ProductRepository extends BaseRepository {
       FROM sales_return_lines rl
       JOIN sales_returns r ON r.id = rl.return_id
       JOIN product_variants v ON v.id = rl.variant_id
-      WHERE v.product_id = ?
+      WHERE v.product_id = ? AND r.status <> 'reversed'
       ORDER BY r.return_date DESC LIMIT ?
     `).all(productId, limit);
   }

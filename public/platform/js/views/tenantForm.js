@@ -22,8 +22,8 @@ import { openTursoDialog } from './integrations.js';
 // module names the server will ever accept.
 export const MODULE_KEYS = [
   'dashboard', 'suppliers', 'brands', 'categories', 'attributes', 'products',
-  'inventory', 'purchases', 'customers', 'sales', 'promotions', 'reports',
-  'costs', 'employees', 'legacy_invoices', 'users', 'audit', 'settings', 'labels',
+  'inventory', 'wastage', 'purchases', 'customers', 'sales', 'promotions', 'reports',
+  'costs', 'employees', 'legacy_invoices', 'users', 'audit', 'trash', 'settings', 'labels',
   'weborders',
 ];
 

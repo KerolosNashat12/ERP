@@ -269,6 +269,17 @@ export const wastageSchema = z.object({
   notes: optionalString,
 });
 
+/**
+ * Deleting something into the recycle bin. The entity type is checked against
+ * the policy registry rather than against a list here — one place decides what
+ * may be deleted (services/trash/policies.js) and this only checks the shape.
+ */
+export const trashDeleteSchema = z.object({
+  entityType: z.string().trim().min(1),
+  entityId: id,
+  reason: optionalString,
+});
+
 export const quickAdjustSchema = z.object({
   variantId: id,
   warehouseId: id.optional().nullable(),

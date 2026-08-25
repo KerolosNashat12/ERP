@@ -295,7 +295,7 @@ const dictionary = {
     customers: 'العملاء', sales: 'المبيعات', promotions: 'العروض والخصومات', reports: 'التقارير',
     users: 'المستخدمون والصلاحيات', audit: 'سجل التدقيق', settings: 'الإعدادات', labels: 'الملصقات',
     weborders: 'طلبات الموقع', costs: 'التكاليف', employees: 'الموظفين والمرتبات',
-    legacy_invoices: 'فواتيرك (أرشيف ورقي)',
+    legacy_invoices: 'فواتيرك (أرشيف ورقي)', wastage: 'الهدر', trash: 'سلة المهملات',
   },
 };
 
@@ -307,7 +307,7 @@ Object.assign(dictionary.en, {
   customers: 'Clients', sales: 'Sales', promotions: 'Promotions', reports: 'Reports',
   users: 'Users & Roles', audit: 'Audit Log', settings: 'Settings', labels: 'Labels',
   weborders: 'Web Orders', costs: 'Costs', employees: 'Employees & Salaries',
-  legacy_invoices: 'Your Invoices (paper archive)',
+  legacy_invoices: 'Your Invoices (paper archive)', wastage: 'Wastage', trash: 'Recycle Bin',
 });
 
 let language = localStorage.getItem('mm.platform.lang') || 'en';

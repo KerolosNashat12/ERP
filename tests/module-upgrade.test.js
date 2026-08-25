@@ -21,9 +21,17 @@ import {
 } from '../src/platform/moduleUpgrade.js';
 
 const ALL = Object.keys(MODULES);
-// The modules this release introduced — the ledger's newest date. Adding one
-// without adding it here is the failure the first subtest below catches.
-const NEW = ['costs', 'employees', 'legacy_invoices'];
+/*
+ * The modules THIS release introduced — the ledger's newest date. Adding one
+ * without adding it here is the failure the first subtest below catches.
+ *
+ * `wastage` and `trash` are the current pair: الهدر and سلة المهملات, both
+ * asked for by name and both switchable per shop from the console. The release
+ * before them added costs, employees and the paper archive; those are now on
+ * the old side of the line, which is what "a full tenant stays full" means one
+ * release later.
+ */
+const NEW = ['wastage', 'trash'];
 const OLD = ALL.filter((m) => !NEW.includes(m));
 
 test('a module that ships late still reaches the shops that should have it', async (ctx) => {
@@ -69,9 +77,20 @@ test('a module that ships late still reaches the shops that should have it', asy
 
   await ctx.test('the ledger splits the catalogue at this release', () => {
     const at = latestIntroduction();
-    assert.equal(at, '2026-08-23');
-    assert.deepEqual(modulesAddedAfter('0').sort(), [...NEW].sort());
-    assert.deepEqual(modulesExistingAt('0').sort(), [...OLD].sort());
+    assert.equal(at, '2026-08-25');
+    /*
+     * `'0'` is "before anybody counted", so everything added after it is every
+     * module that has ever shipped since — across ALL releases, not just this
+     * one. Written against the ledger rather than against `NEW`, because the
+     * day a third release lands, `NEW` is one release's worth and this is the
+     * whole history.
+     */
+    const original = Object.keys(INTRODUCED_IN).filter((m) => INTRODUCED_IN[m] === '0');
+    const added = Object.keys(INTRODUCED_IN).filter((m) => INTRODUCED_IN[m] !== '0');
+    assert.deepEqual(modulesAddedAfter('0').sort(), added.sort());
+    assert.deepEqual(modulesExistingAt('0').sort(), original.sort());
+    // And this release's own pair is the newest slice of that history.
+    assert.deepEqual(modulesAddedAfter('2026-08-23').sort(), [...NEW].sort());
     // Everything is on one side or the other, and nothing on both.
     assert.equal(modulesAddedAfter('0').length + modulesExistingAt('0').length, ALL.length);
   });

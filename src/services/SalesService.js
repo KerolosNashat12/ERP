@@ -343,7 +343,14 @@ export class SalesService {
       const sale = await this.sales.findAggregate(id);
       if (!sale) throw new NotFoundError('Sale', id);
       if (sale.status === 'void') throw new BusinessRuleError('This invoice is already void');
-      if (sale.returns?.length) {
+      /*
+       * A return that still stands blocks the void: its pieces are already back
+       * on the shelf and voiding would put them back a second time. One that
+       * was itself reversed does not — it has already been un-done, piece by
+       * piece, and counts for nothing. (`ReturnService.reverse`.)
+       */
+      const standingReturns = (sale.returns || []).filter((r) => r.status !== 'reversed');
+      if (standingReturns.length) {
         throw new BusinessRuleError('This invoice has returns against it — reverse those first');
       }
 

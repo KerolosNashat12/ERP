@@ -55,6 +55,8 @@ export const detailStrings = {
     fleetRefunds: 'Refunded',
     fleetWastage: 'Wastage',
     fleetWastageUnits: 'Pieces lost',
+    fleetTrashInBin: 'In the recycle bin',
+    fleetTrashDueSoon: 'Destroyed within 7 days',
     lowStockHint: 'items at or under their reorder level',
 
     // ── users ──────────────────────────────────────────────────────────────
@@ -212,6 +214,8 @@ export const detailStrings = {
     fleetRefunds: 'المرتجع',
     fleetWastage: 'الهدر',
     fleetWastageUnits: 'قطع ضاعت',
+    fleetTrashInBin: 'في سلة المهملات',
+    fleetTrashDueSoon: 'هتتمسح خلال ٧ أيام',
     lowStockHint: 'صنف عند حد إعادة الطلب أو أقل منه',
 
     usersTitle: 'من يعمل في هذا المتجر',

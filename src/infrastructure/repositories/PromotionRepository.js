@@ -5,6 +5,7 @@ export class PromotionRepository extends BaseRepository {
   constructor() {
     super({
       table: 'promotions',
+      trashType: 'promotion',
       columns: [
         'code', 'name_en', 'name_ar', 'kind', 'discount_type', 'value', 'scope',
         'min_order_amount', 'max_discount_amount', 'voucher_balance', 'starts_at', 'ends_at',

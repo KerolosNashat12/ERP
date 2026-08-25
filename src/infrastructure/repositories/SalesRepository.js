@@ -2,6 +2,7 @@
 import { BaseRepository } from './BaseRepository.js';
 import { getDb } from '../database/connection.js';
 import { matchReasonColumns } from '../database/productSearch.js';
+import { notInBin } from '../../shared/trashFilter.js';
 
 export class SalesRepository extends BaseRepository {
   constructor() {
@@ -36,6 +37,8 @@ export class SalesRepository extends BaseRepository {
     if (warehouseId) { where.push('s.warehouse_id = ?'); params.push(warehouseId); }
     if (dateFrom) { where.push('date(s.sale_date) >= date(?)'); params.push(dateFrom); }
     if (dateTo) { where.push('date(s.sale_date) <= date(?)'); params.push(dateTo); }
+    // An invoice in the recycle bin is off every screen but the bin's own.
+    where.push(notInBin('sale', 's.id'));
     const whereSql = `WHERE ${where.join(' AND ')}`;
 
     // The customer join is now part of the filter, so the count and the summary
@@ -169,6 +172,9 @@ export class SalesReturnRepository extends BaseRepository {
         'return_date', 'reason_code', 'reason_note', 'subtotal', 'tax_amount', 'total_amount',
         'restocking_fee', 'refund_method', 'store_credit_code', 'loyalty_reversed',
         'items_restocked', 'items_written_off', 'created_by', 'approved_by',
+        // Written only by `ReturnService.reverse`, read by every figure that
+        // has to know a refund was undone.
+        'status', 'reversed_at', 'reversed_by', 'reversal_reason',
       ],
       searchable: ['return_no', 'invoice_no', 'reason_note'],
       productScope: { table: 'sales_return_lines', key: 'return_id' },
@@ -195,6 +201,12 @@ export class SalesReturnRepository extends BaseRepository {
     if (dateFrom) { where.push('date(r.return_date) >= date(?)'); params.push(dateFrom); }
     if (dateTo) { where.push('date(r.return_date) <= date(?)'); params.push(dateTo); }
     if (warehouseId) { where.push('r.warehouse_id = ?'); params.push(warehouseId); }
+    /*
+     * A return the recycle bin undid is not a refund. The row stays — its
+     * number was printed on a slip — but it stops counting here, which is the
+     * whole reason `status` exists on the table.
+     */
+    where.push("r.status <> 'reversed'");
     const clause = where.join(' AND ');
 
     const heads = await getDb().prepare(`
@@ -228,6 +240,7 @@ export class SalesReturnRepository extends BaseRepository {
     if (returnType) { where.push('r.return_type = ?'); params.push(returnType); }
     if (dateFrom) { where.push('date(r.return_date) >= date(?)'); params.push(dateFrom); }
     if (dateTo) { where.push('date(r.return_date) <= date(?)'); params.push(dateTo); }
+    where.push(notInBin('sales_return', 'r.id'));
     const whereSql = `WHERE ${where.join(' AND ')}`;
 
     const total = (await this.db.prepare(`
@@ -315,6 +328,7 @@ export class SalesReturnRepository extends BaseRepository {
     const params = [];
     if (dateFrom) { where.push('date(r.return_date) >= date(?)'); params.push(dateFrom); }
     if (dateTo) { where.push('date(r.return_date) <= date(?)'); params.push(dateTo); }
+    where.push("r.status <> 'reversed'");
     return this.db.prepare(`
       SELECT r.reason_code, COUNT(*) AS returns,
              COALESCE(SUM(r.total_amount),0) AS refunded,

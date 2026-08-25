@@ -570,6 +570,14 @@ CREATE TABLE IF NOT EXISTS sales_returns (
   loyalty_reversed  REAL    NOT NULL DEFAULT 0,
   items_restocked   REAL    NOT NULL DEFAULT 0,
   items_written_off REAL    NOT NULL DEFAULT 0,
+  -- A return the recycle bin undid stays here, marked, rather than vanishing:
+  -- its number is on a slip in somebody's hand. Reversed rows are skipped by
+  -- every figure that speaks about money. See migrations/021-return-reversal.js.
+  status            TEXT    NOT NULL DEFAULT 'completed'
+                    CHECK (status IN ('completed','reversed')),
+  reversed_at       TEXT,
+  reversed_by       INTEGER REFERENCES users(id),
+  reversal_reason   TEXT,
   created_by        INTEGER REFERENCES users(id),
   approved_by       INTEGER REFERENCES users(id),
   created_at        TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
@@ -682,6 +690,37 @@ ${ATTACHMENTS_SQL};
 -- One row per named image slot ('banner' today), so a second slot later is a
 -- new row rather than a new table. Same reasoning as product_images: the bytes
 -- live in the database, not on a disk that may not exist or may not survive.
+-- ---------------------------------------------------------------- recycle bin
+-- The REGISTER of what has been deleted, not where deleted things are stored:
+-- a product or an invoice stays in its own table with its references intact,
+-- and an in_bin row here is what hides it. See migration 019 for the whole
+-- reasoning, including why the effect column is written down.
+CREATE TABLE IF NOT EXISTS trash_items (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  module       TEXT    NOT NULL,
+  entity_type  TEXT    NOT NULL,
+  entity_id    INTEGER NOT NULL,
+  label        TEXT    NOT NULL,
+  detail       TEXT,
+  snapshot     TEXT,
+  effect       TEXT,
+  reason       TEXT,
+  status       TEXT    NOT NULL DEFAULT 'in_bin'
+               CHECK (status IN ('in_bin', 'restored', 'purged')),
+  deleted_at   TEXT    NOT NULL,
+  deleted_by   INTEGER REFERENCES users(id),
+  purge_after  TEXT    NOT NULL,
+  restored_at  TEXT,
+  restored_by  INTEGER REFERENCES users(id),
+  purged_at    TEXT,
+  purged_by    INTEGER REFERENCES users(id)
+);
+CREATE INDEX IF NOT EXISTS idx_trash_entity ON trash_items(entity_type, entity_id, status);
+CREATE INDEX IF NOT EXISTS idx_trash_status ON trash_items(status, deleted_at DESC);
+CREATE INDEX IF NOT EXISTS idx_trash_purge  ON trash_items(status, purge_after);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_trash_one_live
+  ON trash_items(entity_type, entity_id) WHERE status = 'in_bin';
+
 CREATE TABLE IF NOT EXISTS web_assets (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   slot TEXT NOT NULL UNIQUE,          -- 'banner' today

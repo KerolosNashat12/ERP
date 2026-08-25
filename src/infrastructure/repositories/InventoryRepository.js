@@ -8,6 +8,7 @@ import {
   VARIANT_DETAIL_ROW, likeParam, matchReasonColumns, normaliseTerm, rankExpression,
   rowExact, rowMatch,
 } from '../database/productSearch.js';
+import { notInBin } from '../../shared/trashFilter.js';
 
 export class InventoryRepository {
   get db() {
@@ -314,6 +315,7 @@ export class StockAdjustmentRepository extends BaseRepository {
     const predicate = this.searchPredicate(search, { alias: 'a' });
     if (predicate) { where.push(predicate.sql); params.push(...predicate.params); }
     if (status) { where.push('a.status = ?'); params.push(status); }
+    where.push(notInBin('stock_adjustment', 'a.id'));
     const whereSql = `WHERE ${where.join(' AND ')}`;
     const total = (await this.db.prepare(`SELECT COUNT(*) AS n FROM stock_adjustments a ${whereSql}`).get(...params)).n;
     const size = Number(pageSize) || 25;

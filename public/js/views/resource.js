@@ -11,6 +11,7 @@ import {
 } from '../core/ui.js';
 import { t } from '../core/i18n.js';
 import { can, invalidate } from '../core/store.js';
+import { confirmDelete } from './trash.js';
 
 export function resourceView(config) {
   return async function view(root, route) {
@@ -57,6 +58,23 @@ export function resourceView(config) {
                 class: 'btn sm ghost',
                 title: t('delete'),
                 onclick: async () => {
+                  /*
+                   * A resource that has a place in the recycle bin goes there,
+                   * through the one dialog that first asks the server what
+                   * deleting it would actually do — what depends on it, what it
+                   * would cost, and how long there is to change your mind.
+                   *
+                   * Anything without a `trashType` keeps the old straight
+                   * delete: those are rows the bin has no policy for, and a
+                   * delete with no policy behind it must not pretend to be
+                   * reversible.
+                   */
+                  if (config.trashType) {
+                    await confirmDelete({
+                      entityType: config.trashType, entityId: row.id, onDone: refresh,
+                    });
+                    return;
+                  }
                   const ok = await confirmDialog({
                     title: t('delete'), message: t('deleteConfirm'), danger: true, confirmLabel: t('delete'),
                   });

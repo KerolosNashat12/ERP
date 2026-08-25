@@ -131,6 +131,14 @@ function renderReport(data) {
         tone: totals.wastage > 0 ? 'warn' : '',
       },
       { label: t('fleetWastageUnits'), value: int(totals.wastageUnits) },
+      // The bin, from up here: what is hidden right now, and how much of it is
+      // days away from being destroyed for good.
+      { label: t('fleetTrashInBin'), value: int(totals.trashInBin) },
+      {
+        label: t('fleetTrashDueSoon'),
+        value: int(totals.trashDueSoon),
+        tone: totals.trashDueSoon > 0 ? 'warn' : '',
+      },
     ]),
 
     metricStrip([

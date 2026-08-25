@@ -2,7 +2,7 @@
 import api from '../core/api.js';
 import {
   h, mount, dataTable, pager, spinner, toast, toastError, textInput, selectInput,
-  numberInput, field, modal, debounce, statusTag, buildForm, confirmDialog, printNode, tag,
+  numberInput, field, modal, debounce, statusTag, buildForm, printNode, tag,
   matchNote,
 } from '../core/ui.js';
 import { t, pick } from '../core/i18n.js';
@@ -13,6 +13,7 @@ import { variantPicker, lineNumber, requireLines } from './pickers.js';
 // One photograph mechanism, one browser-side implementation of it: the cost
 // and salary screens use the very same three helpers. See core/proof.js.
 import { proofUrl, openProof, proofPicker } from '../core/proof.js';
+import { confirmDelete } from './trash.js';
 
 /**
  * What an order will not let you do, and why.
@@ -160,21 +161,21 @@ export async function purchasesView(root, route) {
   return undefined;
 }
 
-/** Delete a draft, with the confirmation and the refusal both in one place. */
+/**
+ * Delete an order, with the refusal in front of it.
+ *
+ * The local refusal above is a courtesy — it answers instantly, from the row
+ * already on screen. The real answer comes from the bin's own preview, which
+ * re-reads the order on the server and refuses on goods received or money
+ * paid; that is the one that decides. Both say the same thing, and the second
+ * one cannot be out of date.
+ */
 async function removeOrder(order, afterwards) {
   const refusal = deleteRefusal(order);
   if (refusal) { toast(refusal, 'warn', 6000); return; }
-  if (!await confirmDialog({
-    title: `${t('deleteOrder')} — ${order.po_number}`,
-    message: t('deleteOrderConfirm'),
-    confirmLabel: t('deleteOrder'),
-    danger: true,
-  })) return;
-  try {
-    await api.del(`/api/purchases/${order.id}`);
-    toast(t('deleted'));
-    await afterwards();
-  } catch (error) { toastError(error); }
+  await confirmDelete({
+    entityType: 'purchase_order', entityId: order.id, onDone: afterwards,
+  });
 }
 
 async function openReorderSuggestions() {

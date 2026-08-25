@@ -63,6 +63,7 @@ import config from '../config/index.js';
 import { platformDb } from './db.js';
 import { getDb, openConnection, runWithTenant } from '../infrastructure/database/connection.js';
 import { connectionFor } from '../infrastructure/database/connections.js';
+import { ensureMigrated } from './tenantSchema.js';
 import { NotFoundError } from '../shared/errors.js';
 import { round2 } from '../shared/money.js';
 
@@ -177,6 +178,15 @@ export async function readTenant(row, modules, fn) {
     url: row.db_url,
     authToken: row.db_auth_token,
   }));
+  /*
+   * The console reads a shop's database directly, without going through the
+   * tenant middleware — so the one place that brings a shop's schema up to date
+   * on the request path is not on this path. It has to be here too, or the
+   * console asks a shop that has not been migrated yet for a column or a table
+   * it does not have, and a report that should say "quiet week" says 500.
+   * `ensureMigrated` is once per slug per process and never throws.
+   */
+  await ensureMigrated(row.slug, connection);
   return runWithTenant({
     slug: row.slug,
     name: row.name_en,
@@ -443,7 +453,7 @@ export async function report(slug, { days } = {}) {
     const db = getDb();
     const [
       currency, window, trend, items, counts, lowStock, pending, topProducts, staff,
-      refunded, wasted,
+      refunded, wasted, binned,
     ] = await Promise.all([
       currencyOf(),
       salesBetween(from, to),
@@ -516,7 +526,8 @@ export async function report(slug, { days } = {}) {
       db.prepare(`
         SELECT COUNT(*) AS documents, COALESCE(SUM(total_amount), 0) AS amount
         FROM sales_returns
-        WHERE date(return_date) >= date(?) AND date(return_date) <= date(?)
+        WHERE status <> 'reversed'
+          AND date(return_date) >= date(?) AND date(return_date) <= date(?)
       `).get(from, to),
 
       // الهدر: broken, lost, stolen, expired — at what it cost the shop. The
@@ -532,6 +543,22 @@ export async function report(slug, { days } = {}) {
           AND l.difference < 0
           AND date(a.posted_at) >= date(?) AND date(a.posted_at) <= date(?)
       `).get(from, to),
+
+      /*
+       * سلة المهملات, from up here.
+       *
+       * Not a money figure and deliberately not dated to the window: what the
+       * owner of the fleet wants to know about a shop's bin is what is IN it
+       * right now and what is about to be destroyed for good — a question with
+       * no meaning inside a seven-day window. `dueSoon` is the one worth a
+       * colour: after that date nothing brings those records back.
+       */
+      db.prepare(`
+        SELECT COUNT(*) AS in_bin,
+               COALESCE(SUM(CASE WHEN datetime(purge_after) <= datetime('now', '+7 days')
+                                 THEN 1 ELSE 0 END), 0) AS due_soon
+        FROM trash_items WHERE status = 'in_bin'
+      `).get(),
     ]);
 
     return {
@@ -557,6 +584,8 @@ export async function report(slug, { days } = {}) {
         netRevenue: round2(window.revenue - Number(refunded?.amount || 0)),
         wastage: round2(wasted?.amount || 0),
         wastageUnits: round2(wasted?.units || 0),
+        trashInBin: Number(binned?.in_bin || 0),
+        trashDueSoon: Number(binned?.due_soon || 0),
       },
       trend,
       topProducts: topProducts.map((p) => ({

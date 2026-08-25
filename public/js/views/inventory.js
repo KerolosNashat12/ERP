@@ -9,6 +9,7 @@ import { money, number, dateTime } from '../core/format.js';
 import { can, lookup } from '../core/store.js';
 import { navigate } from '../core/router.js';
 import { variantPicker, lineNumber, requireLines } from './pickers.js';
+import { confirmDelete } from './trash.js';
 
 // -------------------------------------------------------------- stock grid
 
@@ -308,20 +309,46 @@ function openRecord(refresh) {
   ], { reason: 'damage', quantity: 1 }, { columns: 2 });
 
   const picker = variantPicker({
-    onPick: (variant) => {
+    onPick: async (variant) => {
       chosen = variant;
-      mount(chosenHost, h('div', {},
-        h('div', { class: 'strong' }, `${pick(variant, 'product_name')} — ${variant.variant_label || ''}`),
-        h('div', { class: 'muted small' }, `${variant.sku} · ${t('onHand')}: ${number(variant.on_hand ?? 0)}`)));
+      mount(chosenHost, spinner());
+      /*
+       * The search result does NOT carry a stock level — it is a catalogue
+       * lookup, and it said "الرصيد: 0" for every piece in the shop because it
+       * was reading a field that was never there. The shelf is its own
+       * question, so it is asked: the same call the stock count screen makes.
+       */
+      let level = null;
+      try {
+        const details = await api.get(`/api/products/variants/${variant.variant_id}`);
+        level = details.stock?.[0] || null;
+      } catch { level = null; }
+      chosen.on_hand = level ? Number(level.quantity || 0) : null;
+      chosen.unit_cost = level ? Number(level.average_cost || 0) : null;
+
+      mount(chosenHost, h('div', { class: 'picked' },
+        h('div', {},
+          h('div', { class: 'strong' }, `${pick(variant, 'product_name')} — ${variant.variant_label || ''}`),
+          h('div', { class: 'muted small mono' }, variant.sku)),
+        h('div', { class: 'picked-facts' },
+          h('div', {},
+            h('span', { class: 'muted small' }, t('onHand')),
+            h('b', {}, chosen.on_hand === null ? '—' : number(chosen.on_hand))),
+          // The cost is what the loss will be VALUED at, so it is shown before
+          // the loss is recorded rather than discovered in a report afterwards.
+          h('div', {},
+            h('span', { class: 'muted small' }, t('cost')),
+            h('b', {}, chosen.unit_cost ? money(chosen.unit_cost) : '—')))));
     },
   });
 
   const dialog = modal({
     title: t('recordWastage'),
-    size: 'wide',
-    body: h('div', { class: 'stack' },
-      picker.node,
-      h('div', { class: 'card' }, h('div', { class: 'card-body tight' }, chosenHost)),
+    body: h('div', { class: 'wastage-form' },
+      h('div', { class: 'field' },
+        h('label', {}, t('pickAnItem')),
+        picker.node),
+      h('div', { class: 'picked-card' }, chosenHost),
       form.node),
     footer: h('div', { class: 'row', style: { gap: '8px', justifyContent: 'flex-end' } },
       h('button', { class: 'btn ghost', onclick: () => dialog.close() }, t('cancel')),
@@ -428,6 +455,27 @@ export async function adjustmentsView(root, route) {
         { key: 'value_impact', label: t('value'), type: 'money', render: (r) => money(r.value_impact) },
         { key: 'status', label: t('status'), render: (r) => statusTag(r.status) },
         { key: 'created_by_name', label: t('user'), render: (r) => h('span', { class: 'small muted' }, r.created_by_name || '—') },
+        {
+          key: '__actions',
+          label: '',
+          width: '1%',
+          /*
+           * A draft is destroyed outright — it never moved a piece. A posted
+           * one is REVERSED first: the stock it wrote off comes back and the
+           * document is marked cancelled, so the wastage figure stops counting
+           * it. Both go through the same dialog, which says which is which.
+           */
+          render: (r) => (can('inventory.adjust')
+            ? h('button', {
+              class: 'btn sm ghost',
+              title: t('delete'),
+              onclick: (event) => {
+                event.stopPropagation();
+                confirmDelete({ entityType: 'stock_adjustment', entityId: r.id, onDone: load });
+              },
+            }, '🗑')
+            : null),
+        },
       ],
       rows: data.rows,
       onRowClick: (row) => navigate(`adjustments/${row.id}`),

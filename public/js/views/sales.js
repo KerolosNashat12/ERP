@@ -9,6 +9,7 @@ import { money, number, date, dateTime } from '../core/format.js';
 import { can } from '../core/store.js';
 import { navigate } from '../core/router.js';
 import { showReceiptDialog, buildReceipt } from './pos.js';
+import { confirmDelete } from './trash.js';
 
 export async function salesView(root, route) {
   if (route.segments[1]) return saleDetailView(root, Number(route.segments[1]));
@@ -118,7 +119,28 @@ async function saleDetailView(root, id) {
           onclick: () => navigate(`returns/new?invoice=${encodeURIComponent(sale.invoice_no)}`),
         }, t('newReturn')) : null,
       sale.status === 'completed' && can('sales.void')
-        ? h('button', { class: 'btn danger', onclick: () => openVoid(sale) }, t('voidSale')) : null),
+        ? h('button', { class: 'btn danger', onclick: () => openVoid(sale) }, t('voidSale')) : null,
+      /*
+       * Void and delete are not the same act, and both belong here.
+       *
+       * VOID leaves the invoice on the screen, marked, which is what a shop
+       * does with a sale that went wrong in front of the customer. DELETE
+       * voids it too — the money and the stock are un-done exactly the same
+       * way — and then takes it off the screen for thirty days, which is what
+       * a shop does with an invoice that should never have existed at all. It
+       * can be brought back inside those thirty days, and comes back VOID:
+       * restoring undoes the hiding, never the reversal.
+       */
+      can('sales.void')
+        ? h('button', {
+          class: 'btn ghost danger',
+          title: t('delete'),
+          onclick: () => confirmDelete({
+            entityType: 'sale',
+            entityId: sale.id,
+            onDone: () => navigate('sales'),
+          }),
+        }, '🗑') : null),
 
     h('div', { class: 'grid cols-4' },
       kpi(t('total'), money(sale.total_amount)),

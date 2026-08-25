@@ -58,6 +58,27 @@ export const MODULES = {
   settings: ['view', 'update', 'backup', 'export_data'],
   labels: ['view', 'print'],
   weborders: ['view', 'confirm', 'cancel'],
+  /*
+   * الهدر — stock the shop paid for and will never sell.
+   *
+   * Its own module rather than a corner of `inventory`, for the reason the
+   * platform exists: a module is a thing that can be sold, and the owner asked
+   * for this one to be visible and switchable per shop in the console. It is
+   * also a genuinely different act — reading what the shop is holding and
+   * writing off what it has lost are not the same trust, and a stock clerk who
+   * may count the shelves has no business deciding four bottles are gone.
+   */
+  wastage: ['view', 'record'],
+  /*
+   * سلة المهملات. `view` is seeing what was deleted; `restore` is bringing it
+   * back; `purge` is destroying it early, before the thirty days are up.
+   *
+   * Three codes and not one, because they are three different amounts of
+   * damage: seeing the bin is harmless, restoring puts a hidden record back on
+   * screens other people read, and purging is the only irreversible act in this
+   * system that a person can reach with a button.
+   */
+  trash: ['view', 'restore', 'purge'],
 };
 
 export const ALL_PERMISSIONS = Object.entries(MODULES).flatMap(([module, actions]) =>

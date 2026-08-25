@@ -16,6 +16,7 @@ import { suppliersView, brandsView, categoriesView, customersView, attributesVie
 import {
   inventoryView, movementsView, adjustmentsView, wastageView,
 } from './views/inventory.js';
+import trashView from './views/trash.js';
 import { purchasesView } from './views/purchasing.js';
 import { salesView } from './views/sales.js';
 import { webOrdersView } from './views/webOrders.js';
@@ -74,7 +75,7 @@ const NAV = [
        * costs is already on the dashboard and in the profit report, which is
        * where a loss is looked FOR rather than looked UP.
        */
-      { path: 'wastage', label: 'wastage', icon: '⚠', permission: 'inventory.view' },
+      { path: 'wastage', label: 'wastage', icon: '⚠', permission: 'wastage.view' },
     ],
   },
   {
@@ -117,6 +118,13 @@ const NAV = [
     items: [
       { path: 'users', label: 'users', icon: '☷', permission: 'users.view', badge: 'pendingResets' },
       { path: 'audit', label: 'audit', icon: '⎗', permission: 'audit.view' },
+      /*
+       * سلة المهملات, beside the audit log rather than inside any one module:
+       * it is the register of what was deleted across all of them, and "who
+       * deleted the September invoice" is the same kind of question as "who
+       * changed this price".
+       */
+      { path: 'trash', label: 'trash', icon: '🗑', permission: 'trash.view' },
       { path: 'settings', label: 'settings', icon: '✦', permission: 'settings.view' },
     ],
   },
@@ -170,12 +178,12 @@ const ROUTE_PERMISSIONS = {
   'web-orders': 'weborders.view',
   products: 'products.view', brands: 'brands.view', categories: 'categories.view',
   attributes: 'attributes.view', labels: 'labels.view', inventory: 'inventory.view',
-  movements: 'inventory.view', adjustments: 'inventory.view', wastage: 'inventory.view',
+  movements: 'inventory.view', adjustments: 'inventory.view', wastage: 'wastage.view',
   purchases: 'purchases.view', suppliers: 'suppliers.view', customers: 'customers.view',
   costs: 'costs.view', 'cost-categories': 'costs.view', employees: 'employees.view',
   'legacy-invoices': 'legacy_invoices.view',
   promotions: 'promotions.view', reports: 'reports.view', users: 'users.view',
-  audit: 'audit.view', settings: 'settings.view',
+  audit: 'audit.view', trash: 'trash.view', settings: 'settings.view',
 };
 
 // ------------------------------------------------------------------- shell
@@ -347,6 +355,7 @@ async function startApp() {
     reports: reportsView,
     users: usersView,
     audit: auditView,
+    trash: trashView,
     settings: settingsView,
   }, {
     notFound: (host) => mount(host, h('div', { class: 'empty' }, t('noResults'))),

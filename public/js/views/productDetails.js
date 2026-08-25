@@ -9,13 +9,14 @@
 import api from '../core/api.js';
 import {
   h, mount, dataTable, spinner, tag, toast, toastError, modal, printNode,
-  selectInput, numberInput, buildForm, confirmDialog,
+  selectInput, numberInput, buildForm,
 } from '../core/ui.js';
 import { t, pick, getLanguage } from '../core/i18n.js';
 import { money, number, percent, date, dateTime } from '../core/format.js';
 import { can, devices } from '../core/store.js';
 import { navigate } from '../core/router.js';
 import { labelCard } from './labels.js';
+import { confirmDelete } from './trash.js';
 
 export async function productDetailsView(root, productId) {
   mount(root, spinner());
@@ -125,14 +126,11 @@ export async function productDetailsView(root, productId) {
             can('products.delete')
               ? h('button', {
                 class: 'btn block danger',
-                onclick: async () => {
-                  if (!await confirmDialog({ title: t('delete'), message: t('deleteConfirm'), danger: true })) return;
-                  try {
-                    const result = await api.del(`/api/products/${productId}`);
-                    toast(result.deactivated ? `${t('saved')} (${t('inactive')})` : t('deleted'));
-                    navigate('products');
-                  } catch (error) { toastError(error); }
-                },
+                onclick: () => confirmDelete({
+                  entityType: 'product',
+                  entityId: productId,
+                  onDone: () => navigate('products'),
+                }),
               }, t('delete'))
               : null))),
 

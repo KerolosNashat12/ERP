@@ -26,6 +26,7 @@ import { money, number, date, isoDate, startOfMonthIso } from '../core/format.js
 import { session, can, lookup, invalidate } from '../core/store.js';
 import { proofThumbs, proofPicker } from '../core/proof.js';
 import { resourceView } from './resource.js';
+import { confirmDelete } from './trash.js';
 
 const METHODS = ['cash', 'card', 'transfer', 'wallet', 'cheque'];
 
@@ -142,17 +143,11 @@ export async function costsView(root, route) {
               ? h('button', {
                 class: 'btn sm ghost',
                 title: t('delete'),
-                onclick: async () => {
-                  const ok = await confirmDialog({
-                    title: t('delete'), message: t('deleteCostConfirm'), danger: true, confirmLabel: t('delete'),
-                  });
-                  if (!ok) return;
-                  try {
-                    await api.del(`/api/costs/${row.id}`);
-                    toast(t('costDeleted'));
-                    reload();
-                  } catch (error) { toastError(error); }
-                },
+                // Through the bin: a cost is money already counted against a
+                // month's profit, and the dialog says so before it moves.
+                onclick: () => confirmDelete({
+                  entityType: 'cost', entityId: row.id, onDone: reload,
+                }),
               }, '🗑')
               : null),
         },

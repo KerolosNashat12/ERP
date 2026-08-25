@@ -22,6 +22,7 @@ export const promotionsView = resourceView({
   subtitle: t('promotionsSubtitle'),
   endpoint: '/api/promotions',
   module: 'promotions',
+  trashType: 'promotion',
   createLabel: t('newPromotion'),
   formSize: 'wide',
   label: (row) => row.code,

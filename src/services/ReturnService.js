@@ -434,6 +434,150 @@ export class ReturnService {
   }
 
   /** Reason breakdown for the returns report. */
+  /**
+   * Undo a return, exactly.
+   *
+   * ── Why this did not exist ──────────────────────────────────────────────────
+   * Because a return is the shop's apology, and undoing an apology is not a
+   * thing a till usually needs to do. Then the owner rang one up while learning
+   * the system, and there was no way back: money had gone out, a piece had come
+   * off the shelf and been written off, and the figures carried it forever. He
+   * asked to delete it, and "delete" for a document with money in it means this
+   * — a mirror, not an eraser.
+   *
+   * ── What it reverses, in the reverse order ─────────────────────────────────
+   *   the stock  — a restocked piece comes back OFF the shelf, and a written-off
+   *                one is un-written-off and then taken back off, so the
+   *                movement ledger shows both halves rather than a hole;
+   *   the sale   — `returned_quantity` on each line goes back down, which is
+   *                what re-opens the invoice for a genuine return later;
+   *   the points — the loyalty taken off the customer is given back;
+   *   the money  — an account credit is undone; a store credit voucher is
+   *                cancelled. CASH IS NOT SILENTLY UNDONE: the note says the
+   *                till is short by that much, because a computer cannot reach
+   *                into a drawer and nobody should pretend it can.
+   *
+   * The return row is marked `reversed` and kept. Its number stays in the
+   * sequence, because a gap in a document sequence is a worse thing to explain
+   * than a reversed document in it.
+   */
+  async reverse(id, reason, context = {}) {
+    return transaction(async () => {
+      const record = await this.returns.findAggregate(id);
+      if (!record) throw new NotFoundError('Return', id);
+      if (record.status === 'reversed') {
+        throw new BusinessRuleError('This return has already been reversed');
+      }
+
+      const lines = record.lines || [];
+      let unRestocked = 0;
+      let unWrittenOff = 0;
+
+      for (const line of lines) {
+        const quantity = Math.abs(Number(line.quantity || 0));
+        if (!quantity) continue;
+
+        if (line.condition === 'damaged') {
+          /*
+           * It was received and then scrapped. Put the scrap back first so the
+           * shelf can carry the piece the outbound movement is about to take —
+           * without this the second movement can hit a negative balance and be
+           * refused, and the ledger would be left half-undone.
+           */
+          // eslint-disable-next-line no-await-in-loop
+          await this.inventory.postMovement({
+            variantId: line.variant_id,
+            warehouseId: record.warehouse_id,
+            movementType: 'adjustment',
+            quantity,
+            unitCost: line.unit_cost,
+            referenceType: 'sales_return_reversal',
+            referenceId: record.id,
+            referenceNo: record.return_no,
+            notes: reason || 'Return reversed — write-off undone',
+            actorId: context.actor?.id || null,
+            allowNegative: true,
+          });
+          unWrittenOff += quantity;
+        } else {
+          unRestocked += quantity;
+        }
+
+        // And out again: the piece is back with the customer, wherever it is.
+        // eslint-disable-next-line no-await-in-loop
+        await this.inventory.postMovement({
+          variantId: line.variant_id,
+          warehouseId: record.warehouse_id,
+          movementType: 'sale',
+          quantity: -quantity,
+          unitCost: line.unit_cost,
+          referenceType: 'sales_return_reversal',
+          referenceId: record.id,
+          referenceNo: record.return_no,
+          notes: reason || 'Return reversed',
+          actorId: context.actor?.id || null,
+          allowNegative: true,
+        });
+
+        // eslint-disable-next-line no-await-in-loop
+        if (line.sale_line_id) await this.sales.incrementReturnedQty(line.sale_line_id, -quantity);
+      }
+
+      // The points the return took off the customer.
+      if (record.customer_id && Number(record.loyalty_reversed || 0) > 0) {
+        await this.customers.adjustLoyalty(record.customer_id, Number(record.loyalty_reversed));
+      }
+
+      /*
+       * The money. Three refund methods, three different truths:
+       *   account      — the customer's balance went down; put it back up.
+       *   store_credit — the voucher is cancelled, so it cannot be spent. This
+       *                  is why the recycle bin refuses to delete a return whose
+       *                  voucher has ALREADY been spent: cancelling it then
+       *                  would take back money the customer no longer has.
+       *   cash         — nothing here can undo. It is reported, not pretended.
+       */
+      const money = { method: record.refund_method, amount: round2(record.total_amount) };
+      if (record.refund_method === 'account' && record.customer_id) {
+        await this.customers.adjustBalance(record.customer_id, round2(record.total_amount));
+        money.undone = true;
+      } else if (record.refund_method === 'store_credit' && record.store_credit_code) {
+        await getDb().prepare(
+          "UPDATE promotions SET is_active = 0 WHERE code = ? AND kind = 'voucher'",
+        ).run(record.store_credit_code);
+        money.undone = true;
+        money.voucherCancelled = record.store_credit_code;
+      } else {
+        // Cash. Said plainly, in the record and to the caller.
+        money.undone = false;
+        money.note = 'Cash was refunded from the till and has not been put back automatically.';
+      }
+
+      const updated = await this.returns.update(record.id, {
+        status: 'reversed',
+        reversed_at: new Date().toISOString(),
+        reversed_by: context.actor?.id || null,
+        reversal_reason: reason || null,
+      });
+
+      await this.audit.record({
+        action: 'REVERSE',
+        module: 'sales',
+        entityType: 'sales_return',
+        entityId: record.id,
+        entityLabel: record.return_no,
+        before: { status: record.status || 'completed', refund: record.total_amount },
+        after: { status: 'reversed', money, unRestocked, unWrittenOff, reason },
+        actor: context.actor,
+        request: context.request,
+      });
+
+      return {
+        record: updated, money, unRestocked, unWrittenOff,
+      };
+    });
+  }
+
   async reasonBreakdown(query) {
     return this.returns.reasonBreakdown(query || {});
   }

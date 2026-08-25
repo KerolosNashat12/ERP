@@ -504,7 +504,8 @@ export const REPORTS = {
                r.total_amount, r.refund_method
         FROM sales_returns r
         LEFT JOIN customers c ON c.id = r.customer_id
-        WHERE date(r.return_date) BETWEEN date(?) AND date(?)
+        WHERE r.status <> 'reversed'
+          AND date(r.return_date) BETWEEN date(?) AND date(?)
         ORDER BY r.id DESC
       `).all(from, to);
       return {
@@ -969,7 +970,12 @@ export const REPORTS = {
        * stays where it is. That distinction is the whole reason the condition
        * is recorded on the line.
        */
-      const returnsWhere = ['date(r.return_date) BETWEEN date(?) AND date(?)'];
+      /*
+       * `status <> 'reversed'` here for the same reason it is on every other
+       * refund figure: a return the recycle bin undid put its pieces back and
+       * its money back, and counting it would take profit off a month twice.
+       */
+      const returnsWhere = ["r.status <> 'reversed'", 'date(r.return_date) BETWEEN date(?) AND date(?)'];
       const returnsParams = [from, to];
       if (filters.warehouseId) { returnsWhere.push('r.warehouse_id = ?'); returnsParams.push(filters.warehouseId); }
       const returns = await db.prepare(`

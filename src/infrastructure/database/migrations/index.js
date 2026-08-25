@@ -37,6 +37,9 @@ import migration015 from './015-legacy-invoices.js';
 import migration016 from './016-lifetime-report-indexes.js';
 import migration017 from './017-shop-data-export.js';
 import migration018 from './018-po-discount-percent.js';
+import migration019 from './019-recycle-bin.js';
+import migration020 from './020-wastage-and-trash-permissions.js';
+import migration021 from './021-return-reversal.js';
 
 /** Ordered. Append only. */
 const MIGRATIONS = [
@@ -58,6 +61,9 @@ const MIGRATIONS = [
   migration016,
   migration017,
   migration018,
+  migration019,
+  migration020,
+  migration021,
 ];
 
 async function ensureRegistry() {

@@ -34,8 +34,20 @@ export class BaseRepository {
    */
   constructor({
     table, columns, searchable = [], timestamps = true, defaultSort = 'id DESC',
-    productScope = null, documentColumn = null,
+    productScope = null, documentColumn = null, trashType = null,
   }) {
+    /**
+     * The recycle bin's key for this table, when it has one.
+     *
+     * A deleted record STAYS in its own table with every reference to it
+     * intact — moving it to a bin table would break the invoices it sits on —
+     * so what makes it "deleted" is an `in_bin` row in `trash_items`, and this
+     * is what lets `list()` leave it out. One `NOT EXISTS` against an indexed
+     * lookup, added to the one method every screen's list goes through, rather
+     * than the same clause copied into fifteen repositories where fourteen
+     * would eventually be right.
+     */
+    this.trashType = trashType;
     this.table = table;
     this.columns = columns;
     this.searchable = searchable;
@@ -169,6 +181,15 @@ export class BaseRepository {
       if (!this.columns.includes(col) && col !== 'id' && col !== 'is_active') continue;
       where.push(`${col} = ?`);
       params.push(value);
+    }
+
+    // What is in the recycle bin is not on this screen.
+    if (this.trashType && q.includeDeleted !== true) {
+      where.push(
+        "NOT EXISTS (SELECT 1 FROM trash_items tb WHERE tb.entity_type = ? "
+        + `AND tb.entity_id = ${this.table}.id AND tb.status = 'in_bin')`,
+      );
+      params.push(this.trashType);
     }
 
     const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';

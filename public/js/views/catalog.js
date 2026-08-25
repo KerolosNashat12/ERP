@@ -10,6 +10,7 @@ import { can, lookup, invalidate } from '../core/store.js';
 import { onScan } from '../core/scanner.js';
 import { navigate } from '../core/router.js';
 import { productDetailsView } from './productDetails.js';
+import { confirmDelete } from './trash.js';
 
 // ---------------------------------------------------------------- list view
 
@@ -76,14 +77,9 @@ export async function productsView(root, route) {
             can('products.delete') ? h('button', {
               class: 'btn sm ghost',
               title: t('delete'),
-              onclick: async () => {
-                if (!await confirmDialog({ title: t('delete'), message: t('deleteConfirm'), danger: true })) return;
-                try {
-                  const result = await api.del(`/api/products/${r.id}`);
-                  toast(result.deactivated ? `${t('saved')} (${t('inactive')})` : t('deleted'));
-                  load();
-                } catch (error) { toastError(error); }
-              },
+              onclick: () => confirmDelete({
+                entityType: 'product', entityId: r.id, onDone: load,
+              }),
             }, '🗑') : null),
         },
       ],

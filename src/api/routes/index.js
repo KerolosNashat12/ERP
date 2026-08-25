@@ -27,6 +27,7 @@ import auditService from '../../services/AuditService.js';
 import { userService, settingsService, backupService } from '../../services/AdminService.js';
 import dataExportService from '../../services/DataExportService.js';
 import webAssetService, { brandSlot } from '../../services/WebAssetService.js';
+import trashService from '../../services/trash/TrashService.js';
 import passwordResetService from '../../services/PasswordResetService.js';
 import webOrderService from '../../services/WebOrderService.js';
 import {
@@ -36,7 +37,7 @@ import {
 import repositories from '../../infrastructure/repositories/index.js';
 import { currentTenant, supportsFileBackup, driverName } from '../../infrastructure/database/connection.js';
 import { buildBranding, companyNameFrom } from '../../shared/branding.js';
-import { NotFoundError } from '../../shared/errors.js';
+import { ForbiddenError, NotFoundError } from '../../shared/errors.js';
 import { deploymentInfo } from '../../shared/deploymentInfo.js';
 
 const router = Router();
@@ -475,11 +476,15 @@ router.post('/inventory/adjustments/:id/post', requirePermission('inventory.adju
   asyncHandler(async (req, res) => res.json(await inventoryService.postAdjustment(Number(req.params.id), req.context))));
 
 /*
- * الهدر — what the shop lost. Read by anyone who may see the stock; recorded by
- * anyone who may adjust it, because writing four broken bottles off IS an
- * adjustment and must not be a second, looser door onto the same shelf.
+ * الهدر — what the shop lost.
+ *
+ * Its own module, so it can be sold and switched per shop from the console, and
+ * its own two codes: seeing what was lost is the same order of secret as seeing
+ * what the shop holds, and writing four bottles off is the same trust as
+ * adjusting the shelf they were on. Migration 020 hands both to the roles that
+ * already held the rights they were carved out of.
  */
-router.get('/inventory/wastage', requirePermission('inventory.view'), asyncHandler(async (req, res) => {
+router.get('/inventory/wastage', requirePermission('wastage.view'), asyncHandler(async (req, res) => {
   const window = {
     dateFrom: req.query.dateFrom || null,
     dateTo: req.query.dateTo || null,
@@ -491,10 +496,87 @@ router.get('/inventory/wastage', requirePermission('inventory.view'), asyncHandl
   ]);
   res.json({ summary, rows });
 }));
-router.post('/inventory/wastage', requirePermission('inventory.adjust'), validate(v.wastageSchema),
+router.post('/inventory/wastage', requirePermission('wastage.record'), validate(v.wastageSchema),
   asyncHandler(async (req, res) => res.status(201).json(
     await inventoryService.recordWastage(req.body, req.context),
   )));
+
+/*
+ * سلة المهملات — one door for deleting anything, one register of what was
+ * deleted, one way back. See services/trash/TrashService.js for the whole
+ * design, and services/trash/policies.js for what may be deleted and what
+ * deleting it costs.
+ *
+ * `preview` changes nothing and is what the confirm dialog shows. `remove`
+ * asks the same question again before it acts, so a blocker cannot be skipped
+ * by calling this API directly.
+ */
+router.get('/trash', requirePermission('trash.view'), asyncHandler(async (req, res) => {
+  res.json(await trashService.list(req.query));
+}));
+router.get('/trash/summary', requirePermission('trash.view'), asyncHandler(async (_req, res) => {
+  res.json(await trashService.summary());
+}));
+/**
+ * May this person delete this kind of thing?
+ *
+ * NOT `trash.view`. That is the right to READ the register — who deleted what,
+ * across every module — and by design it goes out with the audit log, to few
+ * people. Deleting is a different act with a different right, and it is the
+ * right to delete THE THING: whoever may delete a product deletes one here,
+ * and the bin is merely where it lands. Gating either of these two routes on
+ * `trash.view` would mean every delete button in the shop worked for the
+ * administrator and for nobody else.
+ *
+ * `req.permissions` is what `authenticate` puts on the request — the codes this
+ * user actually holds. Any ONE of the three is enough, and which one applies
+ * depends on what the thing is: master data is deleted by whoever may delete
+ * it, an invoice by whoever may void one, a document with no delete right of
+ * its own by whoever may edit it. Both routes run behind
+ * `router.use(authenticate)`, so neither is ever open to a stranger.
+ */
+async function assertMayDelete(req, entityType) {
+  const policy = await trashService.policyFor(entityType);
+  const codes = [`${policy.module}.delete`, `${policy.module}.void`, `${policy.module}.update`];
+  const held = req.permissions || [];
+  if (!codes.some((code) => held.includes(code))) {
+    throw new ForbiddenError(
+      `You do not have permission to delete this (${policy.module}.delete)`,
+    );
+  }
+  return policy;
+}
+
+// The confirm dialog every delete button opens: the same right as the delete
+// it is about to ask for, because a person who may do it may read what it costs.
+router.get('/trash/preview/:entityType/:entityId', asyncHandler(async (req, res) => {
+  await assertMayDelete(req, req.params.entityType);
+  res.json(await trashService.preview(req.params.entityType, Number(req.params.entityId)));
+}));
+router.post('/trash', validate(v.trashDeleteSchema),
+  asyncHandler(async (req, res) => {
+    await assertMayDelete(req, req.body.entityType);
+    res.status(201).json(await trashService.remove(req.body.entityType, req.body.entityId, {
+      reason: req.body.reason || null,
+      context: req.context,
+    }));
+  }));
+router.post('/trash/:id/restore', requirePermission('trash.restore'),
+  asyncHandler(async (req, res) => res.json(
+    await trashService.restore(Number(req.params.id), { context: req.context }),
+  )));
+router.delete('/trash/:id', requirePermission('trash.purge'),
+  asyncHandler(async (req, res) => res.json(
+    await trashService.purge(Number(req.params.id), {
+      context: req.context,
+      // Destroying something before its thirty days are up is a deliberate,
+      // separate act — not the default, and not reachable by accident.
+      force: req.query.force === '1',
+    }),
+  )));
+router.post('/trash/sweep', requirePermission('trash.purge'), asyncHandler(async (req, res) => {
+  res.json(await trashService.sweep({ context: req.context }));
+}));
 
 // --------------------------------------------------------------- purchases
 router.get('/purchases', requirePermission('purchases.view'), asyncHandler(async (req, res) => {

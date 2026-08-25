@@ -16,6 +16,7 @@ import { money, number, date, dateTime } from '../core/format.js';
 import { session, can } from '../core/store.js';
 import { navigate } from '../core/router.js';
 import { onScan } from '../core/scanner.js';
+import { confirmDelete } from './trash.js';
 
 let policyCache = null;
 const policy = async () => {
@@ -85,6 +86,28 @@ export async function returnsView(root, route) {
             : tag(t(camel(r.refund_method), r.refund_method))),
         },
         { key: 'created_by_name', label: t('user'), render: (r) => h('span', { class: 'small muted' }, r.created_by_name || '—') },
+        {
+          key: '__actions',
+          label: '',
+          width: '1%',
+          /*
+           * Deleting a return is UNDOING it: the pieces it took back come off
+           * the shelf again, the loyalty points go back, a voucher is
+           * cancelled. Whoever may accept a return may undo one, and the
+           * dialog spells out every line of that before it happens — including
+           * the one a computer cannot do, which is put cash back in the till.
+           */
+          render: (r) => (can('sales.return')
+            ? h('button', {
+              class: 'btn sm ghost',
+              title: t('delete'),
+              onclick: (event) => {
+                event.stopPropagation();
+                confirmDelete({ entityType: 'sales_return', entityId: r.id, onDone: load });
+              },
+            }, '🗑')
+            : null),
+        },
       ],
       rows: data.rows,
       onRowClick: (row) => navigate(`returns/${row.id}`),

@@ -137,6 +137,72 @@ export class InventoryService {
     });
   }
 
+  /**
+   * Undo a posted stock adjustment — including a wastage document.
+   *
+   * The mirror of `postAdjustment`: every line's movement is posted again with
+   * the opposite sign, so the shelf goes back where it was and the ledger shows
+   * both halves. Nothing is edited in place and nothing is deleted; a movement
+   * that has already been counted somewhere must never quietly change its mind.
+   *
+   * The document is marked `cancelled`, which is what takes it out of the
+   * wastage figure — that figure counts POSTED documents only, so reversing one
+   * removes exactly what it added, to the piastre, with no second sum to keep
+   * in step.
+   */
+  async reverseAdjustment(id, reason, context = {}) {
+    return transaction(async () => {
+      const adjustment = await this.adjustments.findAggregate(id);
+      if (!adjustment) throw new NotFoundError('Adjustment', id);
+      if (adjustment.status !== 'posted') {
+        throw new BusinessRuleError('Only a posted adjustment can be reversed');
+      }
+
+      let moved = 0;
+      for (const line of adjustment.lines) {
+        if (!line.difference) continue;
+        // eslint-disable-next-line no-await-in-loop
+        await this.postMovement({
+          variantId: line.variant_id,
+          warehouseId: adjustment.warehouse_id,
+          movementType: 'adjustment',
+          quantity: -Number(line.difference),
+          unitCost: line.unit_cost,
+          referenceType: 'stock_adjustment_reversal',
+          referenceId: adjustment.id,
+          referenceNo: adjustment.adjustment_no,
+          notes: reason || 'Adjustment reversed',
+          actorId: context.actor?.id || null,
+          // The opposite of a write-off puts stock BACK, so this cannot go
+          // negative — but the opposite of a stock-take that found extra can,
+          // and refusing it would leave the reversal half-done.
+          allowNegative: true,
+        });
+        moved += Math.abs(Number(line.difference));
+      }
+
+      const updated = await this.adjustments.update(id, {
+        status: 'cancelled',
+        posted_by: adjustment.posted_by,
+        posted_at: adjustment.posted_at,
+      });
+
+      await this.audit.record({
+        action: 'REVERSE',
+        module: 'inventory',
+        entityType: 'stock_adjustment',
+        entityId: id,
+        entityLabel: adjustment.adjustment_no,
+        before: { status: 'posted' },
+        after: { status: 'cancelled', unitsMoved: moved, reason },
+        actor: context.actor,
+        request: context.request,
+      });
+
+      return { record: updated, unitsMoved: moved };
+    });
+  }
+
   // ------------------------------------------------------------------ wastage
 
   /**
