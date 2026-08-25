@@ -47,7 +47,7 @@
  * unambiguous by construction.
  */
 import crypto from 'node:crypto';
-import { getDb, transaction } from '../infrastructure/database/connection.js';
+import { getDb, transaction, driverName } from '../infrastructure/database/connection.js';
 
 /** How many rows are pulled from the database in one statement. */
 export const READ_BATCH = Number(process.env.MM_BACKUP_READ_BATCH || 500);
@@ -178,6 +178,91 @@ export function decodeValue(value) {
 }
 
 /**
+ * Thrown when the shop was written to WHILE it was being read.
+ *
+ * Not a failure of the database and not a bug: somebody rang up a sale during
+ * the backup. It matters because the archive is read table by table, so a sale
+ * that lands between `sales` and `sale_lines` would be stored as an invoice
+ * with no lines — and a backup that is quietly wrong is worse than no backup at
+ * all, because it is the thing you reach for on the day it has to be right.
+ *
+ * The caller retries once. A shop busy enough to lose the race twice gets a
+ * refusal it can read, not a file it should not trust.
+ */
+export class SnapshotRaceError extends Error {
+  constructor() {
+    super('The shop was written to while it was being read, so this copy could be '
+      + 'half of one moment and half of another. Nothing was stored. Try again.');
+    this.name = 'SnapshotRaceError';
+    this.code = 'SNAPSHOT_RACE';
+  }
+}
+
+/**
+ * A cheap signature of everything in this shop that could change under a read.
+ *
+ * ── Why this exists at all ───────────────────────────────────────────────────
+ * The whole read used to sit inside one interactive transaction, which is
+ * exactly right on the shop PC and impossible on the hosted database. libSQL
+ * over HTTP keeps an interactive transaction as a server-side stream addressed
+ * by a token, and the stream does not survive a long conversation: the snapshot
+ * makes one network round trip per statement — a `PRAGMA table_info` and at
+ * least one `SELECT` for each of forty tables — and somewhere past the tenth
+ * second Turso had closed the stream and answered the next statement with a
+ * bare `HTTP 404`. Every backup this shop ever attempted failed that way, by
+ * hand and on the schedule, and the console could only report the driver's own
+ * words: `SERVER_ERROR: Server returned HTTP status 404`.
+ *
+ * ── What replaces it ─────────────────────────────────────────────────────────
+ * The file driver keeps its transaction; nothing about the shop PC changes, and
+ * a real transaction is strictly the better answer where one can be held. The
+ * hosted path reads WITHOUT one and proves afterwards that it did not need it:
+ * this signature is taken before the first row and after the last, and a
+ * difference means something was written in between, which fails the backup
+ * rather than storing it.
+ *
+ * ── What it can and cannot see ───────────────────────────────────────────────
+ * Per table: how many rows there are, the highest rowid, and — where the table
+ * records one — the latest `updated_at`. That catches every insert, every
+ * delete, and every update to a table that timestamps its rows, which is every
+ * table a till writes to. It would not notice an in-place edit of a row in a
+ * table with no `updated_at` column; those are the append-only ones (movements,
+ * document lines, the audit log) that nothing edits after the fact.
+ *
+ * One statement, one round trip, whatever the shop's size — the cost of the
+ * check has to stay far below the cost of the read it is checking.
+ */
+export async function shopSignature(tables) {
+  if (!tables.length) return 'empty';
+  const parts = [];
+  for (const table of tables) {
+    const name = quoteName(table.name);
+    // `MAX(updated_at)` only where the column is really there: naming a column
+    // that does not exist is an error, not an empty answer.
+    const stamp = table.columns.includes('updated_at') ? 'MAX(updated_at)' : "''";
+    /**
+     * SINGLE quotes around the table's own name, and it matters.
+     *
+     * `"web_order_lines"` is not a string in SQLite, it is an identifier — so
+     * labelling each row with a double-quoted name asks for a COLUMN by that
+     * name and fails with `no such column: web_order_lines`. `quoteName` has
+     * already refused anything that is not a bare identifier, so the literal
+     * below cannot carry a quote of its own.
+     */
+    parts.push(
+      `SELECT '${table.name}' AS t, COUNT(*) AS n, `
+      + `COALESCE(MAX(rowid), 0) AS m, COALESCE(${stamp}, '') AS u FROM ${name}`,
+    );
+  }
+  const rows = await getDb().prepare(parts.join(' UNION ALL ')).all();
+  const line = rows
+    .map((r) => `${r.t}:${r.n}:${r.m}:${r.u}`)
+    .sort()
+    .join('|');
+  return crypto.createHash('sha256').update(line).digest('hex');
+}
+
+/**
  * Read every table, handing each finished JSONL part to `onPart`.
  *
  * `onRows` sees each batch as it is read, which is how the readable workbook is
@@ -189,11 +274,40 @@ export function decodeValue(value) {
  * outgrown this mechanism fails early and cheaply rather than after eight
  * minutes and a function that ran out of memory.
  */
-export async function readSnapshot({
+export async function readSnapshot(options) {
+  /**
+   * A transaction where one can be held, a proof where one cannot.
+   *
+   * The shop PC keeps exactly what it had: `BEGIN`, read, `COMMIT`, and the
+   * archive is a single point in time by construction. The hosted database
+   * cannot hold a transaction open across a read this long (see
+   * `shopSignature` above for the whole story), so there the read runs plainly
+   * and is bracketed by a signature that fails the backup if anything moved.
+   */
+  if (driverName() === 'sqlite') return transaction(() => readTables(options));
+
+  const before = await shopSignature(await describeTables());
+  const result = await readTables(options);
+  const after = await shopSignature(await describeTables());
+  if (before !== after) throw new SnapshotRaceError();
+  return result;
+}
+
+/** Every shop table with its column list — what a signature is taken over. */
+async function describeTables() {
+  const tables = await shopTables();
+  const described = [];
+  for (const table of tables) {
+    // eslint-disable-next-line no-await-in-loop
+    described.push({ name: table.name, columns: await columnsOf(table.name) });
+  }
+  return described;
+}
+
+async function readTables({
   onPart, onRows, budget = Infinity, redact = null,
 }) {
-  return transaction(async () => {
-    const tables = await shopTables();
+  const tables = await shopTables();
     const manifestTables = [];
     const redacted = [];
     let totalRows = 0;
@@ -261,10 +375,9 @@ export async function readSnapshot({
       totalRows += rows;
     }
 
-    return {
-      tables: manifestTables, totalRows, totalBytes, redacted,
-    };
-  });
+  return {
+    tables: manifestTables, totalRows, totalBytes, redacted,
+  };
 }
 
 /** Thrown when a shop has outgrown this mechanism. Carries the two numbers. */

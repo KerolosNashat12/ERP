@@ -80,7 +80,7 @@ import { ZipWriter } from '../shared/zip.js';
 import { ZipReader } from '../shared/zipReader.js';
 import { assembleArchive, MANIFEST_NAME } from './backupArchive.js';
 import {
-  readSnapshot, restoreSnapshot, shopInstallId, SnapshotTooLargeError,
+  readSnapshot, restoreSnapshot, shopInstallId, SnapshotTooLargeError, SnapshotRaceError,
 } from './snapshot.js';
 import { NotFoundError, ValidationError, ConflictError } from '../shared/errors.js';
 import { forgetTenant } from '../api/middleware/tenant.js';
@@ -224,7 +224,7 @@ export async function take(slug, { kind = 'manual', actor = null } = {}) {
   let pendingBytes = 0;
   let seq = 0;
   let stored = 0;
-  const digest = crypto.createHash('sha256');
+  let digest = crypto.createHash('sha256');
 
   const writeChunk = async (bytes) => {
     await db.prepare('INSERT INTO tenant_backup_chunks (backup_id, seq, bytes) VALUES (?, ?, ?)')
@@ -249,18 +249,56 @@ export async function take(slug, { kind = 'manual', actor = null } = {}) {
     }
   };
 
+  /**
+   * Start the archive over.
+   *
+   * Only reached when the shop was written to mid-read (see `SnapshotRaceError`
+   * in snapshot.js). The chunks already written have to go with the attempt
+   * that wrote them, or the second pass would be appended to the first and the
+   * archive would contain the same table twice.
+   */
+  const discardAttempt = async () => {
+    await db.prepare('DELETE FROM tenant_backup_chunks WHERE backup_id = ?').run(backupId);
+    pending = [];
+    pendingBytes = 0;
+    seq = 0;
+    stored = 0;
+    digest = crypto.createHash('sha256');
+  };
+
   try {
     const connection = await connectionFor(slug, () => openConnection(descriptorFor(row)));
-    const zip = new ZipWriter(sink);
 
-    const result = await runWithTenant({ slug }, connection, async () => {
-      const installId = await shopInstallId();
-      const snapshot = await readSnapshot({
-        budget: MAX_RAW_BYTES,
-        onPart: (name, bytes) => zip.add(name, bytes),
-      });
-      return { installId, snapshot };
-    });
+    /**
+     * Two attempts, and only for one reason.
+     *
+     * A till that rings up a sale during the read loses the backup the race,
+     * and one retry settles it for any shop that is not being written to
+     * continuously. Losing twice is not a glitch to paper over — it says this
+     * shop is too busy to be read at this moment — so the second failure is
+     * reported as itself.
+     */
+    let result;
+    for (let attempt = 1; ; attempt += 1) {
+      const zip = new ZipWriter(sink);
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        result = await runWithTenant({ slug }, connection, async () => {
+          const installId = await shopInstallId();
+          const snapshot = await readSnapshot({
+            budget: MAX_RAW_BYTES,
+            onPart: (name, bytes) => zip.add(name, bytes),
+          });
+          return { installId, snapshot, zip };
+        });
+        break;
+      } catch (error) {
+        if (!(error instanceof SnapshotRaceError) || attempt >= 2) throw error;
+        // eslint-disable-next-line no-await-in-loop
+        await discardAttempt();
+      }
+    }
+    const { zip } = result;
 
     const manifest = {
       format: 'mm-shop-snapshot',
