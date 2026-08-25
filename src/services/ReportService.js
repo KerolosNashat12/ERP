@@ -928,8 +928,8 @@ export const REPORTS = {
     // of the current month; every date filter still works exactly as it did.
     defaultRange: 'all',
     headline: 'net_profit',
-    noteEn: 'Revenue is completed sales less anything refunded on a return. Cost of goods is what those sales cost, less the cost of items that came back resellable and went on the shelf again — items returned damaged stay a cost, because the money for them is gone. Costs is everything else the shop spent, wages included, and net profit is what is left. This is what the shop EARNED; what it has PAID OUT is a different question and "Everything the shop has spent" answers it.',
-    noteAr: 'الإيراد هو المبيعات المكتملة ناقص أي حاجة اترجعت فلوسها. تكلفة البضاعة هي تكلفة المبيعات دي ناقص تكلفة الحاجات اللي رجعت سليمة ورجعت على الرف — اللي رجع تالف يفضل تكلفة لأن فلوسه راحت. والتكاليف هي كل اللي المحل صرفه غير البضاعة، والمرتبات منها، وصافي الربح هو الباقي. ده اللي المحل كسبه؛ اللي المحل دفعه سؤال تاني وبيجاوب عليه تقرير «كل مصاريف المحل».',
+    noteEn: 'Revenue is completed sales less anything refunded on a return. Cost of goods is what those sales cost, less the cost of items that came back resellable and went on the shelf again — items returned damaged stay a cost, because the money for them is gone. Costs is everything else the shop spent, wages included. Wastage is stock that was broken, lost, stolen or expired, at what it cost the shop: no money left the till for it, but the goods did, and it comes off the profit for exactly that reason. Net profit is what is left. This is what the shop EARNED; what it has PAID OUT is a different question and "Everything the shop has spent" answers it.',
+    noteAr: 'الإيراد هو المبيعات المكتملة ناقص أي حاجة اترجعت فلوسها. تكلفة البضاعة هي تكلفة المبيعات دي ناقص تكلفة الحاجات اللي رجعت سليمة ورجعت على الرف — اللي رجع تالف يفضل تكلفة لأن فلوسه راحت. والتكاليف هي كل اللي المحل صرفه غير البضاعة، والمرتبات منها. والهدر هو البضاعة اللي اتكسرت أو ضاعت أو اتسرقت أو خلصت صلاحيتها، بتكلفتها على المحل: مفيش فلوس خرجت من الدرج عشانها، لكن البضاعة خرجت — وعشان كده بتتخصم من الربح. وصافي الربح هو الباقي. ده اللي المحل كسبه؛ اللي المحل دفعه سؤال تاني وبيجاوب عليه تقرير «كل مصاريف المحل».',
     columns: [
       col('month', 'Month', 'الشهر'),
       col('revenue', 'Revenue', 'الإيرادات', 'money'),
@@ -938,6 +938,9 @@ export const REPORTS = {
       col('gross_profit', 'Gross profit', 'مجمل الربح', 'money'),
       col('costs', 'Costs', 'التكاليف', 'money'),
       col('wages', 'of which wages', 'منها المرتبات', 'money'),
+      // Goods the shop paid for and will never sell. Its own column, because
+      // folded into "costs" it would be a loss nobody could see the size of.
+      col('wastage', 'Wastage', 'الهدر', 'money'),
       col('net_profit', 'Net profit', 'صافي الربح', 'money'),
       col('net_margin_percent', 'Net margin %', 'نسبة صافي الربح', 'percent'),
     ],
@@ -1000,12 +1003,41 @@ export const REPORTS = {
         GROUP BY month
       `).all(...params);
 
+      /**
+       * What the shop LOST — broken, stolen, expired, dropped.
+       *
+       * No money left the till for it, so it is not a cost in the ledger sense
+       * and it is deliberately not filed as one. But the goods left, and the
+       * shop paid for them once already: leaving it out is how a month with a
+       * smashed case of perfume reads exactly like a month without one.
+       *
+       * Posted adjustments only, only the reasons that mean loss, only lines
+       * where the stock went down. A stock-take correction is an error being
+       * fixed, not waste, and is excluded on purpose.
+       */
+      const wastageWhere = [
+        "a.status = 'posted'",
+        "a.reason IN ('damage', 'loss', 'theft', 'expiry')",
+        'l.difference < 0',
+        'date(a.posted_at) BETWEEN date(?) AND date(?)',
+      ];
+      const wastageParams = [from, to];
+      if (filters.warehouseId) { wastageWhere.push('a.warehouse_id = ?'); wastageParams.push(filters.warehouseId); }
+      const wastage = await db.prepare(`
+        SELECT substr(a.posted_at, 1, 7) AS month,
+               ROUND(SUM(-l.difference * l.unit_cost), 2) AS amount
+        FROM stock_adjustment_lines l
+        JOIN stock_adjustments a ON a.id = l.adjustment_id
+        WHERE ${wastageWhere.join(' AND ')}
+        GROUP BY month
+      `).all(...wastageParams);
+
       const months = new Map();
       const slot = (month) => {
         if (!months.has(month)) {
           months.set(month, {
             month, revenue: 0, refunds: 0, cogs: 0, cost_back: 0,
-            gross_profit: 0, costs: 0, wages: 0, net_profit: 0,
+            gross_profit: 0, costs: 0, wages: 0, wastage: 0, net_profit: 0,
           });
         }
         return months.get(month);
@@ -1019,6 +1051,7 @@ export const REPORTS = {
       for (const row of restocked) slot(row.month).cost_back = round2(row.cost_back);
       for (const row of costs) slot(row.month).costs = round2(row.amount);
       for (const row of wages) slot(row.month).wages = round2(row.amount);
+      for (const row of wastage) slot(row.month).wastage = round2(row.amount);
 
       const rows = [...months.values()]
         .map((entry) => {
@@ -1029,7 +1062,7 @@ export const REPORTS = {
           const kept = round2(entry.revenue - entry.refunds);
           const cogs = round2(entry.cogs - entry.cost_back);
           const gross = round2(kept - cogs);
-          const net = round2(gross - entry.costs);
+          const net = round2(gross - entry.costs - entry.wastage);
           return {
             month: entry.month,
             revenue: entry.revenue,
@@ -1038,6 +1071,7 @@ export const REPORTS = {
             gross_profit: gross,
             costs: entry.costs,
             wages: entry.wages,
+            wastage: entry.wastage,
             net_profit: net,
             net_margin_percent: kept > 0 ? round2((net * 100) / kept) : 0,
           };
@@ -1050,6 +1084,7 @@ export const REPORTS = {
       const cogs = sum('cogs');
       const grossProfit = round2(revenue - refunds - cogs);
       const totalCosts = sum('costs');
+      const totalWastage = sum('wastage');
 
       const warnings = [];
       const opening = await openingStockGap(db, {
@@ -1102,7 +1137,8 @@ export const REPORTS = {
           gross_profit: grossProfit,
           costs: totalCosts,
           wages: sum('wages'),
-          net_profit: round2(grossProfit - totalCosts),
+          wastage: totalWastage,
+          net_profit: round2(grossProfit - totalCosts - totalWastage),
         },
         warnings,
       };

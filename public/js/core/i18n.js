@@ -99,6 +99,9 @@ const dictionary = {
     category: 'Category', customer: 'Customer', product: 'Product', variant: 'Variant',
     sku: 'SKU', barcode: 'Barcode / QR', unit: 'Unit', taxRate: 'Tax rate %',
     discount: 'Discount', tax: 'Tax', paid: 'Paid', outstanding: 'Outstanding',
+    refunded: 'refunded', afterRefunds: 'after refunds',
+    // الهدر — stock the shop paid for and will never sell.
+    wastage: 'Wastage', wastageHint: 'Broken, lost, stolen or expired — at what it cost',
     // A supplier quotes a rate, not an amount, so the field asks for the rate.
     discountPercent: 'Discount %',
     balance: 'Balance', reason: 'Reason', type: 'Type', value: 'Value', profit: 'Profit',
@@ -764,7 +767,7 @@ const dictionary = {
     // --- profit, and what it means now
     grossProfit: 'Gross profit', netProfit: 'Net profit',
     grossProfitHint: 'Revenue minus what the goods cost — the costs below are not in it',
-    netProfitHint: 'Gross profit minus everything the shop spent',
+    netProfitHint: 'Gross profit, less what the shop spent and what it lost',
     profitAfterCosts: 'Profit after costs',
     reportNote: 'About this report',
     costsDue: 'Repeating costs waiting',
@@ -869,6 +872,8 @@ const dictionary = {
     category: 'الفئة', customer: 'العميل', product: 'المنتج', variant: 'المتغير',
     sku: 'الكود', barcode: 'الباركود / QR', unit: 'الوحدة', taxRate: 'نسبة الضريبة %',
     discount: 'الخصم', tax: 'الضريبة', paid: 'المدفوع', outstanding: 'المتبقي',
+    refunded: 'مرتجع', afterRefunds: 'بعد المرتجعات',
+    wastage: 'الهدر', wastageHint: 'مكسور أو ضايع أو مسروق أو منتهي — بتكلفته',
     discountPercent: 'الخصم %',
     balance: 'الرصيد', reason: 'السبب', type: 'النوع', value: 'القيمة', profit: 'الربح',
     revenue: 'الإيرادات', margin: 'هامش الربح', invoice: 'الفاتورة', document: 'المستند',
@@ -1474,7 +1479,7 @@ const dictionary = {
 
     grossProfit: 'مجمل الربح', netProfit: 'صافي الربح',
     grossProfitHint: 'الإيراد ناقص تكلفة البضاعة — التكاليف اللي تحت مش داخلة فيه',
-    netProfitHint: 'مجمل الربح ناقص كل اللي المحل صرفه',
+    netProfitHint: 'مجمل الربح ناقص اللي المحل صرفه واللي ضاع منه',
     profitAfterCosts: 'الأرباح بعد التكاليف',
     reportNote: 'عن التقرير ده',
     costsDue: 'تكاليف متكررة مستنية',

@@ -564,7 +564,17 @@ body:not(.is-booting) .boot-screen { display: none; }
   padding-inline: var(--sp-5);
 }
 .wrap.narrow { max-width: 620px; }
-.site-main { display: block; min-height: 62vh; padding-block-end: var(--sp-8); }
+/*
+ * `overflow-x: clip` and deliberately not `hidden`.
+ *
+ * The brands rail breaks out of the centred column to the full width of the
+ * window (see `.rail-bleed`), and `100vw` includes the scrollbar — so on a page
+ * tall enough to have one, that break-out overshoots by a dozen pixels and the
+ * whole site scrolls sideways. This trims the overshoot. `clip` rather than
+ * `hidden` because `hidden` makes this element a scroll container, which would
+ * quietly change what `position: sticky` sticks to on the product page.
+ */
+.site-main { display: block; min-height: 62vh; padding-block-end: var(--sp-8); overflow-x: clip; }
 .stack { display: grid; gap: var(--sp-6); padding-block-start: var(--sp-6); }
 .section { display: grid; gap: var(--sp-5); }
 
@@ -666,7 +676,10 @@ body:not(.is-booting) .boot-screen { display: none; }
   grid-area: brand;
   display: flex;
   align-items: center;
-  gap: var(--sp-3);
+  /* Air between the mark and the name. At the old logo size `--sp-3` was
+     plenty; at this one the last letter of the shop's name sat against the
+     edge of the picture. */
+  gap: var(--sp-4);
   min-width: 0;
 }
 .brand-mark {
@@ -705,10 +718,10 @@ body:not(.is-booting) .boot-screen { display: none; }
    */
   block-size: auto;
   inline-size: auto;
-  max-block-size: 44px;
-  max-inline-size: min(150px, 40vw);
-  /* A flex item will not shrink below its intrinsic width without this. */
-  min-inline-size: 0;
+  max-block-size: 56px;
+  max-inline-size: min(170px, 42vw);
+  /* The mark holds its size; the words beside it are what give way. */
+  flex: none;
   object-fit: contain;
 }
 /*
@@ -731,7 +744,7 @@ body:not(.is-booting) .boot-screen { display: none; }
 .brand-name {
   font-family: var(--font-display);
   font-weight: 700;
-  font-size: var(--fs-lg);
+  font-size: var(--fs-xl);
   line-height: 1.25;
   color: var(--ink);
   overflow: hidden;
@@ -1186,6 +1199,44 @@ html[lang="ar"] .hero-title { max-width: 20ch; }
  * one recorded, its first letter where it has not.
  */
 .rail { position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: var(--sp-2); }
+/*
+ * A rail that uses the WHOLE band rather than the column down the middle of it.
+ *
+ * Everything else on this page is `.wrap` — a centred column with a maximum
+ * width — because prose and grids need a measure. A row that scrolls does not:
+ * the more of it a shopper can see at once, the fewer times they have to push
+ * it. So this one breaks out to the full width of the window and puts the page
+ * gutter back as padding INSIDE the scroller, which keeps the first card lined
+ * up with the heading above it while the row itself runs edge to edge.
+ *
+ * `100%` is the wrap's width and `100vw` the window's, so the negative margin
+ * is exactly the difference; `overflow: clip` on the section is what stops that
+ * from becoming a horizontal scrollbar on the page itself.
+ */
+.rail-bleed {
+  margin-inline: calc(50% - 50vw);
+  max-inline-size: 100vw;
+}
+.rail-bleed .rail-track {
+  padding-inline: max(var(--sp-5), calc(50vw - var(--wrap) / 2));
+}
+/* The arrows ride over the row's own ends rather than taking columns from it. */
+.rail-bleed { grid-template-columns: minmax(0, 1fr); }
+/*
+ * Riding over the row, the arrows need more presence than they did beside it:
+ * a white circle on a white band with white cards under it is a button nobody
+ * can find. A real shadow separates it from whatever is sliding underneath.
+ */
+.rail-bleed .rail-btn {
+  position: absolute;
+  inset-block-start: 50%;
+  transform: translateY(-50%);
+  z-index: 2;
+  border-color: var(--line-2);
+  box-shadow: 0 3px 14px rgb(0 0 0 / .14);
+}
+.rail-bleed .rail-back { inset-inline-start: var(--sp-3); }
+.rail-bleed .rail-next { inset-inline-end: var(--sp-3); }
 .rail-track {
   display: flex;
   gap: var(--sp-4);
@@ -1228,19 +1279,22 @@ html[dir="rtl"] .rail-next svg { transform: rotate(180deg); }
 
 .brand-card {
   flex: none;
-  inline-size: 132px;
+  inline-size: 172px;
   display: grid;
   justify-items: center;
-  gap: var(--sp-2);
-  padding: var(--sp-4) var(--sp-3);
+  gap: var(--sp-3);
+  padding: var(--sp-5) var(--sp-4);
   border-radius: var(--radius);
   background: var(--surface);
+  /* A hairline as well as the shadow: these cards sit on the WHITE band, and a
+     soft shadow alone leaves them floating with no edge at all. */
+  border: 1px solid var(--line);
   box-shadow: var(--shadow);
   text-align: center;
 }
 .brand-card-face {
-  inline-size: 68px;
-  block-size: 68px;
+  inline-size: 104px;
+  block-size: 104px;
   border-radius: var(--radius-pill);
   background: var(--accent-soft);
   display: grid;
@@ -1253,14 +1307,14 @@ html[dir="rtl"] .rail-next svg { transform: rotate(180deg); }
 .brand-mark-badge {
   font-family: var(--font-display);
   font-weight: 700;
-  font-size: var(--fs-xl);
+  font-size: var(--fs-2xl);
   color: var(--accent-strong);
   line-height: 1;
 }
 .brand-mark-badge[hidden] { display: none; }
 .brand-logo-img { inline-size: 100%; block-size: 100%; object-fit: contain; padding: var(--sp-2); }
 .brand-card-name {
-  font-size: var(--fs-sm);
+  font-size: var(--fs-base);
   font-weight: 600;
   color: var(--ink-1);
   /* Two lines, then an ellipsis: a long brand name must not make its card
@@ -2442,7 +2496,6 @@ html[lang="ar"] .foot-col h3 { letter-spacing: .04em; text-transform: none; font
   .head-main { padding-block: var(--sp-4); }
   /* There is room here, so the mark takes it — and the search box still has a
      floor beneath it that nothing on this row can push it below. */
-  .brand-logo { max-block-size: 52px; max-inline-size: min(190px, 20vw); }
   .section-band { padding-block: var(--sp-7); }
   .hero-wrap { padding-block-start: var(--sp-6); }
   .head-inner {
@@ -2453,10 +2506,29 @@ html[lang="ar"] .foot-col h3 { letter-spacing: .04em; text-transform: none; font
      * a customer came to use cannot be squeezed to nothing. `min(…, 100%)` is
      * what keeps that floor from becoming an overflow on a narrow window.
      */
-    grid-template-columns: auto minmax(min(18rem, 100%), 1fr) auto;
+    /*
+     * `minmax(0, auto)` on the brand, not bare `auto`.
+     *
+     * An `auto` track refuses to go below its max-content, so once the mark got
+     * bigger the row simply grew past the page's own column and the logo hung
+     * off the edge of the window. With a floor of zero the brand block gives
+     * way — the strapline ellipsises, the name after it — while the search box
+     * keeps the floor it already had and the actions keep their words.
+     */
+    grid-template-columns: minmax(0, auto) minmax(min(18rem, 100%), 1fr) auto;
     gap: var(--sp-6);
   }
-  .brand-logo { height: 38px; max-width: 190px; }
+  /*
+   * The desktop size of the mark, and the ONLY rule that sets it here — there
+   * used to be a second one further up this same block, still written as a
+   * fixed `height`, and it quietly won. A fixed height is also what made the
+   * logo shrink to nothing once the brand track was allowed to give way: the
+   * image is a flex item, so it was the first thing squeezed, and a replaced
+   * element with an aspect ratio loses its height with its width. `flex: none`
+   * is what stops that — the words beside it ellipsise instead, which is what
+   * words are for.
+   */
+  .brand-logo { max-block-size: 76px; max-inline-size: min(230px, 22vw); }
   .brand-name { font-size: var(--fs-xl); }
   .btn-label { display: inline; }
   /*

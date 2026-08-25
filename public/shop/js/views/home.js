@@ -211,7 +211,7 @@ export default async function homeView(root) {
      */
     sections.push(el('section.section.section-band',
       sectionHead(t('ourBrands')),
-      rail(brands.map(brandCard), { label: t('ourBrands') })));
+      rail(brands.map(brandCard), { label: t('ourBrands'), bleed: true })));
   }
 
   if (newest.length) {

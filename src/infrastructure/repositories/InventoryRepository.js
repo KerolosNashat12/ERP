@@ -207,6 +207,69 @@ export class StockAdjustmentRepository extends BaseRepository {
     });
   }
 
+  /**
+   * What the shop LOST, in money, over a window — الهدر.
+   *
+   * A bottle knocked off the counter, a watch that stopped, a piece that walked
+   * out of the door. The stock went down and the shop's own money went with it,
+   * and until this existed the second half of that sentence appeared nowhere:
+   * a damage adjustment reduced the stock value and no report, tile or profit
+   * figure ever mentioned it again. The goods were gone and the books said the
+   * shop had had a good month.
+   *
+   * Counted here: POSTED adjustments only — a draft has not happened yet — with
+   * a reason that means loss rather than bookkeeping, and only lines where the
+   * stock went DOWN. `correction` and `stock_take` are deliberately excluded:
+   * a miscount found and fixed is not a loss, it is an error being corrected,
+   * and treating it as waste would turn every stock count into a fake disaster.
+   */
+  async wastageTotals({ dateFrom, dateTo, warehouseId } = {}) {
+    const where = [
+      "a.status = 'posted'",
+      "a.reason IN ('damage', 'loss', 'theft', 'expiry')",
+      'l.difference < 0',
+    ];
+    const params = [];
+    // `posted_at` and not `created_at`: the loss lands in the month it was
+    // accepted, which is the same rule every other document here follows.
+    if (dateFrom) { where.push('date(a.posted_at) >= date(?)'); params.push(dateFrom); }
+    if (dateTo) { where.push('date(a.posted_at) <= date(?)'); params.push(dateTo); }
+    if (warehouseId) { where.push('a.warehouse_id = ?'); params.push(warehouseId); }
+
+    const row = await this.db.prepare(`
+      SELECT COALESCE(SUM(-l.difference * l.unit_cost), 0) AS value,
+             COALESCE(SUM(-l.difference), 0) AS units,
+             COUNT(DISTINCT a.id) AS documents
+      FROM stock_adjustment_lines l
+      JOIN stock_adjustments a ON a.id = l.adjustment_id
+      WHERE ${where.join(' AND ')}
+    `).get(...params);
+    return { value: row.value, units: row.units, documents: row.documents };
+  }
+
+  /** The same loss, split by what caused it — broken, lost, stolen, expired. */
+  async wastageByReason({ dateFrom, dateTo, warehouseId } = {}) {
+    const where = [
+      "a.status = 'posted'",
+      "a.reason IN ('damage', 'loss', 'theft', 'expiry')",
+      'l.difference < 0',
+    ];
+    const params = [];
+    if (dateFrom) { where.push('date(a.posted_at) >= date(?)'); params.push(dateFrom); }
+    if (dateTo) { where.push('date(a.posted_at) <= date(?)'); params.push(dateTo); }
+    if (warehouseId) { where.push('a.warehouse_id = ?'); params.push(warehouseId); }
+    return this.db.prepare(`
+      SELECT a.reason AS reason,
+             ROUND(SUM(-l.difference * l.unit_cost), 2) AS value,
+             ROUND(SUM(-l.difference), 2) AS units
+      FROM stock_adjustment_lines l
+      JOIN stock_adjustments a ON a.id = l.adjustment_id
+      WHERE ${where.join(' AND ')}
+      GROUP BY a.reason
+      ORDER BY value DESC
+    `).all(...params);
+  }
+
   async listDetailed({ search = '', status, page = 1, pageSize = 25 } = {}) {
     const where = ['1 = 1'];
     const params = [];

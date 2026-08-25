@@ -285,7 +285,7 @@ export function brandCard(row) {
  * `aria-hidden` and not focusable: a screen reader and the Tab key see sixty
  * brands, not a hundred and twenty.
  */
-export function rail(items, { label, drift = true } = {}) {
+export function rail(items, { label, drift = true, bleed = false } = {}) {
   const track = el('div.rail-track', { role: 'list', 'aria-label': label || '' }, items);
   const back = el('button.rail-btn.rail-back', {
     type: 'button', 'aria-label': t('previous'), tabIndex: -1, 'aria-hidden': 'true',
@@ -322,7 +322,7 @@ export function rail(items, { label, drift = true } = {}) {
   window.addEventListener('resize', paint, { passive: true });
   requestAnimationFrame(paint);
 
-  const node = el('div.rail', back, track, next);
+  const node = el('div.rail', { class: bleed ? 'rail-bleed' : '' }, back, track, next);
   if (drift) startDrift(node, track, items, away);
   return node;
 }

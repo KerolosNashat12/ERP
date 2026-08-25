@@ -20,6 +20,7 @@ export class DashboardService {
       pendingPurchases, receivables,
       productCount, variantCount, customerCount, supplierCount, activePromotionCount,
       monthCosts, todayCosts,
+      todayReturns, monthReturns, monthWastage, todayWastage,
     ] = await Promise.all([
       sales.salesTotals({ dateFrom: today(), dateTo: today(), warehouseId }),
       sales.salesTotals({ dateFrom: today().slice(0, 8) + '01', dateTo: today(), warehouseId }),
@@ -84,7 +85,47 @@ export class DashboardService {
         dateFrom: today().slice(0, 8) + '01', dateTo: today(), warehouseId,
       }),
       repositories.costs.total({ dateFrom: today(), dateTo: today(), warehouseId }),
+
+      /**
+       * What came back, and what was lost. Both belong here for the same
+       * reason: without them this screen says the shop earned money it does
+       * not have.
+       *
+       * The owner refunded an invoice in full and the home screen went on
+       * showing 200 as the month's revenue, because "revenue" here meant
+       * completed sales and nothing else. Meanwhile the profit-and-costs report
+       * had ALWAYS taken refunds off. Two screens, two answers, and the one he
+       * looks at every morning was the wrong one.
+       */
+      repositories.salesReturns.returnsTotals({ dateFrom: today(), dateTo: today(), warehouseId }),
+      repositories.salesReturns.returnsTotals({
+        dateFrom: today().slice(0, 8) + '01', dateTo: today(), warehouseId,
+      }),
+      repositories.adjustments.wastageTotals({
+        dateFrom: today().slice(0, 8) + '01', dateTo: today(), warehouseId,
+      }),
+      repositories.adjustments.wastageTotals({ dateFrom: today(), dateTo: today(), warehouseId }),
     ]);
+
+    /**
+     * The month's money, worked out once, in the order a person would say it.
+     *
+     * Sales, less what was refunded, is what the shop KEPT. What those goods
+     * cost, less the cost of anything that came back sellable and went on the
+     * shelf again, is the cost of what it kept — a damaged return is not
+     * credited, because the shop is out both the refund and the item. Gross is
+     * the difference. Net takes off the two things that are real money and were
+     * previously invisible on this screen: what the shop spent, and what it
+     * lost.
+     */
+    const monthKept = round2(monthTotals.revenue - monthReturns.refunds);
+    const monthCogs = round2(monthTotals.cost - monthReturns.cost_back);
+    const monthGross = round2(monthKept - monthCogs);
+    const monthNet = round2(monthGross - monthCosts.amount - monthWastage.value);
+    const todayKept = round2(todayTotals.revenue - todayReturns.refunds);
+    const todayGross = round2(
+      todayKept - round2(todayTotals.cost - todayReturns.cost_back),
+    );
 
     const counts = {
       products: productCount.n,
@@ -96,18 +137,31 @@ export class DashboardService {
 
     return {
       kpis: {
-        todayRevenue: round2(todayTotals.revenue),
+        // Every "revenue" on this screen is now money the shop KEPT: sales
+        // less refunds. `*Sales` beside it is what was rung up before anything
+        // came back, so a tile can show both and neither has to be inferred.
+        todayRevenue: todayKept,
+        todaySales: round2(todayTotals.revenue),
+        todayRefunds: round2(todayReturns.refunds),
         todayInvoices: todayTotals.invoice_count,
-        todayProfit: round2(todayTotals.profit),
+        todayProfit: todayGross,
         weekRevenue: round2(week.revenue),
-        monthRevenue: round2(monthTotals.revenue),
+        monthRevenue: monthKept,
+        monthSales: round2(monthTotals.revenue),
+        monthRefunds: round2(monthReturns.refunds),
+        monthReturnCount: monthReturns.return_count,
         // `monthProfit` is goods margin and always was. It keeps its name and
         // its meaning; what changes is that it is no longer the only profit on
         // the screen, and the tile that shows it now says "gross".
-        monthProfit: round2(monthTotals.profit),
+        monthProfit: monthGross,
         monthCosts: round2(monthCosts.amount),
         monthCostEntries: monthCosts.entries,
-        monthNetProfit: round2(monthTotals.profit - monthCosts.amount),
+        // الهدر — broken, lost, stolen, expired. Real money, and until now it
+        // appeared on no screen in this system after the stock level moved.
+        monthWastage: round2(monthWastage.value),
+        monthWastageUnits: round2(monthWastage.units),
+        todayWastage: round2(todayWastage.value),
+        monthNetProfit: monthNet,
         todayCosts: round2(todayCosts.amount),
         averageBasket: round2(monthTotals.average_basket),
         stockValue: round2(stock.v),

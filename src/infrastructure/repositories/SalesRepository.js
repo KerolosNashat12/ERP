@@ -176,6 +176,47 @@ export class SalesReturnRepository extends BaseRepository {
     });
   }
 
+  /**
+   * What came back, in money, over a window.
+   *
+   * `refunds` is cash handed across the counter and is NOT revenue — it never
+   * was, and every tile that says "revenue" has to take it off. `cost_back` is
+   * narrower and is the part that is easy to get wrong: only a RESELLABLE
+   * return puts stock on the shelf again, so only its cost comes off the cost
+   * of goods. A damaged one is refunded AND destroyed — the shop is out both
+   * the money and the item — so its cost stays exactly where it is.
+   *
+   * That is the same model `ReportService.profit_and_costs` has always used;
+   * this exists so the home screen can stop disagreeing with it.
+   */
+  async returnsTotals({ dateFrom, dateTo, warehouseId } = {}) {
+    const where = ['1 = 1'];
+    const params = [];
+    if (dateFrom) { where.push('date(r.return_date) >= date(?)'); params.push(dateFrom); }
+    if (dateTo) { where.push('date(r.return_date) <= date(?)'); params.push(dateTo); }
+    if (warehouseId) { where.push('r.warehouse_id = ?'); params.push(warehouseId); }
+    const clause = where.join(' AND ');
+
+    const heads = await getDb().prepare(`
+      SELECT COUNT(*) AS return_count,
+             COALESCE(SUM(r.total_amount), 0) AS refunds
+      FROM sales_returns r WHERE ${clause}
+    `).get(...params);
+
+    const back = await getDb().prepare(`
+      SELECT COALESCE(SUM(l.quantity * l.unit_cost), 0) AS cost_back
+      FROM sales_return_lines l
+      JOIN sales_returns r ON r.id = l.return_id
+      WHERE l.condition = 'resellable' AND ${clause}
+    `).get(...params);
+
+    return {
+      return_count: heads.return_count,
+      refunds: heads.refunds,
+      cost_back: back.cost_back,
+    };
+  }
+
   async listDetailed({ search = '', reasonCode, refundMethod, returnType, dateFrom, dateTo,
     page = 1, pageSize = 25 } = {}) {
     const where = ['1 = 1'];

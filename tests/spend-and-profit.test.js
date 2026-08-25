@@ -95,6 +95,7 @@ async function call(pathname, { method = 'GET', body, as, headers = {} } = {}) {
 }
 
 const query = (sql, ...params) => scoped(() => getDb().prepare(sql).get(...params));
+const round = (n) => Math.round(n * 100) / 100;
 
 /**
  * A shop with round numbers in it, so every total below can be asserted rather
@@ -380,12 +381,16 @@ test('what the shop has spent, and what it has actually made', async (t) => {
           // the same 11,000 the spend report calls costs + wages
           costs: 11000,
           wages: 5000,
+          // Nothing was broken, lost or stolen in this fixture, so the shop
+          // lost nothing beyond what it spent. The line is still here: a zero
+          // that is printed is a zero somebody has checked.
+          wastage: 0,
           net_profit: -1700,
         });
         const march = report.rows.find((row) => row.month === '2026-03');
         assert.equal(march.revenue - march.refunds - march.cogs, march.gross_profit,
           'a reader must be able to add up the row he is looking at');
-        assert.equal(march.gross_profit - march.costs, march.net_profit);
+        assert.equal(march.gross_profit - march.costs - march.wastage, march.net_profit);
         // 14,800 kept, 1,700 lost.
         assert.equal(march.net_margin_percent, -11.49);
       });
@@ -561,6 +566,96 @@ test('what the shop has spent, and what it has actually made', async (t) => {
         // The admin, who has costs.view, is offered both.
         const mine = (await call('/api/reports')).data.rows.map((row) => row.key);
         assert.ok(mine.includes('shop_spend') && mine.includes('profit_and_costs'));
+      });
+
+      /**
+       * الهدر — what the shop LOST.
+       *
+       * A bottle knocked off the counter is money as surely as a bill is, and
+       * until this test existed nothing in the system agreed: a damage
+       * adjustment moved the stock level and then vanished from every figure
+       * the owner could read. The shop was down a bottle and the books said it
+       * had had a good month.
+       *
+       * Left last in this file on purpose: it is the only subtest that moves
+       * the profit figures the ones above assert exactly.
+       */
+      await dt.test('what was broken, lost or stolen comes off the profit', async (wt) => {
+        const before = await profit();
+        assert.equal(before.summary.wastage, 0, 'nothing has been lost in this shop yet');
+
+        const adjust = async (reason, counted) => {
+          const created = await call('/api/inventory/adjustments', {
+            method: 'POST',
+            body: {
+              reason,
+              notes: `${reason} test`,
+              // 20 on the shelf at 25 each; `counted` is what is really there.
+              lines: [{ variant_id: 1, system_qty: 20, counted_qty: counted, unit_cost: 25 }],
+            },
+          });
+          assert.equal(created.status, 201, JSON.stringify(created.data));
+          return created.data;
+        };
+
+        await wt.test('a draft is not a loss — nobody has accepted it yet', async () => {
+          await adjust('damage', 16);
+          assert.equal((await profit()).summary.wastage, 0,
+            'a draft adjustment counted as waste; it has not happened yet');
+        });
+
+        /**
+         * A loss lands in the month it was ACCEPTED, which is the same rule
+         * every other document here follows — so a document posted today is
+         * correctly absent from a March report, and the fixture backdates it
+         * rather than widening the window and proving nothing.
+         */
+        const backdate = (id, when) => scoped(() => getDb()
+          .prepare('UPDATE stock_adjustments SET posted_at = ? WHERE id = ?')
+          .run(when, id));
+
+        await wt.test('posting four broken units costs the shop what they cost it', async () => {
+          const draft = await adjust('damage', 16);
+          const posted = await call(`/api/inventory/adjustments/${draft.id}/post`, { method: 'POST' });
+          assert.equal(posted.status, 200, JSON.stringify(posted.data));
+          assert.equal((await profit()).summary.wastage, 0,
+            'posted today, so a March report must not show it');
+          await backdate(draft.id, '2026-03-22T10:00:00.000Z');
+
+          const report = await profit();
+          // Four units at 25.
+          assert.equal(report.summary.wastage, 100);
+          // Everything above it is untouched: waste is not a cost in the
+          // ledger — no money left the till — and it is not a cost of goods
+          // sold, because nobody sold them.
+          assert.equal(report.summary.revenue, before.summary.revenue);
+          assert.equal(report.summary.cogs, before.summary.cogs);
+          assert.equal(report.summary.gross_profit, before.summary.gross_profit);
+          assert.equal(report.summary.costs, before.summary.costs);
+          // And it lands where it belongs: on the bottom line.
+          assert.equal(report.summary.net_profit, before.summary.net_profit - 100);
+        });
+
+        await wt.test('a stock-take correction is not waste, it is an error being fixed', async () => {
+          const withWaste = (await profit()).summary.wastage;
+          const draft = await adjust('correction', 12);
+          const done = await call(`/api/inventory/adjustments/${draft.id}/post`, { method: 'POST' });
+          assert.equal(done.status, 200, JSON.stringify(done.data));
+          await backdate(draft.id, '2026-03-23T10:00:00.000Z');
+          assert.equal((await profit()).summary.wastage, withWaste,
+            'a miscount found and fixed was counted as a loss — every stock count '
+            + 'would then read as a disaster');
+        });
+
+        await wt.test('the row a person reads still adds up', async () => {
+          const march = (await profit()).rows.find((row) => row.month === '2026-03');
+          assert.equal(
+            round(march.revenue - march.refunds - march.cogs), march.gross_profit,
+          );
+          assert.equal(
+            round(march.gross_profit - march.costs - march.wastage), march.net_profit,
+          );
+        });
       });
     });
   }

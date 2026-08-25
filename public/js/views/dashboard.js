@@ -36,14 +36,27 @@ export async function dashboardView(root) {
       quickActions),
 
     h('div', { class: 'kpis' },
-      kpi(t('todaysSales'), money(k.todayRevenue), `${k.todayInvoices} ${t('invoice')}`, true),
+      kpi(t('todaysSales'), money(k.todayRevenue),
+        // What was refunded today is said out loud on the tile rather than
+        // silently taken off it: a shop that sold 900 and refunded 700 needs to
+        // see both halves, not a 200 it cannot account for.
+        k.todayRefunds
+          ? `${k.todayInvoices} ${t('invoice')} · ${t('refunded')} ${money(k.todayRefunds)}`
+          : `${k.todayInvoices} ${t('invoice')}`, true),
       // Two profits, both named. The left one is the number this tile always
       // showed — revenue minus what the goods cost — and it now says so out
       // loud, because the shop's rent and wages are in this system and a tile
       // labelled just "profit" would quietly mean the wrong thing to the person
       // reading it. The right one is what he means by the word.
-      kpi(t('monthRevenue'), money(k.monthRevenue), `${t('grossProfit')}: ${money(k.monthProfit)}`),
+      kpi(t('monthRevenue'), money(k.monthRevenue),
+        k.monthRefunds
+          ? `${t('afterRefunds')} ${money(k.monthRefunds)} · ${t('grossProfit')}: ${money(k.monthProfit)}`
+          : `${t('grossProfit')}: ${money(k.monthProfit)}`),
       kpi(t('costsThisMonth'), money(k.monthCosts), `${number(k.monthCostEntries)} ${t('costEntries')}`),
+      // الهدر: goods the shop paid for and will never sell. Its own tile,
+      // because a loss folded into another number is a loss nobody acts on.
+      kpi(t('wastage'), money(k.monthWastage),
+        k.monthWastage ? `${number(k.monthWastageUnits)} ${t('qty')} · ${t('thisMonth')}` : t('thisMonth')),
       kpi(t('netProfit'), money(k.monthNetProfit), t('netProfitHint'), true),
       kpi(t('averageBasket'), money(k.averageBasket), t('thisMonth')),
       kpi(t('stockValue'), money(k.stockValue), `${number(k.stockUnits)} ${t('qty')}`),
