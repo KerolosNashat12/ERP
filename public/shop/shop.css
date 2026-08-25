@@ -838,9 +838,8 @@ html[lang="ar"] .brand-word { letter-spacing: 0; text-transform: none; font-size
 }
 .cat-nav-inner::-webkit-scrollbar { display: none; }
 /*
- * The pill. `.chip` and `.brand-pill` are the same object with two names —
- * white, a 1.5px hairline, fully round — and both light up the same way: the
- * accent for the border and the words, a wash of it behind them. An active
+ * The shelf chip under the header: white, a 1.5px hairline, fully round, and
+ * lit with the accent for the border and the words over a wash of it. An active
  * chip is not a solid fill; a strip of eight solid accent chips under the
  * header is a colour chart, not a navigation.
  */
@@ -1158,16 +1157,90 @@ html[lang="ar"] .hero-title { max-width: 20ch; }
 }
 
 /* The brand row: the same pill as `.chip`, centred on its own band. */
-.brand-strip { display: flex; flex-wrap: wrap; gap: var(--sp-3); justify-content: center; }
-.brand-pill {
-  border: 1.5px solid var(--line);
-  background: var(--surface);
-  border-radius: var(--radius-pill);
-  padding: var(--sp-3) var(--sp-5);
-  font-size: var(--fs-base);
-  font-weight: 600;
-  color: var(--ink-2);
+/*
+ * The brands rail.
+ *
+ * What was here before: `.brand-strip`, a centred flex wrap of sixty text
+ * pills. It filled six rows, gave a shopper nothing to catch on, and made every
+ * brand in the shop look exactly as important as every other. This is one row
+ * that scrolls, with a face on each card — the brand's logo where the ERP has
+ * one recorded, its first letter where it has not.
+ */
+.rail { position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: var(--sp-2); }
+.rail-track {
+  display: flex;
+  gap: var(--sp-4);
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+  scrollbar-width: none;
+  /* Room for the cards' own shadow, which a tight overflow box would clip. */
+  padding-block: var(--sp-2);
+  padding-inline: 2px;
 }
+.rail-track::-webkit-scrollbar { display: none; }
+.rail-btn {
+  flex: none;
+  inline-size: var(--tap);
+  block-size: var(--tap);
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--ink-2);
+  cursor: pointer;
+  box-shadow: var(--shadow);
+}
+.rail-btn[hidden] { display: none; }
+.rail-btn:disabled { opacity: .35; cursor: default; }
+/* The arrows point along the row, and the row turns around when the page does. */
+.rail-back svg { transform: rotate(180deg); }
+html[dir="rtl"] .rail-back svg { transform: none; }
+html[dir="rtl"] .rail-next svg { transform: rotate(180deg); }
+
+.brand-card {
+  flex: none;
+  inline-size: 132px;
+  scroll-snap-align: start;
+  display: grid;
+  justify-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-4) var(--sp-3);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  text-align: center;
+}
+.brand-card-face {
+  inline-size: 64px;
+  block-size: 64px;
+  border-radius: var(--radius-pill);
+  background: var(--accent-soft);
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+.brand-mark-badge {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: var(--fs-xl);
+  color: var(--accent-strong);
+  line-height: 1;
+}
+.brand-mark-badge[hidden] { display: none; }
+.brand-logo-img { inline-size: 100%; block-size: 100%; object-fit: contain; padding: var(--sp-2); }
+.brand-card-name {
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--ink-1);
+  /* Two lines, then an ellipsis: a long brand name must not make its card
+     taller than the one beside it. */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.brand-card-count { font-size: var(--fs-xs); color: var(--ink-3); }
 
 /* --------------------------------------------------------------- trust --- */
 /*
@@ -1385,6 +1458,21 @@ html[lang="ar"] .card-brand { letter-spacing: 0; text-transform: none; font-size
 }
 /* No photograph at all: the same box, the monogram in the middle of it. */
 .photo-empty { aspect-ratio: var(--photo-ratio); }
+/*
+ * On the product page an empty frame is a whole screen of nothing, and the
+ * owner read it as the page having failed rather than the piece having no
+ * photograph yet. A dashed edge and a mark you can actually see say "there is
+ * no picture of this one" — which is true, and fixable from the ERP.
+ */
+.gallery-main .photo-empty {
+  border: 1.5px dashed var(--line);
+  border-radius: var(--radius);
+  background: var(--photo-well);
+}
+.gallery-main .photo-empty .photo-mark {
+  font-size: clamp(2.5rem, 12vw, 5rem);
+  color: rgb(var(--accent-rgb) / .28);
+}
 .photo-mark {
   font-family: var(--font-display);
   font-weight: 700;
@@ -1585,6 +1673,21 @@ html[lang="ar"] .card-brand { letter-spacing: 0; text-transform: none; font-size
   box-shadow: var(--shadow);
 }
 .gallery-main .photo { aspect-ratio: var(--photo-ratio); block-size: 100%; }
+/*
+ * The main photograph is FITTED, not cropped.
+ *
+ * It used to crop, on the reasoning that here the photo IS the subject and
+ * filling the frame is what a shopper wants. That reasoning holds for a
+ * photograph composed for the frame; this shop's are supplier shots of tall
+ * bottles and boxes on white, and a square crop of a tall bottle cuts the cap
+ * off the top and the name off the bottom — the two things somebody came to
+ * look at. Fitting can only ever add white to a picture that is already on
+ * white, and it can never remove the product from it.
+ */
+.gallery-main .photo > img { object-fit: contain; padding: var(--sp-5); }
+/* A thumbnail is a smaller version of the same promise: never cropped, so what
+   it shows is what clicking it will show. */
+.thumb img { object-fit: contain; padding: 4px; }
 .gallery-main.skeleton { aspect-ratio: var(--photo-ratio); }
 .thumbs {
   display: flex;
@@ -1646,25 +1749,81 @@ html[lang="ar"] .product-brand { letter-spacing: 0; text-transform: none; font-s
 .field-optional { font-weight: 400; color: var(--ink-3); margin-inline-start: var(--sp-2); }
 .field-hint { font-size: var(--fs-xs); color: var(--ink-3); }
 
-.variants { display: flex; flex-wrap: wrap; gap: var(--sp-3); }
-.variant {
+/*
+ * The option picker.
+ *
+ * The chosen option's name is printed into the field's own label, so the row of
+ * chips is a set of choices rather than the only place the answer lives.
+ */
+.field-chosen {
+  font-weight: 700;
+  color: var(--ink-1);
+  margin-inline-start: var(--sp-2);
+}
+.field-chosen:not(:empty)::before { content: "\2009— "; color: var(--ink-3); font-weight: 400; }
+
+/*
+ * A GRID, not a wrap.
+ *
+ * Chips that each size to their own words come out as a staircase — nine
+ * options, nine widths, no two edges in line — and a staircase is read as nine
+ * unrelated things rather than one choice with nine answers. Equal columns make
+ * it a set. The tracks are `1fr` from a floor, so a phone gets one or two per
+ * row and a desktop gets as many as fit, without a breakpoint deciding it.
+ */
+.variants {
   display: grid;
-  gap: var(--sp-1);
-  justify-items: start;
+  grid-template-columns: repeat(auto-fill, minmax(min(12.5rem, 100%), 1fr));
+  gap: var(--sp-3);
+}
+.variant {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
   text-align: start;
-  border: 1px solid var(--line);
+  border: 1.5px solid var(--line);
   background: var(--surface);
   border-radius: var(--radius-sm);
-  padding: var(--sp-3) var(--sp-4);
+  /* Logical, so the swatch keeps its own side of the chip when the page mirrors. */
+  padding-block: var(--sp-2);
+  padding-inline: var(--sp-2) var(--sp-4);
   cursor: pointer;
   min-height: var(--tap);
+}
+/* Text-only chips have no picture to sit against, so the padding is even. */
+.variant:not(.has-swatch) { padding-inline: var(--sp-4); }
+.variant-text { display: grid; gap: 2px; justify-items: start; min-width: 0; }
+/* A long option name wraps to a second line rather than widening its column. */
+.variant-label { overflow-wrap: anywhere; }
+/*
+ * The option's own photograph. A thumbnail tells two perfumes apart faster than
+ * two transliterated names do, and it costs nothing where the shop has already
+ * uploaded one against the variant.
+ */
+.variant-swatch {
+  flex: none;
+  inline-size: 44px;
+  block-size: 44px;
+  border-radius: calc(var(--radius-sm) - 2px);
+  overflow: hidden;
+  background: var(--photo-well);
+  display: grid;
+  place-items: center;
+}
+.variant-swatch img {
+  inline-size: 100%;
+  block-size: 100%;
+  /* `contain`, because a swatch that crops a bottle to its middle shows the
+     shopper a rectangle of glass and no bottle. */
+  object-fit: contain;
+  padding: 3px;
 }
 .variant[aria-checked="true"] {
   border-color: var(--solid);
   box-shadow: inset 0 0 0 1px var(--solid);
   background: rgb(var(--accent-rgb) / .06);
 }
-.variant-label { font-size: var(--fs-base); font-weight: 600; }
+.variant-label { font-size: var(--fs-base); font-weight: 600; line-height: 1.25; }
 .variant-price { font-size: var(--fs-xs); color: var(--ink-3); }
 .variant.is-out {
   cursor: not-allowed;
@@ -1672,14 +1831,27 @@ html[lang="ar"] .product-brand { letter-spacing: 0; text-transform: none; font-s
   background: var(--line-2);
 }
 .variant.is-out .variant-label { text-decoration: line-through; }
-.variant-out { font-size: var(--fs-xs); color: var(--ink-3); }
+.variant.is-out .variant-swatch img { filter: grayscale(1); }
+.variant-out { font-size: var(--fs-xs); font-weight: 700; color: var(--ink-3); }
 
-.buy-row {
+/*
+ * The buy box. Quantity, buy, save — one column, one width, edges that line up.
+ *
+ * It used to be two things: a row whose add button took whatever width was
+ * left, and a favourites button underneath that hugged its own words. At any
+ * width above a phone, the most important part of the page was three controls
+ * of three different lengths with no shared edge between them. The cap is what
+ * keeps it honest on a wide desktop — a column of air beside the buy box reads
+ * as deliberate; a button a metre wide reads as a mistake.
+ */
+.buy-box {
   display: grid;
   gap: var(--sp-4);
-  align-items: end;
   padding-block: var(--sp-2);
+  max-inline-size: 26rem;
 }
+.buy-actions { display: grid; gap: var(--sp-3); }
+.buy-actions > .btn { inline-size: 100%; justify-self: stretch; }
 .field-qty { justify-items: start; }
 .stepper {
   display: inline-flex;
@@ -2206,8 +2378,6 @@ html[lang="ar"] .foot-col h3 { letter-spacing: .04em; text-transform: none; font
   .grid { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: var(--sp-5); }
   .tiles { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: var(--sp-4); }
   .trust-row { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--sp-5); }
-  .buy-row { grid-template-columns: auto 1fr; }
-  .btn-add { width: auto; min-width: 220px; }
   .field-row { grid-template-columns: 1fr 1fr; }
   .cart-line {
     grid-template-columns: 96px 1fr auto;
@@ -2316,7 +2486,9 @@ html[lang="ar"] .foot-col h3 { letter-spacing: .04em; text-transform: none; font
 
   /* --- the pill, under both its names ---------------------------------- */
   .chip:hover,
-  .brand-pill:hover { border-color: var(--accent); color: var(--accent-strong); background: var(--accent-soft); }
+  .brand-card:hover { box-shadow: var(--shadow-lift); }
+  .brand-card:hover .brand-card-name { color: var(--accent-strong); }
+  .rail-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent-strong); }
 
   /* --- surfaces: the shadow step. The lift itself is motion ------------- */
   .card:hover,
@@ -2382,12 +2554,10 @@ html[lang="ar"] .foot-col h3 { letter-spacing: .04em; text-transform: none; font
   .btn,
   .icon-btn,
   .chip,
-  .brand-pill {
+  .brand-card {
     transition:
-      background-color var(--dur-fast) var(--ease),
-      border-color var(--dur-fast) var(--ease),
+      box-shadow var(--dur-base) var(--ease),
       color var(--dur-fast) var(--ease),
-      background-position var(--dur-base) var(--ease),
       transform var(--dur-base) var(--ease);
   }
 
@@ -2455,7 +2625,7 @@ html[lang="ar"] .foot-col h3 { letter-spacing: .04em; text-transform: none; font
     .btn:hover:not(:disabled):not(.is-disabled),
     .icon-btn:hover,
     .chip:hover,
-    .brand-pill:hover { transform: translateY(calc(var(--lift) / 2)); }
+    .brand-card:hover { transform: translateY(calc(var(--lift) / 2)); }
     /* The photograph creeps in while the card is held. */
     .card:hover .photo > img { transform: scale(1.06); }
     .card-fav:hover { transform: scale(1.08); }
@@ -2466,7 +2636,7 @@ html[lang="ar"] .foot-col h3 { letter-spacing: .04em; text-transform: none; font
   .btn:active:not(:disabled):not(.is-disabled),
   .icon-btn:active,
   .chip:active,
-  .brand-pill:active { transform: scale(.97); }
+  .brand-card:active { transform: scale(.97); }
   .card-fav:active,
   .step:active:not(:disabled) { transform: scale(.9); }
 

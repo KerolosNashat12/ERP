@@ -1,7 +1,7 @@
 /** Product cards, availability badges and the grids they live in. */
 import { el, icon, chevron, ICONS } from '../core/dom.js';
 import { imageUrl } from '../core/api.js';
-import { t, pick } from '../core/i18n.js';
+import { t, pick, isRtl } from '../core/i18n.js';
 import { monogramText } from '../core/branding.js';
 import { priceRange } from '../core/format.js';
 import { href } from '../core/router.js';
@@ -210,6 +210,104 @@ export function taxonomyTile(row, kind) {
     el('span.tile-name', name),
     el('span.tile-count', t('itemsCount', Number(row.product_count || 0))),
     el('span.tile-more', t('viewAll'), chevron(14)));
+}
+
+/**
+ * One brand, as a card in the brands rail.
+ *
+ * ── Why this exists ──────────────────────────────────────────────────────────
+ * The brands section was sixty identical text pills wrapped over six rows: a
+ * wall with no shape to it, where finding "ديور" meant reading sixty names and
+ * where every brand looked exactly as important as every other. A shopper
+ * scanning for a name they know needs something to catch on.
+ *
+ * So a brand gets its logo where the shop has recorded one and a lettered badge
+ * where it has not, plus how many pieces are behind it — the same three facts a
+ * category tile carries, in a shape that scrolls sideways instead of stacking.
+ *
+ * `logo_url` is a field the ERP already has on every brand and the storefront
+ * never used. A logo that fails to load falls back to the letter rather than
+ * leaving the browser's broken-image glyph in a shop window.
+ */
+export function brandCard(row) {
+  const name = pick(row, 'name');
+  const mark = el('span.brand-mark-badge', { 'aria-hidden': 'true' }, categoryLetter(name));
+  const logo = String(row.logo_url || '').trim();
+  if (logo) {
+    const img = el('img.brand-logo-img', {
+      src: logo, alt: '', loading: 'lazy', decoding: 'async', referrerPolicy: 'no-referrer',
+    });
+    img.addEventListener('error', () => { img.remove(); mark.hidden = false; });
+    mark.hidden = true;
+    // Both are appended; whichever survives is the one that could be shown.
+    return el('a.brand-card', { href: href(routePath('brand', { id: row.id, slug: slugFor(row) })) },
+      el('span.brand-card-face', img, mark),
+      el('span.brand-card-name', name),
+      el('span.brand-card-count', t('itemsCount', Number(row.product_count || 0))));
+  }
+  return el('a.brand-card', { href: href(routePath('brand', { id: row.id, slug: slugFor(row) })) },
+    el('span.brand-card-face', mark),
+    el('span.brand-card-name', name),
+    el('span.brand-card-count', t('itemsCount', Number(row.product_count || 0))));
+}
+
+/**
+ * A row that scrolls sideways, with buttons for the people who are not going to
+ * drag it.
+ *
+ * Deliberately NOT a marquee. A strip that slides on its own looks alive in a
+ * screenshot and is miserable to use: every target is moving, so clicking the
+ * brand you spotted means chasing it, and a shopper who stops to read is fought
+ * by the page. This scrolls when it is pushed — by finger, by wheel, by the
+ * arrows, by the keyboard — and holds still when it is not.
+ *
+ * The arrows hide themselves when there is nothing to scroll to, so a shop with
+ * six brands does not get a control that does nothing.
+ */
+export function rail(items, { label } = {}) {
+  const track = el('div.rail-track', { role: 'list', 'aria-label': label || '' }, items);
+  const back = el('button.rail-btn.rail-back', {
+    type: 'button', 'aria-label': t('previous'), tabIndex: -1, 'aria-hidden': 'true',
+  }, chevron(18));
+  const next = el('button.rail-btn.rail-next', {
+    type: 'button', 'aria-label': t('next'), tabIndex: -1, 'aria-hidden': 'true',
+  }, chevron(18));
+
+  /*
+   * `scrollLeft` runs negative in a right-to-left row in every current browser,
+   * so the sums below are written in terms of distance travelled rather than
+   * position, and read the same in both directions.
+   */
+  const travelled = () => Math.abs(track.scrollLeft);
+  const room = () => track.scrollWidth - track.clientWidth;
+
+  function paint() {
+    const scrollable = room() > 8;
+    for (const button of [back, next]) {
+      button.hidden = !scrollable;
+      button.tabIndex = scrollable ? 0 : -1;
+      button.setAttribute('aria-hidden', scrollable ? 'false' : 'true');
+    }
+    if (!scrollable) return;
+    back.disabled = travelled() <= 4;
+    next.disabled = travelled() >= room() - 4;
+  }
+
+  function nudge(direction) {
+    const step = Math.max(track.clientWidth * 0.8, 200);
+    // `by` is in logical inline pixels: positive is "further along the row",
+    // which the browser mirrors for us when the document does.
+    track.scrollBy({ left: isRtl() ? -direction * step : direction * step, behavior: 'smooth' });
+  }
+
+  back.addEventListener('click', () => nudge(-1));
+  next.addEventListener('click', () => nudge(1));
+  track.addEventListener('scroll', paint, { passive: true });
+  // The width is not known until this is in the document; a frame later it is.
+  requestAnimationFrame(paint);
+  window.addEventListener('resize', paint, { passive: true });
+
+  return el('div.rail', back, track, next);
 }
 
 /** A section heading with an optional "view all" on the far inline end. */

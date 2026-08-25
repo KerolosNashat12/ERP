@@ -8,7 +8,7 @@ import { routePath, slugFor } from '../../../shared/shopUrls.js';
 import { setPageMeta } from '../core/seo.js';
 import { shop, deliverySettings } from '../core/store.js';
 import { money, number } from '../core/format.js';
-import { productGrid, taxonomyTile, sectionHead } from '../ui/cards.js';
+import { productGrid, taxonomyTile, sectionHead, brandCard, rail } from '../ui/cards.js';
 import { skeletonGrid, errorState, emptyState } from '../ui/states.js';
 
 /**
@@ -203,10 +203,15 @@ export default async function homeView(root) {
   // The white band. The design alternates paper and white full-bleed bands
   // down the page, and the brands and the best sellers are the white ones.
   if (brands.length) {
+    /*
+     * A rail, not a wall. Sixty brands as wrapped text pills filled six rows
+     * with no shape to them; the same sixty as cards that scroll sideways take
+     * one row, carry a logo or a letter and say how many pieces are behind each
+     * name. See `rail()` in ui/cards.js for why it does not slide on its own.
+     */
     sections.push(el('section.section.section-band',
       sectionHead(t('ourBrands')),
-      el('div.brand-strip', brands.map((row) => el('a.brand-pill',
-        { href: href(routePath('brand', { id: row.id, slug: slugFor(row) })) }, pick(row, 'name'))))));
+      rail(brands.map(brandCard), { label: t('ourBrands') })));
   }
 
   if (newest.length) {

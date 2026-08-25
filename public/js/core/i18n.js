@@ -99,6 +99,8 @@ const dictionary = {
     category: 'Category', customer: 'Customer', product: 'Product', variant: 'Variant',
     sku: 'SKU', barcode: 'Barcode / QR', unit: 'Unit', taxRate: 'Tax rate %',
     discount: 'Discount', tax: 'Tax', paid: 'Paid', outstanding: 'Outstanding',
+    // A supplier quotes a rate, not an amount, so the field asks for the rate.
+    discountPercent: 'Discount %',
     balance: 'Balance', reason: 'Reason', type: 'Type', value: 'Value', profit: 'Profit',
     revenue: 'Revenue', margin: 'Margin', invoice: 'Invoice', document: 'Document',
     scanPrompt: 'Scan or type a code…', added: 'Added', nameAr: 'Name (Arabic)',
@@ -862,6 +864,7 @@ const dictionary = {
     category: 'الفئة', customer: 'العميل', product: 'المنتج', variant: 'المتغير',
     sku: 'الكود', barcode: 'الباركود / QR', unit: 'الوحدة', taxRate: 'نسبة الضريبة %',
     discount: 'الخصم', tax: 'الضريبة', paid: 'المدفوع', outstanding: 'المتبقي',
+    discountPercent: 'الخصم %',
     balance: 'الرصيد', reason: 'السبب', type: 'النوع', value: 'القيمة', profit: 'الربح',
     revenue: 'الإيرادات', margin: 'هامش الربح', invoice: 'الفاتورة', document: 'المستند',
     scanPrompt: 'امسح أو اكتب الكود…', added: 'تمت الإضافة', nameAr: 'الاسم (بالعربية)',

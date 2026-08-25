@@ -36,6 +36,7 @@ import migration014 from './014-fleet-summary-indexes.js';
 import migration015 from './015-legacy-invoices.js';
 import migration016 from './016-lifetime-report-indexes.js';
 import migration017 from './017-shop-data-export.js';
+import migration018 from './018-po-discount-percent.js';
 
 /** Ordered. Append only. */
 const MIGRATIONS = [
@@ -56,6 +57,7 @@ const MIGRATIONS = [
   migration015,
   migration016,
   migration017,
+  migration018,
 ];
 
 async function ensureRegistry() {

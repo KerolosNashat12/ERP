@@ -197,6 +197,78 @@ test('purchase order: create, approve, receive — stock and cost update', async
   state.poId = po.id;
 });
 
+test('a purchase order discount is a rate, and the money follows the lines', async (ctx) => {
+  /**
+   * The supplier says five percent; nobody should be doing his arithmetic by
+   * hand, and nobody should have to do it AGAIN because a line changed. The
+   * rate is what is typed and stored; `discount_amount` is still the money and
+   * is still what every total, report and printed order reads.
+   */
+  const suppliers = await api('/api/suppliers/options');
+  const body = (percent) => ({
+    supplier_id: suppliers.rows[0].id,
+    order_date: new Date().toISOString().slice(0, 10),
+    discount_percent: percent,
+    lines: [{
+      variant_id: state.variant.id, quantity_ordered: 10, unit_cost: 100, tax_rate: 0,
+    }],
+  });
+
+  let created;
+  await ctx.test('the amount is worked out from the subtotal', async () => {
+    created = await api('/api/purchases', { method: 'POST', body: body(5) });
+    assert.equal(created.subtotal, 1000);
+    assert.equal(created.discount_percent, 5);
+    assert.equal(created.discount_amount, 50);
+    assert.equal(created.total_amount, 950);
+  });
+
+  await ctx.test('and it follows the lines when they change', async () => {
+    const changed = await api(`/api/purchases/${created.id}`, {
+      method: 'PUT',
+      body: {
+        ...body(5),
+        lines: [{
+          variant_id: state.variant.id, quantity_ordered: 20, unit_cost: 100, tax_rate: 0,
+        }],
+      },
+    });
+    // The whole reason for the change: nothing was retyped and the discount is
+    // still five percent of what the order actually costs.
+    assert.equal(changed.subtotal, 2000);
+    assert.equal(changed.discount_amount, 100);
+    assert.equal(changed.total_amount, 1900);
+  });
+
+  await ctx.test('an order sent the old way keeps its amount untouched', async () => {
+    // An offline till queued this before the shop updated. Its total must not
+    // move because somebody deployed.
+    const legacy = await api('/api/purchases', {
+      method: 'POST',
+      body: {
+        supplier_id: suppliers.rows[0].id,
+        order_date: new Date().toISOString().slice(0, 10),
+        discount_amount: 37.5,
+        lines: [{
+          variant_id: state.variant.id, quantity_ordered: 10, unit_cost: 100, tax_rate: 0,
+        }],
+      },
+    });
+    assert.equal(legacy.discount_amount, 37.5);
+    assert.equal(legacy.discount_percent, 0);
+    assert.equal(legacy.total_amount, 962.5);
+  });
+
+  await ctx.test('a rate outside 0–100 is refused', async () => {
+    await assert.rejects(
+      () => api('/api/purchases', { method: 'POST', body: body(140) }),
+      // The form validator refuses it before the service ever sees it, which is
+      // the right place for it to be refused.
+      (error) => error.status === 422 || error.status === 400,
+    );
+  });
+});
+
 test('rejects receiving more than was ordered', async () => {
   const po = await api(`/api/purchases/${state.poId}`);
   await assert.rejects(

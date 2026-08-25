@@ -142,6 +142,13 @@ export const purchaseOrderSchema = z.object({
   warehouse_id: id.optional().nullable(),
   order_date: z.string().trim().min(1),
   expected_date: optionalString,
+  /*
+   * The header discount is a RATE now (see migration 018). `discount_amount` is
+   * still accepted and still means money, because an order queued by an offline
+   * till before this change carries one — and because the service uses it
+   * verbatim whenever no rate was sent, so nothing that already exists moves.
+   */
+  discount_percent: z.coerce.number().min(0).max(100).optional(),
   discount_amount: money,
   shipping_amount: money,
   notes: optionalString,

@@ -236,15 +236,37 @@ async function purchaseFormView(root, route) {
     }
   }
 
+  /**
+   * What rate to show for an order that was saved before the field was one.
+   *
+   * Its discount is an amount and its percent is zero, so the field would open
+   * empty on an order that plainly has a discount — and saving it would then
+   * silently drop that discount to nothing. The rate its own amount works out
+   * to is the honest answer, and it is what the amount already was.
+   */
+  const openingDiscountPercent = (order) => {
+    if (Number(order.discount_percent)) return order.discount_percent;
+    const amount = Number(order.discount_amount || 0);
+    const subtotal = Number(order.subtotal || 0);
+    if (!amount || subtotal <= 0) return 0;
+    return Math.round((amount / subtotal) * 10000) / 100;
+  };
+
   const header = buildForm([
     { name: 'supplier_id', label: t('supplier'), type: 'select', required: true, options: suppliers.map((s) => ({ value: s.id, label: pick(s, 'name') })), disabled: !editable },
     { name: 'order_date', label: t('orderDate'), type: 'date', required: true, disabled: !editable },
     { name: 'expected_date', label: t('expectedDate'), type: 'date', disabled: !editable },
-    { name: 'discount_amount', label: t('discount'), type: 'number', disabled: !editable },
+    /*
+     * A rate, not an amount. A supplier says "five percent"; typing what that
+     * comes to meant doing his arithmetic by hand, and doing it again the moment
+     * a line changed. `discount_amount` is still what gets stored and read
+     * everywhere else — the server works it out from this and the subtotal.
+     */
+    { name: 'discount_percent', label: t('discountPercent'), type: 'number', min: 0, max: 100, step: '0.01', disabled: !editable },
     { name: 'shipping_amount', label: t('shipping'), type: 'number', disabled: !editable },
     { name: 'notes', label: t('notes'), type: 'textarea', span: 3, disabled: !editable },
-  ], existing || {
-    order_date: isoDate(), discount_amount: 0, shipping_amount: 0, supplier_id: queuedSupplierId,
+  ], existing ? { ...existing, discount_percent: openingDiscountPercent(existing) } : {
+    order_date: isoDate(), discount_percent: 0, shipping_amount: 0, supplier_id: queuedSupplierId,
   }, { columns: 3 });
 
   const linesHost = h('div');
@@ -277,9 +299,15 @@ async function purchaseFormView(root, route) {
       tax += net * (Number(line.tax_rate || 0) / 100);
     }
     const values = header.values();
-    const discount = Number(values.discount_amount || 0);
+    const percent = Number(values.discount_percent || 0);
+    // The same sum the server will do when this is saved, so the total on the
+    // screen is the total that gets written and never a preview of a different
+    // arithmetic.
+    const discount = subtotal * (percent / 100);
     const shipping = Number(values.shipping_amount || 0);
-    return { subtotal, tax, discount, shipping, total: subtotal + tax + shipping - discount };
+    return {
+      subtotal, tax, discount, percent, shipping, total: subtotal + tax + shipping - discount,
+    };
   }
 
   function renderTotals() {
@@ -287,7 +315,11 @@ async function purchaseFormView(root, route) {
     const line = (label, value, cls = '') => h('div', { class: `line ${cls}` }, h('span', {}, label), h('span', { class: 'mono' }, value));
     mount(totalsHost, h('div', { class: 'totals', style: { maxWidth: '320px', marginInlineStart: 'auto' } },
       line(t('subtotal'), money(totals.subtotal)),
-      line(t('discount'), `− ${money(totals.discount)}`),
+      // Both halves, because the rate is what was agreed and the amount is what
+      // will be paid, and an order is checked against a supplier's invoice on
+      // the second one.
+      line(totals.percent ? `${t('discount')} ${number(totals.percent)}%` : t('discount'),
+        `− ${money(totals.discount)}`),
       line(t('shipping'), money(totals.shipping)),
       line(t('tax'), money(totals.tax)),
       line(t('total'), money(totals.total), 'grand'),
@@ -672,7 +704,10 @@ export function purchaseDocument(order) {
         h('td', {}, money(line.line_total)))))),
     h('div', { class: 'doc-totals' },
       h('div', { class: 'line' }, h('span', {}, t('subtotal')), h('span', {}, money(order.subtotal))),
-      h('div', { class: 'line' }, h('span', {}, t('discount')), h('span', {}, money(order.discount_amount))),
+      h('div', { class: 'line' },
+        h('span', {}, order.discount_percent
+          ? `${t('discount')} ${number(order.discount_percent)}%` : t('discount')),
+        h('span', {}, money(order.discount_amount))),
       h('div', { class: 'line' }, h('span', {}, t('shipping')), h('span', {}, money(order.shipping_amount))),
       h('div', { class: 'line' }, h('span', {}, t('tax')), h('span', {}, money(order.tax_amount))),
       h('div', { class: 'line grand' }, h('span', {}, t('total')), h('span', {}, money(order.total_amount)))),

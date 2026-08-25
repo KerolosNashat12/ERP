@@ -384,6 +384,9 @@ CREATE TABLE IF NOT EXISTS purchase_orders (
   order_date      TEXT    NOT NULL,
   expected_date   TEXT,
   subtotal        REAL    NOT NULL DEFAULT 0,
+  -- The rate the supplier gave, and the money it comes to. The percent is what
+  -- somebody typed; the amount is what everything downstream reads.
+  discount_percent REAL   NOT NULL DEFAULT 0,
   discount_amount REAL    NOT NULL DEFAULT 0,
   tax_amount      REAL    NOT NULL DEFAULT 0,
   shipping_amount REAL    NOT NULL DEFAULT 0,

@@ -60,7 +60,24 @@ export class PurchaseService {
     return order;
   }
 
-  #computeTotals(lines, { discountAmount = 0, shippingAmount = 0 }) {
+  /**
+   * The header discount is a RATE.
+   *
+   * A supplier says "five percent off", not "forty pounds off", so that is what
+   * the form asks for and what is stored — and the money it comes to is worked
+   * out here, from the subtotal, every time the order is saved. That is the
+   * whole point of moving it: change a line and the discount follows, instead of
+   * quietly still being the amount that was right before the line changed.
+   *
+   * `discount_amount` remains the money and remains authoritative for everything
+   * downstream — totals, supplier statements, the printed order, every report.
+   * None of them had to learn about this.
+   *
+   * An amount with no percent is still accepted, and it is what an order saved
+   * before this existed carries. Those are left exactly as they were: their
+   * total must not move because the shop updated.
+   */
+  #computeTotals(lines, { discountAmount = 0, discountPercent = null, shippingAmount = 0 }) {
     let subtotal = 0;
     let taxTotal = 0;
     const computed = lines.map((line) => {
@@ -74,10 +91,20 @@ export class PurchaseService {
       taxTotal += result.taxAmount;
       return { ...line, line_total: result.lineTotal };
     });
+
+    const percent = discountPercent === null || discountPercent === undefined
+      ? null : Number(discountPercent);
+    if (percent !== null && (!Number.isFinite(percent) || percent < 0 || percent > 100)) {
+      throw new ValidationError('A purchase order discount must be between 0% and 100%');
+    }
+
     const header = {
       subtotal: round2(subtotal),
       tax_amount: round2(taxTotal),
-      discount_amount: round2(discountAmount),
+      discount_percent: percent === null ? 0 : round2(percent),
+      discount_amount: percent === null
+        ? round2(discountAmount)
+        : round2(round2(subtotal) * (percent / 100)),
       shipping_amount: round2(shippingAmount),
     };
     header.total_amount = round2(
@@ -102,6 +129,11 @@ export class PurchaseService {
 
       const { lines, header } = this.#computeTotals(rawLines, {
         discountAmount: payload.discount_amount,
+        // Absent means "this caller does not know about rates" — an older
+        // client, a script, a queued order written before the change — and the
+        // amount it sent is used unchanged.
+        discountPercent: Object.hasOwn(payload, 'discount_percent')
+          ? payload.discount_percent : null,
         shippingAmount: payload.shipping_amount,
       });
 

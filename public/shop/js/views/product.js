@@ -77,15 +77,39 @@ function gallery(product) {
 /**
  * The option picker.
  *
- * Out-of-stock options stay visible — knowing the shop carries that colour is
- * useful even when it is gone today — but they are `disabled`, greyed, struck
- * through and labelled, so they cannot be chosen by mouse, keyboard or script
- * that only checks for a class.
+ * ── What it looked like before ───────────────────────────────────────────────
+ * Nine identical pills, each carrying the same price. A shopper reading
+ * "AL FARS · 1,000 ج.م / MOTAYAM · 1,000 ج.م / LAMAST HARIR · 1,000 ج.م" is
+ * reading the price nine times and the choice once, which is exactly backwards:
+ * the price is already the largest thing on the page, and repeating it on every
+ * option makes the options themselves harder to tell apart.
+ *
+ * ── What it does now ─────────────────────────────────────────────────────────
+ *  - The chosen option is named in the field's own label — "النوع: AL FARS" —
+ *    so the answer to "which one am I buying" never depends on spotting which
+ *    of nine borders is darker.
+ *  - Where an option has its own photograph it wears it. A thumbnail is a
+ *    faster way to tell two perfumes apart than their transliterated names, and
+ *    it is what every large shop does for a reason.
+ *  - A price appears on an option only when it is NOT the same as the others.
+ *    Nine equal prices say nothing; one different price is the whole point.
+ *  - Sold out stays visible and stays unbuyable: `disabled`, struck through and
+ *    labelled, because knowing the shop carries it is worth something even on
+ *    the day it is gone.
  */
 function variantPicker(product, onPick) {
   const variants = product.variants || [];
   if (variants.length <= 1) return { node: null, selected: variants[0] || null };
 
+  /*
+   * Do the options differ in price at all? If every one costs the same, the
+   * figure belongs to the product and is printed once, above. Only a genuine
+   * difference earns a place on the chips.
+   */
+  const prices = variants.map((variant) => variant.price).filter((price) => price !== null);
+  const priceVaries = prices.length > 1 && new Set(prices.map(Number)).size > 1;
+
+  const chosenLabel = el('span.field-chosen');
   const group = el('div.variants', { role: 'radiogroup', 'aria-label': t('chooseVariant') });
   const buttons = new Map();
   let selected = variants.find((variant) => variant.availability !== 'out') || null;
@@ -96,16 +120,17 @@ function variantPicker(product, onPick) {
    * with it would leave a screen-reader user waiting for arrow keys that do
    * nothing — worse than plain buttons.
    */
-  function choose(variant, { focus = false } = {}) {
+  function choose(variant, { focus = false, quiet = false } = {}) {
     if (!variant || variant.availability === 'out') return;
     selected = variant;
+    chosenLabel.textContent = variant.label || '';
     buttons.forEach((node, entry) => {
       const active = entry === variant;
       node.setAttribute('aria-checked', active ? 'true' : 'false');
       node.tabIndex = active ? 0 : -1;
       if (active && focus) node.focus();
     });
-    onPick(variant);
+    if (!quiet) onPick(variant);
   }
 
   const pickable = variants.filter((variant) => variant.availability !== 'out');
@@ -120,7 +145,7 @@ function variantPicker(product, onPick) {
     const button = el('button.variant', {
       type: 'button',
       role: 'radio',
-      class: out ? 'is-out' : '',
+      class: [out ? 'is-out' : '', variant.image_id ? 'has-swatch' : ''].filter(Boolean).join(' '),
       disabled: out,
       tabIndex: variant === selected ? 0 : -1,
       'aria-checked': variant === selected ? 'true' : 'false',
@@ -135,16 +160,25 @@ function variantPicker(product, onPick) {
         else if (event.key === back || event.key === 'ArrowUp') { event.preventDefault(); step(-1); }
       },
     },
-    el('span.variant-label', variant.label || pick(product, 'name')),
-    variant.price !== null && el('span.variant-price', money(variant.price)),
-    out && el('span.variant-out', t('outOfStock')));
+    // Decorative: the option is already named beside it, so a screen reader
+    // that also read the picture would hear the same thing twice.
+    variant.image_id && el('span.variant-swatch',
+      el('img', { src: imageUrl(variant.image_id), alt: '', loading: 'lazy', decoding: 'async' })),
+    el('span.variant-text',
+      el('span.variant-label', variant.label || pick(product, 'name')),
+      priceVaries && variant.price !== null && el('span.variant-price', money(variant.price)),
+      out && el('span.variant-out', t('outOfStock'))));
     buttons.set(variant, button);
     group.append(button);
   }
 
+  // Paints the chosen option's name into the label without announcing a choice
+  // the shopper has not made yet.
+  choose(selected, { quiet: true });
+
   return {
-    node: el('div.field',
-      el('span.field-label', t('chooseVariant')),
+    node: el('div.field.field-variants',
+      el('span.field-label', t('chooseVariant'), chosenLabel),
       group),
     get selected() { return selected; },
   };
@@ -419,17 +453,21 @@ export default async function productView(root, route) {
         priceNode,
         badgeNode,
         picker.node,
-        el('div.buy-row',
+        /*
+         * The buy box: quantity, then buy, then save — one column, one width.
+         *
+         * They used to be laid out separately: the add button stretched to
+         * whatever was left of the row while the heart underneath hugged its own
+         * words, so no two edges in the most important part of the page lined up
+         * with each other. Three controls that belong to one decision are one
+         * block now, and the block has a maximum width so that a wide desktop
+         * gives the column air rather than a button a metre long.
+         */
+        el('div.buy-box',
           el('div.field.field-qty',
             el('span.field-label', t('quantity')),
             stepper.node),
-          addButton),
-        // Its own line under the buy row rather than a third control inside it:
-        // the row is quantity-then-buy, and a wide "Save to favourites" wedged
-        // beside a 220px "Add to cart" is what pushes that row over the width of
-        // this column on a desktop. Underneath it hugs its own words at every
-        // width and never competes with the primary.
-        favButton,
+          el('div.buy-actions', addButton, favButton)),
         description && el('section.panel',
           el('h2.panel-title', t('aboutThisPiece')),
           el('p.prose', description)),

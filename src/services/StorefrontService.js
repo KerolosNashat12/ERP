@@ -513,10 +513,13 @@ export class StorefrontService {
    */
   async brands() {
     return this.db.prepare(`
-      SELECT b.id      AS id,
-             b.name_en AS name_en,
-             b.name_ar AS name_ar,
-             NULL      AS parent_id,
+      SELECT b.id       AS id,
+             b.name_en  AS name_en,
+             b.name_ar  AS name_ar,
+             -- The storefront never used to read this. The brands rail does:
+             -- a logo where the shop recorded one, a letter where it did not.
+             b.logo_url AS logo_url,
+             NULL       AS parent_id,
              (SELECT COUNT(*) FROM products p
                WHERE p.brand_id = b.id AND ${PUBLISHED_PRODUCT}) AS product_count
       FROM brands b
