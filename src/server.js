@@ -294,6 +294,24 @@ export function createApp() {
     app.get('/t/:slug/robots.txt', ...guardedTenant, tenantSeo.robots);
     app.get('/t/:slug/sitemap.xml', ...guardedTenant, tenantSeo.sitemap);
     app.get('/t/:slug/sitemap/:shard', ...guardedTenant, tenantSeo.shard);
+    /**
+     * The same map, also reachable from inside the shop.
+     *
+     * "The site" is not one thing to the two search engines. Google was given
+     * `/t/mm/` as the property and finds the sitemap a level below it; Bing was
+     * given `/t/mm/shop`, and refused the very same address outright — "Feed
+     * url is not part of the site" — because to Bing the shop's own root IS the
+     * site, and `/t/mm/sitemap.xml` sits above it.
+     *
+     * Neither is wrong. A shop's front door is `/t/<slug>/shop`, so a map of
+     * that shop belongs beside it; the addresses INSIDE the map are absolute
+     * and identical either way, so this is one document with two doors rather
+     * than two documents that could disagree. Registered before the
+     * `/t/:slug/shop*` page catch-all, or the shell would answer instead —
+     * which is how the ownership files failed, and is worth not repeating.
+     */
+    app.get('/t/:slug/shop/sitemap.xml', ...guardedTenant, tenantSeo.sitemap);
+    app.get('/t/:slug/shop/sitemap/:shard', ...guardedTenant, tenantSeo.shard);
 
     // Static assets and the two SPAs, under the tenant's own prefix — so
     // `/t/mm/js/app.js` resolves before falling through to a page shell.
@@ -356,6 +374,10 @@ export function createApp() {
       app.get('/robots.txt', asDefault, rootSeo.robots);
       app.get('/sitemap.xml', asDefault, websiteGate({ shape: 'plain' }), rootSeo.sitemap);
       app.get('/sitemap/:shard', asDefault, websiteGate({ shape: 'plain' }), rootSeo.shard);
+      // The same second door as the tenant prefix above, for a single-shop
+      // deployment whose shop lives at `/shop`.
+      app.get('/shop/sitemap.xml', asDefault, websiteGate({ shape: 'plain' }), rootSeo.sitemap);
+      app.get('/shop/sitemap/:shard', asDefault, websiteGate({ shape: 'plain' }), rootSeo.shard);
     } else {
       /**
        * A console-only deployment has no shop at its root, so there is nothing

@@ -692,7 +692,23 @@ body:not(.is-booting) .boot-screen { display: none; }
   max-width: 116px;
   object-fit: contain;
 }
-.brand-text { display: grid; min-width: 0; }
+/*
+ * `max-width` on the text, not on the header.
+ *
+ * The name and the tagline both ellipsise already, but an ellipsis only decides
+ * what happens once a width is settled — it does not settle one. In the row
+ * below, `brand` is an `auto` track and `search` is `1fr`: an auto track takes
+ * its max-content first and the fr track lives on what is left, so a long
+ * tagline does not wrap or clip, it simply takes the search box's width. The
+ * shop wrote a proper description in Settings — the right thing to do, and the
+ * thing that made a 592px brand and a 26px search field, a round blob where the
+ * search used to be.
+ *
+ * A shop name and a strapline are a fixed-size mark, not elastic prose, so the
+ * cap belongs here in `ch` — wide enough to read, narrow enough that no shop
+ * can type its way out of the layout.
+ */
+.brand-text { display: grid; min-width: 0; max-width: 30ch; }
 .brand-name {
   font-family: var(--font-display);
   font-weight: 700;
@@ -2220,7 +2236,13 @@ html[lang="ar"] .foot-col h3 { letter-spacing: .04em; text-transform: none; font
   .hero-wrap { padding-block-start: var(--sp-6); }
   .head-inner {
     grid-template-areas: "brand search actions";
-    grid-template-columns: auto minmax(0, 1fr) auto;
+    /*
+     * `minmax(min(18rem, 100%), 1fr)` rather than `minmax(0, 1fr)`: a floor
+     * under the search box, so whatever else on this row grows, the one control
+     * a customer came to use cannot be squeezed to nothing. `min(…, 100%)` is
+     * what keeps that floor from becoming an overflow on a narrow window.
+     */
+    grid-template-columns: auto minmax(min(18rem, 100%), 1fr) auto;
     gap: var(--sp-6);
   }
   .brand-logo { height: 38px; max-width: 190px; }

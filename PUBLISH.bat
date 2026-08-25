@@ -71,7 +71,7 @@ if exist "hosted-db-setup.txt" del /f /q "hosted-db-setup.txt" >> "%LOG%" 2>&1
 echo.
 echo   Committing...
 git add -A >> "%LOG%" 2>&1
-git -c user.email="kerolosnashatestfanous@gmail.com" -c user.name="KerolosNashat12" commit -m "Bing gets its own ownership file, and the sitemap is allowed to be read: robots.txt named a map at the foot of the file that Disallow slash had refused a few lines above it, so Search Console reported a map it could not read while the address answered fine in a browser. Each verification file is now served at three depths and typed as what it actually is - a line of text is not HTML because its name ends in it" >> "%LOG%" 2>&1
+git -c user.email="kerolosnashatestfanous@gmail.com" -c user.name="KerolosNashat12" commit -m "Writing a proper shop description should not cost you the search box: the strapline sat in an auto grid track beside a 1fr search field, so a good long sentence took the field width rather than clipping - 592px of brand and 26px of search, an ellipsis on both lines and neither of them able to help, because an ellipsis decides what happens after a width is settled and never settles one. The brand block is capped and the search box has a floor. The sitemap also answers from inside the shop, because Bing calls that the site and refused the address a level above it" >> "%LOG%" 2>&1
 if errorlevel 1 echo   Nothing new to commit - pushing whatever is outstanding.
 
 echo   Pushing (your connection to GitHub drops sometimes, so this retries)...
