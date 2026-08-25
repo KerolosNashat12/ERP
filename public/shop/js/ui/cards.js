@@ -305,6 +305,8 @@ export function rail(items, { label, drift = true, bleed = false } = {}) {
 
   function paint() {
     const scrollable = room() > 8;
+    // A row that fits is centred; a row that scrolls starts at its beginning.
+    track.classList.toggle('is-static', !scrollable);
     for (const button of [back, next]) {
       button.hidden = !scrollable;
       button.tabIndex = scrollable ? 0 : -1;
@@ -338,13 +340,43 @@ function startDrift(node, track, items, away) {
   const calmer = window.matchMedia?.('(prefers-reduced-motion: reduce)');
   if (calmer?.matches) return;
 
-  // The second copy is what makes the wrap invisible. Cloned rather than
-  // re-rendered so the two halves cannot drift apart, and hidden from assistive
-  // technology so the shop does not appear to stock twice as many brands.
-  const clones = el('div.rail-clones', { 'aria-hidden': 'true' },
-    items.map((item) => item.cloneNode(true)));
-  for (const link of clones.querySelectorAll('a')) link.tabIndex = -1;
-  track.append(clones);
+  /**
+   * The second copy — and ONLY when the row is actually longer than the space
+   * it has.
+   *
+   * It was made unconditionally at first, and a shop with one brand in it
+   * showed that brand twice. Which is obvious in hindsight and was invisible in
+   * testing: the copy exists so the drift can wrap without reaching an end, and
+   * a row that fits on screen has no end to reach and never drifts at all — so
+   * the copy is pure duplication, sitting in plain sight next to the original.
+   *
+   * Cloned rather than re-rendered so the two halves cannot disagree, hidden
+   * from assistive technology and taken out of the tab order so a screen reader
+   * and the Tab key still count the brands the shop really has.
+   */
+  let clones = null;
+  const FITS = 8;                 // px of slack before a row counts as scrollable
+
+  function syncClones() {
+    if (!clones) {
+      if (track.scrollWidth <= track.clientWidth + FITS) return false;
+      clones = el('div.rail-clones', { 'aria-hidden': 'true' },
+        items.map((item) => item.cloneNode(true)));
+      for (const link of clones.querySelectorAll('a')) link.tabIndex = -1;
+      track.append(clones);
+      return true;
+    }
+    // The window grew, or a filter left fewer brands: one copy now fits, so the
+    // second one has to go before it becomes the duplicate all over again.
+    if (track.scrollWidth / 2 <= track.clientWidth + FITS) {
+      clones.remove();
+      clones = null;
+      track.scrollLeft = 0;
+      return false;
+    }
+    return true;
+  }
+  window.addEventListener('resize', syncClones, { passive: true });
 
   let held = 0;             // pointer, focus or finger currently on the rail
   /*
@@ -374,8 +406,12 @@ function startDrift(node, track, items, away) {
     const elapsed = last ? Math.min(now - last, 100) : 0;
     last = now;
 
+    // No second copy means the whole row is on screen: there is nothing to
+    // drift towards, and nothing to wrap around.
+    const looping = syncClones();
     const half = track.scrollWidth / 2;
-    const paused = held > 0
+    const paused = !looping
+      || held > 0
       || document.hidden
       || (now - touchedAt) < RESUME_AFTER
       || half <= track.clientWidth;

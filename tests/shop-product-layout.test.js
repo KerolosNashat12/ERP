@@ -229,6 +229,35 @@ test('the brands rail scrolls when it is pushed and holds still when it is not',
     );
   });
 
+  await ctx.test('the second copy is only made when there is something to loop', () => {
+    /**
+     * The shop that had ONE brand showed it twice. The clone exists so the
+     * drift can wrap without reaching an end — and a row that fits on screen
+     * has no end to reach and never drifts, so its copy is pure duplication
+     * sitting in plain sight next to the original. Obvious in hindsight;
+     * invisible in testing, because every fixture had enough brands to scroll.
+     */
+    assert.match(
+      cardsJs, /if \(track\.scrollWidth <= track\.clientWidth \+ FITS\) return false/,
+      'the rail clones itself unconditionally again — a shop with one brand will '
+      + 'show that brand twice.',
+    );
+    assert.match(
+      cardsJs, /clones\.remove\(\)/,
+      'nothing removes the copy when the window grows and one row starts to fit, '
+      + 'so the duplicate comes back on a wide screen.',
+    );
+  });
+
+  await ctx.test('and a rail with nothing to scroll centres what it has', () => {
+    assert.match(
+      cardsJs, /classList\.toggle\('is-static', !scrollable\)/,
+      'a rail of two cards is pinned to one edge of a full-width band, which '
+      + 'reads as a layout mistake rather than as a short shelf.',
+    );
+    assert.match(ruleFor('.rail-track.is-static'), /justify-content:\s*center/);
+  });
+
   await ctx.test('a brand wears its logo where the shop recorded one', () => {
     assert.match(
       cardsJs, /row\.logo_url/,
@@ -240,5 +269,44 @@ test('the brands rail scrolls when it is pushed and holds still when it is not',
       'a logo that fails to load must fall back to the letter rather than leaving '
       + "the browser's broken-image glyph in a shop window.",
     );
+  });
+});
+
+test('the home page is one design, not three', async (ctx) => {
+  /**
+   * It used to be a grid of category tiles, a wrapped strip of brand pills and
+   * two grids of products — three ways of saying "here are some things",
+   * stacked. They are one object and one shelf now: the same white card with
+   * the same hairline, the same corner and the same round face, on a rail that
+   * runs the full width of its band.
+   */
+  await ctx.test('a category tile and a brand card are the same object', () => {
+    const rule = ruleFor('.tile,\n.brand-card');
+    assert.match(rule, /border:\s*1px solid var\(--line\)/);
+    assert.match(rule, /border-radius:\s*var\(--radius\)/);
+    assert.match(
+      ruleFor('.tile-badge,\n.brand-card-face'), /inline-size:\s*104px/,
+      'the two faces are different sizes again, which is what made the same page '
+      + 'look like two designs.',
+    );
+  });
+
+  await ctx.test('a product card carries the same edge', () => {
+    assert.match(
+      ruleFor('.card'), /border:\s*1px solid var\(--line\)/,
+      'three white objects on a white band with only a soft shadow between them '
+      + 'read as three different designs.',
+    );
+  });
+
+  await ctx.test('every shelf on the home page is a rail', () => {
+    const home = read('public', 'shop', 'js', 'views', 'home.js');
+    assert.ok(
+      !home.includes('productGrid'),
+      'a grid is back on the home page beside the rails; the point of this pass '
+      + 'was that the page says "here are some things" exactly one way.',
+    );
+    // Only the brands move on their own — see the note in home.js.
+    assert.match(home, /drift: false/);
   });
 });

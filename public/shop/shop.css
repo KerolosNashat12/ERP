@@ -1151,33 +1151,46 @@ html[lang="ar"] .hero-title { max-width: 20ch; }
   grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
   gap: var(--sp-4);
 }
-.tile {
+/*
+ * A category and a brand are the same object with two names.
+ *
+ * They were drawn twice — a `.tile` with one padding, radius and badge size and
+ * a `.brand-card` with another — and side by side on the same page that reads
+ * as two designs rather than one shop. One rule now, and both wear it: white,
+ * a hairline, the same corner, a round face, a name, a count.
+ */
+.tile,
+.brand-card {
   display: grid;
   justify-items: center;
   align-content: start;
-  gap: var(--sp-2);
+  gap: var(--sp-3);
   background: var(--surface);
+  border: 1px solid var(--line);
   border-radius: var(--radius);
-  padding: var(--sp-6) var(--sp-4) var(--sp-5);
+  padding: var(--sp-5) var(--sp-4);
   text-align: center;
   box-shadow: var(--shadow);
 }
-.tile-badge {
-  inline-size: var(--well);
-  block-size: var(--well);
+.tile-badge,
+.brand-card-face {
+  inline-size: 104px;
+  block-size: 104px;
   border-radius: 50%;
   background: var(--accent-soft);
   color: var(--accent-strong);
   display: grid;
   place-items: center;
+  overflow: hidden;
   font-family: var(--font-display);
   font-size: var(--fs-2xl);
   font-weight: 700;
   line-height: 1;
-  margin-block-end: var(--sp-3);
 }
-.tile-name { font-weight: 700; font-size: var(--fs-lg); }
-.tile-count { font-size: var(--fs-xs); color: var(--ink-3); }
+.tile-name,
+.brand-card-name { font-weight: 700; font-size: var(--fs-base); line-height: 1.3; }
+.tile-count,
+.brand-card-count { font-size: var(--fs-xs); color: var(--ink-3); }
 .tile-more {
   display: inline-flex;
   align-items: center;
@@ -1248,6 +1261,7 @@ html[lang="ar"] .hero-title { max-width: 20ch; }
    * small cards and costs the whole behaviour.
    */
   scrollbar-width: none;
+  justify-content: flex-start;
   /* Room for the cards' own shadow, which a tight overflow box would clip. */
   padding-block: var(--sp-2);
   padding-inline: 2px;
@@ -1257,6 +1271,13 @@ html[lang="ar"] .hero-title { max-width: 20ch; }
    `display: contents` so the clones sit in the same flex line as the originals
    rather than as one wide block beside them. */
 .rail-clones { display: contents; }
+/*
+ * A rail with nothing to scroll is just a row, and a row of two cards pinned to
+ * one edge of a wide band looks like a mistake. When everything fits, the track
+ * centres what it has; the moment it does not, it goes back to starting at the
+ * beginning — a centred overflowing scroller hides its own first item.
+ */
+.rail-track.is-static { justify-content: center; }
 .rail-btn {
   flex: none;
   inline-size: var(--tap);
@@ -1277,30 +1298,16 @@ html[lang="ar"] .hero-title { max-width: 20ch; }
 html[dir="rtl"] .rail-back svg { transform: none; }
 html[dir="rtl"] .rail-next svg { transform: rotate(180deg); }
 
-.brand-card {
-  flex: none;
-  inline-size: 172px;
-  display: grid;
-  justify-items: center;
-  gap: var(--sp-3);
-  padding: var(--sp-5) var(--sp-4);
-  border-radius: var(--radius);
-  background: var(--surface);
-  /* A hairline as well as the shadow: these cards sit on the WHITE band, and a
-     soft shadow alone leaves them floating with no edge at all. */
-  border: 1px solid var(--line);
-  box-shadow: var(--shadow);
-  text-align: center;
-}
-.brand-card-face {
-  inline-size: 104px;
-  block-size: 104px;
-  border-radius: var(--radius-pill);
-  background: var(--accent-soft);
-  display: grid;
-  place-items: center;
-  overflow: hidden;
-}
+/* A product card travelling in a rail. Same card as the grid's, given a width
+   the row can lay out. */
+.rail-track > .card,
+.rail-clones > .card { flex: none; inline-size: 210px; }
+/* Anything travelling in a rail is a fixed width: a flex row of `1fr` cards
+   would size each one to its own name. */
+.rail-track > .brand-card,
+.rail-track > .tile,
+.rail-clones > .brand-card,
+.rail-clones > .tile { flex: none; inline-size: 172px; }
 /* A real logo is shown on white and given the whole circle: a brand mark on a
    tinted disc is somebody else's colour behind somebody else's trademark. */
 .brand-card-face.has-logo { background: var(--surface); box-shadow: inset 0 0 0 1px var(--line); }
@@ -1313,18 +1320,16 @@ html[dir="rtl"] .rail-next svg { transform: rotate(180deg); }
 }
 .brand-mark-badge[hidden] { display: none; }
 .brand-logo-img { inline-size: 100%; block-size: 100%; object-fit: contain; padding: var(--sp-2); }
+/* Two lines, then an ellipsis: a long name must not make its card taller than
+   the one beside it. */
+.tile-name,
 .brand-card-name {
-  font-size: var(--fs-base);
-  font-weight: 600;
   color: var(--ink-1);
-  /* Two lines, then an ellipsis: a long brand name must not make its card
-     taller than the one beside it. */
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
-.brand-card-count { font-size: var(--fs-xs); color: var(--ink-3); }
 
 /* --------------------------------------------------------------- trust --- */
 /*
@@ -1383,6 +1388,10 @@ html[dir="rtl"] .rail-next svg { transform: rotate(180deg); }
   display: flex;
   flex-direction: column;
   background: var(--surface);
+  /* The same hairline the category and brand cards carry. Three white objects
+     on a white band with only a soft shadow between them read as three
+     different designs; one edge makes them one system. */
+  border: 1px solid var(--line);
   border-radius: var(--radius);
   overflow: hidden;
   box-shadow: var(--shadow);

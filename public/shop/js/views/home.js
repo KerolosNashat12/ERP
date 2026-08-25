@@ -8,7 +8,7 @@ import { routePath, slugFor } from '../../../shared/shopUrls.js';
 import { setPageMeta } from '../core/seo.js';
 import { shop, deliverySettings } from '../core/store.js';
 import { money, number } from '../core/format.js';
-import { productGrid, taxonomyTile, sectionHead, brandCard, rail } from '../ui/cards.js';
+import { productCard, taxonomyTile, sectionHead, brandCard, rail } from '../ui/cards.js';
 import { skeletonGrid, errorState, emptyState } from '../ui/states.js';
 
 /**
@@ -194,10 +194,22 @@ export default async function homeView(root) {
 
   const sections = [];
 
+  /*
+   * Every shelf on this page is the same object now: a rail that runs the full
+   * width of its band, scrolls when there is more than fits, and centres itself
+   * when there is not. The page used to be one grid, one wrapped strip of pills
+   * and another grid — three ways of saying "here are some things" stacked on
+   * top of each other.
+   *
+   * Only the brands drift on their own. A moving row is a pleasure to look at
+   * and a nuisance to read, and it earns its place exactly once: on the strip of
+   * sixty logos nobody reads in order. Categories and products hold still.
+   */
   if (categories.length) {
     sections.push(el('section.section',
       sectionHead(t('shopByCategory')),
-      el('div.tiles', categories.map((row) => taxonomyTile(row, 'category')))));
+      rail(categories.map((row) => taxonomyTile(row, 'category')),
+        { label: t('shopByCategory'), bleed: true, drift: false })));
   }
 
   // The white band. The design alternates paper and white full-bleed bands
@@ -218,7 +230,8 @@ export default async function homeView(root) {
     sections.push(el('section.section',
       sectionHead(t('newArrivals'), t('newArrivalsNote'),
         { href: href('products'), label: t('viewAll') }),
-      productGrid(newest)));
+      rail(newest.map((card, index) => productCard(card, { eager: index < 4 })),
+        { label: t('newArrivals'), bleed: true, drift: false })));
   }
 
   /*
@@ -239,7 +252,8 @@ export default async function homeView(root) {
     sections.push(el('section.section.section-band',
       sectionHead(t('bestSellers'), t('bestSellersNote'),
         { href: href('products'), label: t('viewAll') }),
-      productGrid(featured, { eagerCount: 0 })));
+      rail(featured.map((card) => productCard(card)),
+        { label: t('bestSellers'), bleed: true, drift: false })));
   }
 
   if (!sections.length) {
