@@ -213,9 +213,15 @@ export class InventoryService {
   /** The loss, in money and by cause, over a window. */
   async wastageSummary({ dateFrom, dateTo, warehouseId } = {}) {
     const window = { dateFrom, dateTo, warehouseId: warehouseId || null };
+    /*
+     * `this.adjustments`, not `this.inventory`: a loss is a property of the
+     * ADJUSTMENT documents, and that is the repository the queries live in.
+     * This read `this.inventory` at first and the page answered 500 — the money
+     * behind it had tests, the door onto it did not. There is one now.
+     */
     const [totals, byReason] = await Promise.all([
-      this.inventory.wastageTotals(window),
-      this.inventory.wastageByReason(window),
+      this.adjustments.wastageTotals(window),
+      this.adjustments.wastageByReason(window),
     ]);
     return {
       value: round2(totals.value),
@@ -227,7 +233,7 @@ export class InventoryService {
 
   /** The documents behind that figure, newest first. */
   async wastageList(query = {}) {
-    return this.inventory.wastageDocuments(query);
+    return this.adjustments.wastageDocuments(query);
   }
 
   // -------------------------------------------------------------- adjustments

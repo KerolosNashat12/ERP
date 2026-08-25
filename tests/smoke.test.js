@@ -918,3 +918,60 @@ test('a single shop reports no tenant — the platform is not merely disabled, i
   const session = await api('/api/session');
   assert.equal(session.tenant, null);
 });
+
+/* Last on purpose: this one writes a unit off, and the tests above count the shelf. */
+test('the wastage screen answers, and its numbers are the ones behind it', async (ctx) => {
+  /**
+   * الهدر. The money behind this had tests from the day it was written — the
+   * profit report, the dashboard, the refusal to write off more than is on the
+   * shelf — and the PAGE still answered 500 on the owner's live shop, because
+   * the service reached for the method on the wrong repository and nothing
+   * asked it for anything. A figure with no door onto it is not a feature.
+   */
+  let before;
+  await ctx.test('the page loads even when nothing has been lost', async () => {
+    before = await api('/api/inventory/wastage');
+    assert.ok(before.summary, 'no summary in the response');
+    assert.ok(Array.isArray(before.rows), 'no rows in the response');
+  });
+
+  let recorded;
+  await ctx.test('a loss recorded in one act appears on it', async () => {
+    recorded = await api('/api/inventory/wastage', {
+      method: 'POST',
+      body: {
+        variantId: state.variant.id, quantity: 1, reason: 'damage', notes: 'dropped it',
+      },
+    });
+    assert.equal(recorded.status, 'posted');
+
+    const after = await api('/api/inventory/wastage');
+    assert.equal(after.summary.documents, before.summary.documents + 1);
+    assert.ok(after.summary.value > before.summary.value,
+      'a loss valued at nothing is a loss the books will never see');
+    assert.ok(after.summary.byReason.some((row) => row.reason === 'damage'));
+    assert.ok(after.rows.some((row) => row.id === recorded.id),
+      'the document behind the figure is not in the list under it');
+  });
+
+  await ctx.test('and the list carries what a person needs to recognise it', async () => {
+    const row = (await api('/api/inventory/wastage')).rows.find((r) => r.id === recorded.id);
+    assert.equal(row.reason, 'damage');
+    assert.equal(row.units, 1);
+    assert.ok(row.value > 0);
+    assert.ok(row.items, 'no idea which piece was written off');
+    assert.ok(row.posted_at, 'no idea when');
+  });
+
+  await ctx.test('a reason that is not a loss is refused at this door', async () => {
+    // `correction` and `stock_take` are bookkeeping. Letting them in here would
+    // pollute the one figure this screen exists to be trusted about.
+    await assert.rejects(
+      () => api('/api/inventory/wastage', {
+        method: 'POST',
+        body: { variantId: state.variant.id, quantity: 1, reason: 'correction' },
+      }),
+      (error) => error.status === 422 || error.status === 400,
+    );
+  });
+});

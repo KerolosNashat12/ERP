@@ -259,7 +259,45 @@ export default async function homeView(root) {
     fill(shelves, emptyState({ title: t('nothingHere'), body: t('nothingHereBody') }));
     return;
   }
+
+  /**
+   * The catalogue itself, at the foot of the page.
+   *
+   * The shelves above are a shop's opinion — what is new, what sells. This is
+   * the shop, and it closes the page for the visitor who has scrolled past both
+   * without seeing the one thing they came for. A first page of it, with the way
+   * through to the rest: the home page is not the place to paginate a catalogue,
+   * and `/products` already does that properly, with sorting and filters.
+   *
+   * Its own request, made AFTER the page has painted, so nothing above it waits
+   * on it — and if it fails, the section simply is not there. A shop whose home
+   * page is already on screen must not go blank because its last shelf could not
+   * be fetched.
+   */
+  const catalogue = el('section.section');
+  sections.push(catalogue);
+
   // The trust row closes the page, under whatever shelves the shop has.
   sections.push(trustRow());
   fill(shelves, sections);
+
+  try {
+    const page = await api.products({ page: 1, pageSize: CATALOGUE_PREVIEW });
+    const rows = page.rows || [];
+    if (!rows.length) { catalogue.remove(); return; }
+    fill(catalogue,
+      sectionHead(t('allProducts'), t('productsFound', Number(page.total || rows.length)),
+        { href: href('products'), label: t('viewAll') }),
+      productGrid(rows, { eagerCount: 0 }));
+  } catch {
+    catalogue.remove();
+  }
 }
+
+/**
+ * How much of the catalogue the home page shows before handing over to
+ * `/products`. Ten rather than a dozen: the grid is five across on a desktop
+ * and four on a narrower one, so ten closes on a full row at both — a shelf
+ * ending in two lonely cards reads as a page that failed to load the rest.
+ */
+const CATALOGUE_PREVIEW = 10;
