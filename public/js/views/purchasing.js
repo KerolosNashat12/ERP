@@ -290,6 +290,13 @@ async function purchaseFormView(root, route) {
     },
   });
 
+  /** What one line comes to, with its own discount and its own tax. */
+  function lineTotal(line) {
+    const gross = Number(line.quantity_ordered) * Number(line.unit_cost);
+    const net = gross - gross * (Number(line.discount_percent || 0) / 100);
+    return net + net * (Number(line.tax_rate || 0) / 100);
+  }
+
   function computeTotals() {
     let subtotal = 0;
     let tax = 0;
@@ -308,6 +315,12 @@ async function purchaseFormView(root, route) {
     const shipping = Number(values.shipping_amount || 0);
     return {
       subtotal, tax, discount, percent, shipping, total: subtotal + tax + shipping - discount,
+      /*
+       * How many PIECES this order is for, not how many rows it has. An order
+       * is checked against what the supplier actually delivered by counting
+       * bottles, and nobody should have to add the quantity column up by hand.
+       */
+      units: lines.reduce((sum, line) => sum + Number(line.quantity_ordered || 0), 0),
     };
   }
 
@@ -315,6 +328,7 @@ async function purchaseFormView(root, route) {
     const totals = computeTotals();
     const line = (label, value, cls = '') => h('div', { class: `line ${cls}` }, h('span', {}, label), h('span', { class: 'mono' }, value));
     mount(totalsHost, h('div', { class: 'totals', style: { maxWidth: '320px', marginInlineStart: 'auto' } },
+      line(t('totalUnits'), number(totals.units)),
       line(t('subtotal'), money(totals.subtotal)),
       // Both halves, because the rate is what was agreed and the amount is what
       // will be paid, and an order is checked against a supplier's invoice on
@@ -333,20 +347,16 @@ async function purchaseFormView(root, route) {
       columns: [
         { key: 'sku', label: t('sku'), class: 'mono small' },
         { key: 'product', label: t('product'), render: (l) => `${pick(l, 'product_name')} — ${l.variant_label || ''}` },
-        { key: 'quantity_ordered', label: t('ordered'), align: 'end', render: (l) => (editable ? lineNumber(l, 'quantity_ordered', renderAll, '80px') : number(l.quantity_ordered)) },
+        { key: 'quantity_ordered', label: t('ordered'), align: 'end', render: (l) => (editable ? lineNumber(l, 'quantity_ordered', afterLineEdit, '80px') : number(l.quantity_ordered)) },
         { key: 'quantity_received', label: t('received'), type: 'number', render: (l) => number(l.quantity_received || 0) },
-        { key: 'unit_cost', label: t('unitCost'), align: 'end', render: (l) => (editable ? lineNumber(l, 'unit_cost', renderAll) : money(l.unit_cost)) },
-        { key: 'discount_percent', label: '%', align: 'end', render: (l) => (editable ? lineNumber(l, 'discount_percent', renderAll, '64px') : `${l.discount_percent}%`) },
-        { key: 'tax_rate', label: t('tax') + ' %', align: 'end', render: (l) => (editable ? lineNumber(l, 'tax_rate', renderAll, '64px') : `${l.tax_rate}%`) },
+        { key: 'unit_cost', label: t('unitCost'), align: 'end', render: (l) => (editable ? lineNumber(l, 'unit_cost', afterLineEdit) : money(l.unit_cost)) },
+        { key: 'discount_percent', label: '%', align: 'end', render: (l) => (editable ? lineNumber(l, 'discount_percent', afterLineEdit, '64px') : `${l.discount_percent}%`) },
+        { key: 'tax_rate', label: t('tax') + ' %', align: 'end', render: (l) => (editable ? lineNumber(l, 'tax_rate', afterLineEdit, '64px') : `${l.tax_rate}%`) },
         {
           key: 'total',
           label: t('total'),
           type: 'money',
-          render: (l) => {
-            const gross = Number(l.quantity_ordered) * Number(l.unit_cost);
-            const net = gross - gross * (Number(l.discount_percent || 0) / 100);
-            return money(net + net * (Number(l.tax_rate || 0) / 100));
-          },
+          render: (l) => money(lineTotal(l)),
         },
         {
           key: '__x',
@@ -363,6 +373,25 @@ async function purchaseFormView(root, route) {
   }
 
   const renderAll = () => { renderLines(); renderTotals(); };
+
+  /*
+   * Editing a quantity or a cost re-prices that row and the totals - but it
+   * must NOT rebuild the table, because the box being typed into lives inside
+   * it. Replacing it mid-edit throws the caret away, and when the rebuild lands
+   * during a blur the browser refuses outright: "the node to be removed is no
+   * longer a child of this node". So the row's own total is patched in place
+   * and only the totals block is redrawn. Adding or deleting a line still goes
+   * through renderAll - there the table genuinely changed shape.
+   */
+  const LINE_TOTAL_CELL = 7;
+  function afterLineEdit() {
+    const rows = linesHost.querySelectorAll('tbody tr');
+    lines.forEach((line, index) => {
+      const cell = rows[index] && rows[index].cells[LINE_TOTAL_CELL];
+      if (cell) cell.textContent = money(lineTotal(line));
+    });
+    renderTotals();
+  }
 
   async function save(thenApprove = false) {
     if (!header.validate() || !requireLines(lines)) return;
@@ -704,6 +733,8 @@ export function purchaseDocument(order) {
         h('td', {}, money(line.unit_cost)),
         h('td', {}, money(line.line_total)))))),
     h('div', { class: 'doc-totals' },
+      h('div', { class: 'line' }, h('span', {}, t('totalUnits')),
+        h('span', {}, number(order.lines.reduce((sum, line) => sum + Number(line.quantity_ordered || 0), 0)))),
       h('div', { class: 'line' }, h('span', {}, t('subtotal')), h('span', {}, money(order.subtotal))),
       h('div', { class: 'line' },
         h('span', {}, order.discount_percent

@@ -231,6 +231,7 @@ async function orderDetailView(root, id) {
         h('div', { class: 'card-head' }, h('h3', {}, t('summary'))),
         h('div', { class: 'card-body' },
           h('div', { class: 'totals' },
+            row(t('totalUnits'), number((order.lines || []).reduce((sum, line) => sum + Number(line.quantity || 0), 0))),
             row(t('subtotal'), money(order.subtotal)),
             row(t('tax'), money(order.tax_amount)),
             row(t('goodsTotal'), money(order.subtotal + order.tax_amount)),

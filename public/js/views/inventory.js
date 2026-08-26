@@ -539,6 +539,31 @@ async function adjustmentFormView(root, route) {
     },
   });
 
+  /*
+   * Typing a count must not rebuild the table around the box being typed into:
+   * the input is thrown away mid-edit, and a rebuild that lands during a blur
+   * makes the browser refuse to remove a node that is no longer there. Only the
+   * two cells a count changes - the difference and its value - are rewritten.
+   */
+  const DIFF_CELL = 4;
+  const VALUE_CELL = 6;
+  function afterCountEdit() {
+    const rows = linesHost.querySelectorAll('tbody tr');
+    lines.forEach((line, index) => {
+      const row = rows[index];
+      if (!row) return;
+      const diff = Number(line.counted_qty) - Number(line.system_qty);
+      const diffCell = row.cells[DIFF_CELL];
+      if (diffCell) {
+        diffCell.textContent = '';
+        diffCell.append(h('span', { class: diff === 0 ? 'muted' : 'strong' },
+          `${diff > 0 ? '+' : ''}${number(diff)}`));
+      }
+      const valueCell = row.cells[VALUE_CELL];
+      if (valueCell) valueCell.textContent = money(diff * Number(line.unit_cost));
+    });
+  }
+
   function renderLines() {
     mount(linesHost, dataTable({
       columns: [
@@ -549,7 +574,7 @@ async function adjustmentFormView(root, route) {
           key: 'counted_qty',
           label: t('countedQty'),
           align: 'end',
-          render: (l) => (readOnly ? number(l.counted_qty) : lineNumber(l, 'counted_qty', renderLines)),
+          render: (l) => (readOnly ? number(l.counted_qty) : lineNumber(l, 'counted_qty', afterCountEdit)),
         },
         {
           key: 'difference',

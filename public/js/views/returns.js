@@ -672,6 +672,8 @@ export function creditNote(record) {
         h('td', {}, money(line.line_total)))))),
 
     h('div', { class: 'doc-totals' },
+      h('div', { class: 'line' }, h('span', {}, t('totalUnits')),
+        h('span', {}, number(record.lines.reduce((sum, line) => sum + Number(line.quantity || 0), 0)))),
       h('div', { class: 'line' }, h('span', {}, t('subtotal')), h('span', {}, money(record.subtotal))),
       h('div', { class: 'line' }, h('span', {}, t('tax')), h('span', {}, money(record.tax_amount))),
       record.restocking_fee

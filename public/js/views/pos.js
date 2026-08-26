@@ -328,6 +328,8 @@ export async function posView(root) {
         })) : null) : null,
 
       h('div', { class: 'totals' },
+        // Pieces, not rows: four of one bottle and one of another is five.
+        line(t('totalUnits'), number(state.lines.reduce((sum, l) => sum + Number(l.quantity || 0), 0))),
         line(t('subtotal'), money(q?.subtotal || 0)),
         q?.lineDiscount ? line(t('lineDiscount'), `− ${money(q.lineDiscount)}`, 'discount') : null,
         q?.promotionDiscount ? line(`${t('promoCode')} ${q.promotion?.code || ''}`, `− ${money(q.promotionDiscount)}`, 'discount') : null,
@@ -561,6 +563,8 @@ export function buildReceipt(sale, options = {}) {
     h('td', { style: { textAlign: 'end', verticalAlign: 'bottom' } },
       money(line.line_total, { withSymbol: false }))))),
   h('hr'),
+  h('div', { class: 'tot' }, h('span', {}, t('totalUnits')),
+    h('span', {}, number(sale.lines.reduce((sum, line) => sum + Number(line.quantity || 0), 0)))),
   cfg.showTaxLines
     ? h('div', { class: 'tot' }, h('span', {}, t('subtotal')), h('span', {}, money(sale.subtotal, { withSymbol: false })))
     : null,

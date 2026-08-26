@@ -211,6 +211,7 @@ async function saleDetailView(root, id) {
         h('div', { class: 'card-head' }, h('h3', {}, t('summary'))),
         h('div', { class: 'card-body' },
           h('div', { class: 'totals' },
+            row(t('totalUnits'), number(sale.lines.reduce((sum, line) => sum + Number(line.quantity || 0), 0))),
             row(t('subtotal'), money(sale.subtotal)),
             row(t('discount'), `− ${money(sale.discount_amount)}`),
             row(t('tax'), money(sale.tax_amount)),
