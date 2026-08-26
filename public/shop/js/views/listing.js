@@ -14,7 +14,7 @@ import { setPageMeta } from '../core/seo.js';
 import { shopName } from '../core/branding.js';
 import { shop } from '../core/store.js';
 import { productGrid } from '../ui/cards.js';
-import { filterUi } from '../ui/filters.js';
+import { filterUi, activeChips } from '../ui/filters.js';
 import { skeletonGrid, errorState, emptyState } from '../ui/states.js';
 
 const SORTS = [
@@ -166,7 +166,19 @@ export function listingView(kind) {
       el('div.listing-tools', sortControl(state)));
     const body = el('div', skeletonGrid(8));
     const side = el('div.listing-side');
-    root.append(el('div.wrap.stack', head, el('div.listing-layout', side, body)));
+    /*
+     * The results COLUMN, not the results grid.
+     *
+     * The chips that say what is switched on live above the products and below
+     * the heading — inside this column. Appending them straight into
+     * `.listing-layout` made them a third grid child, which pushed the products
+     * onto the next row and left an empty column where they had been. A grid
+     * with two tracks takes two children; anything else belongs inside one of
+     * them.
+     */
+    const chipsHost = el('div');
+    const results = el('div.listing-results', chipsHost, body);
+    root.append(el('div.wrap.stack', head, el('div.listing-layout', side, results)));
 
     const scope = {
       category: kind === 'category' ? state.id : undefined,
@@ -210,10 +222,28 @@ export function listingView(kind) {
       return;
     }
 
+    /*
+     * Was the sheet open when this render was triggered?
+     *
+     * Every choice navigates, and navigating rebuilds this view — so without
+     * carrying that one bit across, choosing a filter on a phone closed the
+     * sheet and left its scrim behind: a dark overlay over a page that could
+     * not be scrolled. The body class is the only thing that survives the
+     * rebuild, so it is what the answer is read from, and it is cleared here so
+     * a listing that draws no panel at all cannot inherit it either.
+     */
+    const wasOpen = document.body.classList.contains('filters-open');
+    document.body.classList.remove('filters-open');
+
     if (options) {
-      const ui = filterUi(options, state, (nextState) => navigate(buildHref(state, nextState)));
+      const apply = (nextState) => navigate(buildHref(state, nextState));
+      const ui = filterUi(options, state, apply, { startOpen: wasOpen, total: result.total });
       fill(side, ui.panel, ui.scrim);
       head.querySelector('.listing-tools').prepend(ui.toggle);
+
+      // What is switched on, said where the shopper is looking — at the grid.
+      const chips = activeChips(options, state, apply);
+      if (chips) fill(chipsHost, chips);
     }
 
     head.querySelector('.page-note').textContent = t('productsFound', result.total);

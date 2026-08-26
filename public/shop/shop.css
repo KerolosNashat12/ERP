@@ -2920,10 +2920,12 @@ html[lang="ar"] .foot-col h3 { letter-spacing: .04em; text-transform: none; font
   align-items: start;
 }
 @media (min-width: 900px) {
-  .listing-layout { grid-template-columns: 244px minmax(0, 1fr); }
+  .listing-layout { grid-template-columns: 264px minmax(0, 1fr); }
 }
 
 .listing-tools { display: flex; align-items: center; gap: var(--sp-4); flex-wrap: wrap; }
+/* The second grid track: applied-filter chips, then the products. */
+.listing-results { min-inline-size: 0; }
 
 .filters-panel {
   background: var(--surface);
@@ -2940,19 +2942,158 @@ html[lang="ar"] .foot-col h3 { letter-spacing: .04em; text-transform: none; font
   align-items: center;
   justify-content: space-between;
   gap: var(--sp-3);
-  margin-block-end: var(--sp-4);
+  padding-block-end: var(--sp-4);
+  margin-block-end: var(--sp-2);
+  border-block-end: 1px solid var(--line);
 }
-.filter-heading { font-size: var(--fs-md); font-weight: 700; margin: 0; }
-.filter-group + .filter-group { margin-block-start: var(--sp-5); padding-block-start: var(--sp-5); border-block-start: 1px solid var(--line); }
-.filter-title {
+.filter-heading {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  font-size: var(--fs-md);
+  font-weight: 700;
+  margin: 0;
+}
+/* How many filters are on, on the heading itself — the one number worth
+   carrying at the top of a panel somebody is halfway through using. */
+.filter-total {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-inline-size: 20px;
+  block-size: 20px;
+  padding-inline: 6px;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  color: #fff;
   font-size: var(--fs-xs);
-  letter-spacing: .1em;
-  text-transform: uppercase;
-  color: var(--ink-3);
-  margin: 0 0 var(--sp-3);
+  font-weight: 700;
 }
-html[lang="ar"] .filter-title { letter-spacing: 0; text-transform: none; font-size: var(--fs-sm); }
-.filter-options { display: flex; flex-direction: column; gap: var(--sp-1); }
+
+/*
+ * A group is a <details>. The summary is the whole header row and carries its
+ * own caret, so the hit area is the row rather than a triangle.
+ */
+.filter-group { border-block-start: 1px solid var(--line); padding-block: var(--sp-4); }
+.filter-group:first-of-type { border-block-start: 0; }
+.filter-title {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  cursor: pointer;
+  list-style: none;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--ink);
+  min-block-size: var(--tap-sm);
+}
+.filter-title::-webkit-details-marker { display: none; }
+.filter-chosen {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-inline-size: 18px;
+  block-size: 18px;
+  padding-inline: 5px;
+  border-radius: var(--radius-pill);
+  background: var(--accent-soft, rgba(0, 0, 0, .06));
+  color: var(--accent);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+}
+/*
+ * The caret: DOWN when the group is closed (press to open), UP when it is open.
+ *
+ * Down/up rather than a sideways chevron on purpose — a left-or-right arrow has
+ * to be mirrored for Arabic and gets it wrong the first time somebody forgets.
+ * Vertical means the same thing in both directions and needs no second rule.
+ * Physical borders here, because the shape is a rotated corner and logical
+ * sides would flip it back.
+ */
+.filter-caret {
+  margin-inline-start: auto;
+  inline-size: 8px;
+  block-size: 8px;
+  border-right: 1.5px solid var(--ink-3);
+  border-bottom: 1.5px solid var(--ink-3);
+  transform: rotate(45deg) translate(-1px, -1px);
+  transition: transform var(--dur-fast, .15s) var(--ease, ease);
+}
+details[open] > .filter-title .filter-caret { transform: rotate(-135deg) translate(-1px, -1px); }
+.filter-options { display: flex; flex-direction: column; gap: var(--sp-2); padding-block-start: var(--sp-3); }
+
+/*
+ * Chips — for a short list that is really one choice. Bigger than a checkbox,
+ * readable at arm's length, and a thumb's width on a phone.
+ */
+.filter-chips { display: flex; flex-wrap: wrap; gap: var(--sp-3); }
+.filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-block-size: var(--tap-sm);
+  padding: 0 var(--sp-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--ink-2);
+  font: inherit;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+.filter-chip .chip-count { color: var(--ink-3); font-size: var(--fs-xs); font-variant-numeric: tabular-nums; }
+.filter-chip.is-on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink, #fff);
+  font-weight: 600;
+}
+.filter-chip.is-on .chip-count { color: inherit; opacity: .8; }
+
+/*
+ * A switch for the two questions that are yes-or-no: on sale, in stock. They
+ * are the most-pressed controls on any shop's panel and they should look like
+ * decisions rather than like items in a list.
+ */
+.filter-switch { padding-block: var(--sp-4); }
+.switch-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  min-block-size: var(--tap-sm);
+  cursor: pointer;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+.switch-label { display: flex; align-items: center; gap: var(--sp-3); flex: 1 1 auto; }
+.switch-input { position: absolute; opacity: 0; pointer-events: none; }
+.switch-track {
+  inline-size: 40px;
+  block-size: 23px;
+  flex: none;
+  border-radius: var(--radius-pill);
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  position: relative;
+  transition: background var(--dur-fast, .15s) var(--ease, ease);
+}
+.switch-knob {
+  position: absolute;
+  inset-block-start: 2px;
+  inset-inline-start: 2px;
+  inline-size: 17px;
+  block-size: 17px;
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .25);
+  transition: transform var(--dur-fast, .15s) var(--ease, ease);
+}
+.switch-input:checked ~ .switch-track { background: var(--accent); border-color: var(--accent); }
+/* `translate` in the inline direction, so the knob slides the correct way in
+   Arabic without a second rule. */
+.switch-input:checked ~ .switch-track .switch-knob { transform: translateX(17px); }
+html[dir="rtl"] .switch-input:checked ~ .switch-track .switch-knob { transform: translateX(-17px); }
+.switch-input:focus-visible ~ .switch-track { outline: var(--ring, 2px solid); outline-offset: 2px; }
 
 /*
  * The whole row is the label, so the tap target is the row — the single most
@@ -2979,10 +3120,59 @@ html[lang="ar"] .filter-title { letter-spacing: 0; text-transform: none; font-si
   border: 1px solid var(--line);
 }
 
-.filter-price-row { display: flex; align-items: center; gap: var(--sp-3); }
-.filter-price { inline-size: 100%; min-inline-size: 0; }
+.filter-price-row { display: flex; align-items: center; gap: var(--sp-3); margin-block-start: var(--sp-3); }
+.filter-price { inline-size: 100%; min-inline-size: 0; text-align: center; }
 .filter-dash { color: var(--ink-3); flex: none; }
 .filter-note { font-size: var(--fs-xs); color: var(--ink-3); margin: var(--sp-3) 0 0; }
+
+/*
+ * What is switched on, above the grid.
+ *
+ * On a phone the panel is behind a button, so without this row there is nothing
+ * on screen explaining why a shelf of 163 is showing 4.
+ */
+.active-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-3);
+  margin-block-end: var(--sp-5);
+}
+.active-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-3);
+  min-block-size: var(--tap-sm);
+  padding: 0 var(--sp-4);
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--accent);
+  background: var(--accent-soft, rgba(0, 0, 0, .05));
+  color: var(--accent);
+  font: inherit;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  cursor: pointer;
+}
+.active-chip .chip-x { font-size: var(--fs-xs); opacity: .75; }
+.active-clear {
+  background: none;
+  border: 0;
+  color: var(--ink-3);
+  font: inherit;
+  font-size: var(--fs-sm);
+  text-decoration: underline;
+  cursor: pointer;
+  min-block-size: var(--tap-sm);
+}
+
+/*
+ * The sheet's footer. Off-screen on a desktop, where the panel is a column and
+ * the grid is already visible beside it; on a phone it is pinned to the bottom
+ * of the sheet with the result count on it, because "what did that do" is the
+ * question every filter tap raises and the answer is a number.
+ */
+.filter-apply { display: none; }
+.filter-apply-btn { inline-size: 100%; }
 
 /* The sheet: the same panel, on a phone. */
 .filters-toggle { display: none; }
@@ -3012,6 +3202,35 @@ html[lang="ar"] .filter-title { letter-spacing: 0; text-transform: none; font-si
     padding-block-end: calc(var(--sp-6) + env(safe-area-inset-bottom, 0px));
   }
   .filters-panel.is-open { transform: translateY(0); visibility: visible; }
+  /*
+   * The sheet is a column: the groups scroll, the button does not.
+   *
+   * `position: sticky` was the first attempt and it parked the button in the
+   * middle of the panel — sticky positions against the scrollport, and the
+   * panel's own bottom padding moved that out from under it. A flex column has
+   * no such argument: one child scrolls, the other is the last row, and the
+   * button is where a thumb expects it whatever the groups above it do.
+   */
+  .filters-panel {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    padding-block-end: 0;
+  }
+  .filters-panel .filter-body {
+    flex: 1 1 auto;
+    min-block-size: 0;
+    overflow-y: auto;
+    padding-block-end: var(--sp-5);
+  }
+  .filter-apply {
+    display: block;
+    flex: none;
+    margin-inline: calc(var(--sp-5) * -1);
+    padding: var(--sp-4) var(--sp-5) calc(var(--sp-4) + env(safe-area-inset-bottom, 0px));
+    background: var(--surface);
+    border-block-start: 1px solid var(--line);
+  }
   .filter-close {
     display: block;
     position: absolute;

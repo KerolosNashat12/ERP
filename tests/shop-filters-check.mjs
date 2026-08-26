@@ -89,8 +89,15 @@ for (const [width, lang] of [[1280, 'en'], [390, 'ar']]) {
 
   // --- ticking a box narrows the grid AND changes the address
   const before = await page.$$eval('.grid .card', (n) => n.length);
-  const box = await page.$('#f-sale') || await page.$('.filter-option input');
-  if (!box) fail(`[${lang}@${width}] no filter checkbox rendered`);
+  /*
+   * The offers switch hides its <input> under a styled label, so a click on the
+   * input itself is intercepted by the label — exactly as it is for a real
+   * finger. Click what the shopper clicks: the row.
+   */
+  const box = await page.$('label[for="f-sale"]')
+    || await page.$('.filter-option')
+    || await page.$('.filter-option input');
+  if (!box) fail(`[${lang}@${width}] no filter control rendered`);
   else {
     await box.click();
     await page.waitForTimeout(600);
