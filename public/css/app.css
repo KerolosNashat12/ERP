@@ -931,3 +931,28 @@ html[dir="rtl"] .kpi .label { letter-spacing: 0; }
   background: var(--accent-soft, #fdf6e3);
   border-block-end: 1px solid var(--line);
 }
+
+/* ------------------------------------------------- exchange line picking
+ * On an exchange, every line of the invoice is listed so the cashier can find
+ * the one the customer is holding — but only the lines with a quantity typed
+ * into them are part of it. The two states have to be visible from across a
+ * counter, so one row is lifted and the other is set back rather than both
+ * being white rows with a number somewhere in them.
+ */
+/*
+ * `table.data tbody tr:hover` further up is a two-class selector, so a bare
+ * `tr.is-picked` loses to it the moment a cursor crosses the row — and the
+ * chosen line would lose its colour exactly when somebody points at it. Same
+ * specificity here, and an inline-start bar so the state survives being
+ * hovered, printed, or looked at by somebody who does not see the tint.
+ */
+table.data tbody tr.is-picked,
+table.data tbody tr.is-picked:hover {
+  background: var(--ok-soft);
+  box-shadow: inset 3px 0 0 0 var(--ok);
+}
+table.data tbody tr.is-picked td { font-weight: 600; }
+table.data tbody tr.is-idle td { opacity: .55; }
+table.data tbody tr.is-idle:hover td { opacity: 1; }
+/* The condition picker was clipping its own longest word ("Resellable"). */
+table.data td select { min-inline-size: 118px; }

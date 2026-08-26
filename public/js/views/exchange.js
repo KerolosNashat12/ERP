@@ -267,7 +267,30 @@ async function newExchangeView(root) {
       mount(backHost, h('div', { class: 'empty' }, t('findInvoiceFirst')));
       return;
     }
-    mount(backHost, dataTable({
+
+    /*
+     * The sentence this screen was missing.
+     *
+     * An invoice's lines are ALL listed here, because the cashier has to be
+     * able to find the one the customer is holding — but listing them made it
+     * look as though the whole invoice was being exchanged. The owner asked
+     * exactly that, holding a two-item invoice: "I should be able to replace
+     * only one product, not return everything."
+     *
+     * So the rule is now written above the table, the rows nobody has typed a
+     * quantity into are visibly out of it, and the count says how many pieces
+     * are actually coming back.
+     */
+    const picked = state.back.filter((line) => Number(line.quantity) > 0);
+    const units = picked.reduce((sum, line) => sum + Number(line.quantity || 0), 0);
+
+    mount(backHost,
+      h('div', { class: 'card-body tight' },
+        h('p', { class: 'muted small', style: { margin: '0 0 8px' } }, t('exchangePickHint')),
+        picked.length
+          ? tag(t('exchangeComingBack').replace('{units}', units).replace('{lines}', picked.length), 'ok')
+          : tag(t('exchangeNothingPickedYet'), 'warn')),
+      dataTable({
       columns: [
         { key: 'sku', label: t('sku'), class: 'mono small' },
         { key: 'description', label: t('product') },
@@ -279,23 +302,37 @@ async function newExchangeView(root) {
         {
           key: 'quantity',
           label: t('qty'),
-          render: (line) => h('input', {
-            class: 'input sm',
-            type: 'number',
-            min: 0,
-            max: line.returnable_quantity,
-            step: 1,
-            value: line.quantity,
-            style: { width: '84px' },
-            // Capped where it is typed as well as on the server: the cashier
-            // finds out now rather than after pressing the last button.
-            oninput: (event) => {
-              const wanted = Number(event.target.value) || 0;
-              line.quantity = Math.min(Math.max(wanted, 0), line.returnable_quantity);
-              if (line.quantity !== wanted) event.target.value = line.quantity;
-              renderSettlement();
-            },
-          }),
+          render: (line) => h('div', { class: 'row nowrap', style: { gap: '4px' } },
+            h('input', {
+              class: 'input sm',
+              type: 'number',
+              min: 0,
+              max: line.returnable_quantity,
+              step: 1,
+              value: line.quantity,
+              style: { width: '72px' },
+              // Capped where it is typed as well as on the server: the cashier
+              // finds out now rather than after pressing the last button.
+              oninput: (event) => {
+                const wanted = Number(event.target.value) || 0;
+                line.quantity = Math.min(Math.max(wanted, 0), line.returnable_quantity);
+                if (line.quantity !== wanted) event.target.value = line.quantity;
+                renderBack();
+                renderSettlement();
+              },
+            }),
+            // One press for the common case: this piece, one of it. Typing a
+            // digit is not hard, but at a counter with somebody waiting it is
+            // one more thing than pointing at the row.
+            h('button', {
+              class: `btn sm ${Number(line.quantity) > 0 ? 'ghost' : ''}`,
+              title: t('exchangeTakeThis'),
+              onclick: () => {
+                line.quantity = Number(line.quantity) > 0 ? 0 : 1;
+                renderBack();
+                renderSettlement();
+              },
+            }, Number(line.quantity) > 0 ? '✓' : '＋')),
         },
         {
           key: 'condition',
@@ -317,6 +354,9 @@ async function newExchangeView(root) {
         },
       ],
       rows: state.back,
+      // A line with nothing typed into it is not part of this exchange, and
+      // now looks like it.
+      rowClass: (line) => (Number(line.quantity) > 0 ? 'is-picked' : 'is-idle'),
     }));
   }
 

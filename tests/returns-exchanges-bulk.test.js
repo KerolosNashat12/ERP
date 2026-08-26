@@ -504,6 +504,76 @@ test('bulk edits, returns and exchanges', async (t) => {
       assert.equal(exchange.difference_amount, 200);
     });
 
+
+    await ctx.test('ONE product off a two-product invoice — the other is untouched', async () => {
+      /*
+       * The case the shop's owner asked about, holding a real invoice: two
+       * pieces on it, the customer wants to swap ONE, and the other must stay
+       * bought. Nothing about the second line may move — not its quantity, not
+       * its money, not its stock — and the invoice must read "partly returned"
+       * rather than returned.
+       */
+      const keep = await product('Exchange Keep', 200);
+      const swap = await product('Exchange Swap', 200);
+      const sale = await sell([
+        { key: 1, variant_id: keep.variant.id, quantity: 1 },
+        { key: 2, variant_id: swap.variant.id, quantity: 1 },
+      ], 400);
+
+      const lines = (await ok(`/api/sales/${sale.id}`)).lines;
+      const swapLine = lines.find((line) => line.variant_id === swap.variant.id);
+      const keepLine = lines.find((line) => line.variant_id === keep.variant.id);
+
+      const keepShelf = await onHand(keep.variant.id);
+      const swapShelf = await onHand(swap.variant.id);
+      const dearShelf = await onHand(dear.variant.id);
+
+      const exchange = await ok('/api/exchanges', {
+        method: 'POST',
+        body: {
+          sale_id: sale.id,
+          // Only the one line, and only one of it.
+          lines: [{ sale_line_id: swapLine.id, quantity: 1, condition: 'resellable' }],
+          replacements: [{ variant_id: dear.variant.id, quantity: 1 }],
+          settlement_method: 'cash',
+        },
+      });
+
+      assert.equal(exchange.credit_amount, 200,
+        'the credit is that ONE line, not the invoice');
+      assert.equal(exchange.difference_amount, 1000, '1,200 replacement against 200 of credit');
+
+      const after = await ok(`/api/sales/${sale.id}`);
+      assert.equal(after.return_state, 'partial',
+        'the invoice is partly returned — the other product is still bought');
+      assert.equal(
+        after.lines.find((line) => line.id === keepLine.id).returned_quantity, 0,
+        'the line nobody touched has come back zero times',
+      );
+      assert.equal(
+        after.lines.find((line) => line.id === swapLine.id).returned_quantity, 1,
+      );
+
+      assert.equal(await onHand(keep.variant.id), keepShelf,
+        'the kept product never moved on or off the shelf');
+      assert.equal(await onHand(swap.variant.id), swapShelf + 1, 'the swapped one came back');
+      assert.equal(await onHand(dear.variant.id), dearShelf - 1, 'the replacement went out');
+
+      // And the customer can still return the other one later, on its own.
+      const later = await ok('/api/returns', {
+        method: 'POST',
+        body: {
+          return_type: 'with_receipt',
+          sale_id: sale.id,
+          reason_code: 'changed_mind',
+          refund_method: 'cash',
+          lines: [{ sale_line_id: keepLine.id, quantity: 1, condition: 'resellable' }],
+        },
+      });
+      assert.equal(later.total_amount, 200, 'the rest of the invoice is still live and returnable');
+      assert.equal((await ok(`/api/sales/${sale.id}`)).return_state, 'full');
+    });
+
     await ctx.test('the paper trail joins all three documents', async () => {
       const sale = await sell([{ key: 1, variant_id: mid.variant.id, quantity: 1 }], 800);
       const line = await firstLine(sale.id);

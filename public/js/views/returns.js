@@ -374,7 +374,22 @@ async function newReturnView(root) {
       return;
     }
 
-    mount(linesHost, dataTable({
+    /*
+     * The same sentence the exchange screen carries, for the same reason: all
+     * the invoice's lines are listed so the cashier can find the one in front
+     * of them, and without a word saying otherwise that reads as "everything
+     * here is being returned".
+     */
+    const picked = state.lines.filter((line) => Number(line.quantity) > 0);
+    mount(linesHost,
+      h('div', { class: 'card-body tight' },
+        h('p', { class: 'muted small', style: { margin: '0 0 8px' } }, t('exchangePickHint')),
+        picked.length
+          ? tag(t('exchangeComingBack')
+            .replace('{units}', picked.reduce((sum, line) => sum + Number(line.quantity || 0), 0))
+            .replace('{lines}', picked.length), 'ok')
+          : tag(t('exchangeNothingPickedYet'), 'warn')),
+      dataTable({
       columns: [
         { key: 'sku', label: t('sku'), class: 'mono small' },
         {
@@ -446,7 +461,9 @@ async function newReturnView(root) {
         }] : []),
       ],
       rows: state.lines,
-      rowClass: (l) => (l.quantity > 0 ? '' : 'muted'),
+      // The same two states as the exchange screen: what is coming back is
+      // lifted, what is not is set back.
+      rowClass: (l) => (Number(l.quantity) > 0 ? 'is-picked' : 'is-idle'),
     }));
   }
 
