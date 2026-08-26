@@ -162,6 +162,34 @@ export function favoriteButton(productId, { className = 'card-fav', label = fals
   return button;
 }
 
+
+/**
+ * The price on a card, with the offer on it when there is one.
+ *
+ * Three things, in the order a shopper reads them: what it costs now, what it
+ * cost before with a line through it, and by how much — because a struck-out
+ * number on its own makes a person do the subtraction, and a percentage on its
+ * own makes them do the multiplication.
+ *
+ * The old price is `<s>` and not a class on a span: a screen reader announces
+ * it as struck-out content, so somebody listening to the page hears that this
+ * is the former price rather than two prices in a row with no explanation.
+ * `aria-label` on the row says the whole thing in one sentence for exactly the
+ * same reason.
+ */
+export function cardPrice(card) {
+  const now = priceRange(card.price_from, card.price_to);
+  if (!card.on_sale) return el('span.card-price', now);
+
+  const was = priceRange(card.list_price_from, card.list_price_to);
+  return el('span.card-price.is-sale', {
+    'aria-label': t('priceWasNow', was, now, card.discount_percent),
+  },
+  el('span.price-now', now),
+  el('s.price-was', { 'aria-hidden': 'true' }, was),
+  el('span.price-off', { 'aria-hidden': 'true' }, `−${card.discount_percent}%`));
+}
+
 /**
  * One product in a grid. The anchor covers the whole of the card's content —
  * a thumb anywhere on it opens the product — and the heart sits over it.
@@ -175,11 +203,15 @@ export function productCard(card, { eager = false } = {}) {
     el('a.card-link', { href: href(routePath('product', { id: card.id, slug: slugFor(card) })), 'aria-label': name },
       el('div.card-photo',
         productPhoto(card.image_id, name, { eager }),
+        // The sale flash sits opposite the stock badge so the two never
+        // collide, and it is drawn even on a piece that is out of stock —
+        // "sold out at that price" is still information a shopper wants.
+        card.on_sale && el('div.card-sale', `−${card.discount_percent}%`),
         card.availability !== 'in_stock' && el('div.card-badge', availabilityBadge(card.availability))),
       el('div.card-body',
         brand && el('span.card-brand', brand),
         el('h3.card-name', name),
-        el('span.card-price', priceRange(card.price_from, card.price_to)))),
+        cardPrice(card))),
     favoriteButton(card.id));
 }
 

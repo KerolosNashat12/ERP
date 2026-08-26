@@ -11,6 +11,7 @@ import {
   likeParam, lineMatch, lineExact, normaliseTerm, rankExpression, worthLineSearch,
 } from '../database/productSearch.js';
 import { NotFoundError, ConflictError } from '../../shared/errors.js';
+import { notInBin } from '../../shared/trashFilter.js';
 
 const nowIso = () => new Date().toISOString();
 
@@ -219,9 +220,16 @@ export class BaseRepository {
     return this.db.prepare(`SELECT * FROM ${this.table} ORDER BY ${orderBy}`).all();
   }
 
+  /**
+   * What every dropdown in the ERP is filled from — so it has to honour the
+   * recycle bin exactly as the list above does. A brand that was deleted this
+   * morning must not still be offered as a choice when a product is created
+   * this afternoon.
+   */
   async activeOnly(orderBy = 'id ASC') {
+    const hidden = this.trashType ? ` AND ${notInBin(this.trashType, `${this.table}.id`)}` : '';
     return this.db
-      .prepare(`SELECT * FROM ${this.table} WHERE is_active = 1 ORDER BY ${orderBy}`)
+      .prepare(`SELECT * FROM ${this.table} WHERE is_active = 1${hidden} ORDER BY ${orderBy}`)
       .all();
   }
 

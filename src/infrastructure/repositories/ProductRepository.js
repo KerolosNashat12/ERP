@@ -6,6 +6,7 @@
  */
 import { BaseRepository } from './BaseRepository.js';
 import { getDb } from '../database/connection.js';
+import { notInBin } from '../../shared/trashFilter.js';
 import {
   VARIANT_DETAIL_ROW, normaliseTerm, productExact, productMatch, rankExpression, rowExact, rowMatch,
 } from '../database/productSearch.js';
@@ -24,6 +25,10 @@ export class ProductRepository extends BaseRepository {
         // as to the schema — the save simply ignores it otherwise.
         'is_published', 'published_at', 'web_description_en', 'web_description_ar',
         'primary_image_id',
+        // Who the piece is for, and the offer on it. Same rule as the line
+        // above: absent from this list means silently dropped on save.
+        'gender', 'discount_type', 'discount_value',
+        'discount_starts_on', 'discount_ends_on',
       ],
       searchable: ['sku_prefix', 'name_en', 'name_ar', 'tags'],
     });
@@ -36,7 +41,10 @@ export class ProductRepository extends BaseRepository {
    * variant's SKU finds the product that owns it, and it does so through an
    * `EXISTS` in SQL rather than by pulling rows into JavaScript to sift them.
    */
-  async search({ search = '', brandId, categoryId, supplierId, isActive, page = 1, pageSize = 25 }) {
+  async search({
+    search = '', brandId, categoryId, supplierId, isActive, gender, onOffer,
+    page = 1, pageSize = 25,
+  }) {
     const where = [];
     const params = [];
     const term = normaliseTerm(search);
@@ -49,6 +57,26 @@ export class ProductRepository extends BaseRepository {
     if (categoryId) { where.push('p.category_id = ?'); params.push(categoryId); }
     if (supplierId) { where.push('p.supplier_id = ?'); params.push(supplierId); }
     if (isActive !== undefined && isActive !== '') { where.push('p.is_active = ?'); params.push(Number(isActive)); }
+    if (gender) { where.push('p.gender = ?'); params.push(String(gender)); }
+    /*
+     * "Show me what is on offer" — running TODAY, not merely configured. The
+     * same four conditions the storefront asks, because a shopkeeper checking
+     * his own offers and a shopper browsing them must be looking at one list.
+     */
+    if (onOffer === '1' || onOffer === 1 || onOffer === true) {
+      where.push(`p.discount_type <> 'none' AND p.discount_value > 0
+        AND (p.discount_starts_on IS NULL OR date(p.discount_starts_on) <= date('now'))
+        AND (p.discount_ends_on   IS NULL OR date(p.discount_ends_on)   >= date('now'))`);
+    }
+
+    /*
+     * The catalogue screen has its own SELECT — brand, category, supplier,
+     * variant count, stock, price range — so it does NOT go through
+     * `BaseRepository.list` and does not inherit its `trashType` filter. It has
+     * to say so itself, or a product deleted this morning is still on the
+     * products page this afternoon. (It was, and the shop's owner found it.)
+     */
+    where.push(notInBin('product', 'p.id'));
 
     const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
     const db = getDb();
@@ -253,15 +281,41 @@ export class VariantRepository extends BaseRepository {
       .all(productId);
   }
 
+  /**
+   * One variant, with everything needed to price it.
+   *
+   * The offer columns are joined for rather than read off `v_variant_details`,
+   * because that view is created before the migrations run and can only name
+   * columns that have existed since the baseline (the view itself says so).
+   * One extra join on a single-row lookup, and in exchange the till never has
+   * to make a second read to find out whether a piece is on offer today.
+   */
   async details(variantId) {
-    return (await getDb().prepare('SELECT * FROM v_variant_details WHERE variant_id = ?').get(variantId)) || null;
+    return (await getDb().prepare(`
+      SELECT vd.*,
+             p.gender             AS gender,
+             p.discount_type      AS discount_type,
+             p.discount_value     AS discount_value,
+             p.discount_starts_on AS discount_starts_on,
+             p.discount_ends_on   AS discount_ends_on
+      FROM v_variant_details vd
+      JOIN products p ON p.id = vd.product_id
+      WHERE vd.variant_id = ?
+    `).get(variantId)) || null;
   }
 
   /** Barcode/QR lookup for the scanner. Falls back to SKU so typed codes work too. */
   async findByCode(code) {
     return (await getDb().prepare(`
-      SELECT * FROM v_variant_details
-      WHERE barcode = ? OR sku = ? COLLATE NOCASE
+      SELECT vd.*,
+             p.gender             AS gender,
+             p.discount_type      AS discount_type,
+             p.discount_value     AS discount_value,
+             p.discount_starts_on AS discount_starts_on,
+             p.discount_ends_on   AS discount_ends_on
+      FROM v_variant_details vd
+      JOIN products p ON p.id = vd.product_id
+      WHERE vd.barcode = ? OR vd.sku = ? COLLATE NOCASE
       LIMIT 1
     `).get(code, code)) || null;
   }
@@ -278,18 +332,32 @@ export class VariantRepository extends BaseRepository {
   async lookup(term, limit = 20, warehouseId = null) {
     const match = rowMatch(term, 'vd', VARIANT_DETAIL_ROW);
     const rank = rankExpression(rowExact(term, 'vd', VARIANT_DETAIL_ROW));
+    /*
+     * The offer columns ride along here too. The POS picker prices a line the
+     * moment it is picked, so if this row did not carry the offer the till
+     * would show the list price for as long as it took a second request to come
+     * back — and a price that changes after the cashier has read it out is
+     * worse than one that was never discounted.
+     */
+    const offer = `
+             p.discount_type      AS discount_type,
+             p.discount_value     AS discount_value,
+             p.discount_starts_on AS discount_starts_on,
+             p.discount_ends_on   AS discount_ends_on`;
     if (warehouseId) {
       return getDb().prepare(`
-        SELECT vd.*, COALESCE(sl.quantity, 0) AS quantity
+        SELECT vd.*, COALESCE(sl.quantity, 0) AS quantity,${offer}
         FROM v_variant_details vd
+        JOIN products p ON p.id = vd.product_id
         LEFT JOIN stock_levels sl ON sl.variant_id = vd.variant_id AND sl.warehouse_id = ?
         WHERE vd.variant_active = 1 AND vd.product_active = 1 AND ${match.sql}
         ORDER BY ${rank.sql}, vd.product_name_en LIMIT ?
       `).all(warehouseId, ...match.params, ...rank.params, limit);
     }
     return getDb().prepare(`
-      SELECT vd.*, (SELECT COALESCE(SUM(quantity),0) FROM stock_levels sl WHERE sl.variant_id = vd.variant_id) AS quantity
+      SELECT vd.*, (SELECT COALESCE(SUM(quantity),0) FROM stock_levels sl WHERE sl.variant_id = vd.variant_id) AS quantity,${offer}
       FROM v_variant_details vd
+      JOIN products p ON p.id = vd.product_id
       WHERE vd.variant_active = 1 AND vd.product_active = 1 AND ${match.sql}
       ORDER BY ${rank.sql}, vd.product_name_en LIMIT ?
     `).all(...match.params, ...rank.params, limit);

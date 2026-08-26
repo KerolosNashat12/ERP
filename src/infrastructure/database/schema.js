@@ -242,6 +242,25 @@ CREATE TABLE IF NOT EXISTS products (
   image_url       TEXT,
   tags            TEXT,
   is_active       INTEGER NOT NULL DEFAULT 1,
+  -- Who the piece is for. Perfume is bought by gender before it is bought by
+  -- anything else, so this is a first-class column rather than a tag or an
+  -- attribute: the website filters on it and the shopper expects to.
+  -- 'unisex' is the default because it is the answer that is never WRONG on a
+  -- product nobody has classified yet -- it merely shows the piece to
+  -- everybody, where a wrong guess would hide it from half the shop.
+  gender          TEXT    NOT NULL DEFAULT 'unisex'
+                  CHECK (gender IN ('women','men','unisex')),
+  -- An offer on this product. While one runs, its price IS the product's
+  -- price -- on the website, in an online order and at the till -- and the
+  -- arithmetic lives in exactly one place: shared/pricing.js. Per product and
+  -- not per variant: a shop discounts a bottle, not the 50ml of it.
+  discount_type      TEXT NOT NULL DEFAULT 'none'
+                     CHECK (discount_type IN ('none','percent','amount')),
+  discount_value     REAL NOT NULL DEFAULT 0 CHECK (discount_value >= 0),
+  -- Plain YYYY-MM-DD, both INCLUSIVE. Null start means already running, null
+  -- end means until somebody turns it off.
+  discount_starts_on TEXT,
+  discount_ends_on   TEXT,
   -- Website visibility. Defaults to hidden on purpose: a product reaches
   -- customers only when somebody deliberately publishes it.
   is_published       INTEGER NOT NULL DEFAULT 0,
@@ -256,6 +275,12 @@ CREATE TABLE IF NOT EXISTS products (
   created_at      TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   updated_at      TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
+-- The indexes for gender and discount_type are NOT here, for the same
+-- reason the view below does not name those columns: this file runs before the
+-- migrations, so on a database that predates them the index would be created
+-- against a column that does not exist yet and the boot would fail. They are
+-- created by migrations/022-gender-and-offers.js, with IF NOT EXISTS, which
+-- covers a new database and an old one alike.
 CREATE INDEX IF NOT EXISTS idx_products_brand    ON products(brand_id);
 CREATE INDEX IF NOT EXISTS idx_products_category ON products(category_id);
 CREATE INDEX IF NOT EXISTS idx_products_supplier ON products(supplier_id);
@@ -512,6 +537,11 @@ CREATE TABLE IF NOT EXISTS sale_lines (
   quantity         REAL    NOT NULL CHECK (quantity > 0),
   returned_quantity REAL   NOT NULL DEFAULT 0,
   unit_price       REAL    NOT NULL DEFAULT 0,
+  -- What one piece cost before the offer, when it was on one. Zero means it
+  -- was not. Deliberately NOT part of any total: unit_price is what was
+  -- charged, and this exists so a receipt can print the old price with a line
+  -- through it without any figure in the shop's books depending on it.
+  list_price       REAL    NOT NULL DEFAULT 0,
   unit_cost        REAL    NOT NULL DEFAULT 0,
   discount_percent REAL    NOT NULL DEFAULT 0,
   discount_amount  REAL    NOT NULL DEFAULT 0,
@@ -583,6 +613,54 @@ CREATE TABLE IF NOT EXISTS sales_returns (
   created_at        TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
 CREATE INDEX IF NOT EXISTS idx_returns_sale ON sales_returns(sale_id);
+
+/*
+ * An EXCHANGE — the customer brought something back and took something else.
+ *
+ * Deliberately NOT a document of its own with its own lines. An exchange IS a
+ * return plus a sale, and both of those already exist, already move stock,
+ * already touch loyalty and the customer's balance, and are already audited.
+ * Writing a third kind of document that did all of that again would be a second
+ * implementation of the two hardest paths in the system, kept in step by hope.
+ *
+ * So this table is a JOIN, and the three ids are the whole point: the original
+ * invoice, the return that credited it, and the sale that replaced it. From any
+ * one of them a person can reach the other two, which is what "keep the
+ * relationship with the original invoice" means in practice — six months later,
+ * on a screen, with a customer asking.
+ *
+ * The money is stored as three figures rather than one: what the returned goods
+ * were worth, what the new ones cost, and the difference that actually crossed
+ * the counter. The first two can be recomputed from the documents; keeping them
+ * here means a report about exchanges does not have to open two documents per
+ * row to say anything at all.
+ */
+CREATE TABLE IF NOT EXISTS exchanges (
+  id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+  exchange_no        TEXT    NOT NULL UNIQUE,
+  sale_id            INTEGER NOT NULL REFERENCES sales(id),
+  invoice_no         TEXT,
+  return_id          INTEGER NOT NULL REFERENCES sales_returns(id),
+  return_no          TEXT,
+  new_sale_id        INTEGER NOT NULL REFERENCES sales(id),
+  new_invoice_no     TEXT,
+  customer_id        INTEGER REFERENCES customers(id),
+  warehouse_id       INTEGER NOT NULL REFERENCES warehouses(id),
+  -- What came back, what went out, and what crossed the counter. The
+  -- difference is POSITIVE when the customer paid more and NEGATIVE when the
+  -- shop handed money back, which is the same sign convention the screen uses.
+  credit_amount      REAL    NOT NULL DEFAULT 0,
+  replacement_amount REAL    NOT NULL DEFAULT 0,
+  difference_amount  REAL    NOT NULL DEFAULT 0,
+  settlement_method  TEXT    NOT NULL DEFAULT 'cash',
+  notes              TEXT,
+  created_by         INTEGER REFERENCES users(id),
+  created_at         TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+CREATE INDEX IF NOT EXISTS idx_exchanges_sale ON exchanges(sale_id);
+CREATE INDEX IF NOT EXISTS idx_exchanges_return ON exchanges(return_id);
+CREATE INDEX IF NOT EXISTS idx_exchanges_new_sale ON exchanges(new_sale_id);
+CREATE INDEX IF NOT EXISTS idx_exchanges_date ON exchanges(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_returns_date ON sales_returns(return_date DESC);
 
 CREATE TABLE IF NOT EXISTS sales_return_lines (
@@ -803,6 +881,20 @@ SELECT
   p.unit,
   p.tax_rate,
   p.is_active         AS product_active,
+  /*
+   * Deliberately NOT here: gender and the four offer columns.
+   *
+   * This whole file is applied BEFORE the migrations on every start -- that is
+   * what makes a new database and a five-month-old one end up identical -- and
+   * a view can only name columns that exist at the moment it is created. A view
+   * naming a column that a migration two steps later will add fails at
+   * CREATE VIEW and takes the whole boot with it.
+   *
+   * So the rule for this view is: baseline columns only. Anything added by a
+   * migration is joined for at the call site instead -- see
+   * ProductRepository.details, which reads the offer columns straight from
+   * the products table on the same single-row lookup.
+   */
   b.id                AS brand_id,
   b.name_en           AS brand_name_en,
   b.name_ar           AS brand_name_ar,

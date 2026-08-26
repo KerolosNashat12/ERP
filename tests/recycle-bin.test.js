@@ -434,6 +434,169 @@ test('a cost leaves the ledger while it is in the bin, and comes back to it', as
   });
 });
 
+/**
+ * The bug the owner found the day it shipped, in one test.
+ *
+ * He deleted a product. It went into the bin — the register was right, the
+ * screen was right, and it was still on the products page, and still for sale
+ * on the website. Two screens, each with its own hand-written SELECT, neither
+ * of which asked the bin anything:
+ *
+ *   · the catalogue's `ProductRepository.search`, which does not go through
+ *     `BaseRepository.list` because it also wants brand, category, stock and a
+ *     price range;
+ *   · `PUBLISHED_PRODUCT`, the storefront's own gate, which is deliberately
+ *     separate from the ERP's rules because it must never leak an unpublished
+ *     product — and separate meant it did not know about deletion either.
+ *
+ * A record hidden on one screen and public on another is worse than one that
+ * was never hidden at all, so this asserts every door at once: the list, the
+ * dropdown a new product would be built from, and the shop window.
+ */
+test('a deleted product is gone from every screen it was on, the website included',
+  async (ctx) => {
+    const storefront = new (await import('../src/services/StorefrontService.js')).StorefrontService();
+
+    const db = getDb();
+    await db.prepare(
+      "INSERT INTO brands (id, code, name_en, name_ar, is_published) VALUES (910,'B910','Gone','راح',1)",
+    ).run();
+    await db.prepare(`
+      INSERT INTO products (id, sku_prefix, name_en, name_ar, brand_id, is_active, is_published)
+      VALUES (910,'P910','Vanishing Widget','منتج بيختفي',910,1,1)
+    `).run();
+    await db.prepare(`
+      INSERT INTO product_variants (product_id, sku, barcode, variant_label, cost_price, selling_price)
+      VALUES (910,'P910-A','P910-A','Default',10,25)
+    `).run();
+
+    const inCatalogue = async () => (await repositories.products.search({ search: 'P910' }))
+      .rows.some((r) => r.id === 910);
+    const onSite = async () => (await storefront.products({ pageSize: 200 }))
+      .rows.some((r) => r.id === 910);
+    const inBrandBar = async () => (await storefront.brands()).some((b) => b.id === 910);
+
+    assert.equal(await inCatalogue(), true, 'the fixture starts on the products page');
+    assert.equal(await onSite(), true, 'and on the website');
+
+    let entry;
+    await ctx.test('deleting it takes it off the products page', async () => {
+      entry = await trash.remove('product', 910, { reason: 'test product', context });
+      assert.equal(await inCatalogue(), false);
+    });
+
+    await ctx.test('and off the website, immediately', async () => {
+      assert.equal(await onSite(), false,
+        'a deleted product must not still be for sale to the public');
+    });
+
+    await ctx.test('and out of the pickers a new document would be built from', async () => {
+      const offered = await repositories.products.activeOnly();
+      assert.equal(offered.some((r) => r.id === 910), false);
+    });
+
+    await ctx.test('restoring puts it back in all three at once', async () => {
+      await trash.restore(entry.id, { context });
+      assert.equal(await inCatalogue(), true);
+      assert.equal(await onSite(), true);
+    });
+
+    await ctx.test('a deleted BRAND takes its products off the website with it', async () => {
+      const brandEntry = await trash.remove('brand', 910, { context });
+      assert.equal(await inBrandBar(), false, 'the brands rail must not show it');
+      assert.equal(await onSite(), false,
+        'nor may its products stay on sale under a brand that no longer exists');
+      await trash.restore(brandEntry.id, { context });
+      assert.equal(await onSite(), true);
+    });
+  });
+
+/**
+ * "Destroy now" answered `This record is linked to other data and cannot be
+ * changed` — SQLite's foreign-key refusal, translated for a shop but explaining
+ * nothing and naming nothing.
+ *
+ * The cause was a dependency count that could not be right: a product is
+ * referenced THROUGH its variants, and the check was comparing a product id
+ * against `sale_lines.variant_id`. It answered zero, the purge went ahead on
+ * that answer, and the database stopped it. So the refusal has to come from the
+ * policy — in words, naming what depends on it — and never from the driver.
+ */
+test('a product that has been traded refuses to be destroyed, and says what by',
+  async (ctx) => {
+    const sale = await ringUpSale();
+
+    // The preview is asked BEFORE the delete — that is when a person reads it.
+    const preview = await trash.preview('product', 900);
+    const entry = await trash.remove('product', 900, { context });
+
+    await ctx.test('the preview counts what really points at it', () => {
+      // Through the variants, which is the only way a document ever names a
+      // product. Counted directly it would read zero.
+      const warning = preview.warnings.find((w) => w.code === 'referenced');
+      assert.ok(warning, 'a product on an invoice must say so before it is deleted');
+      assert.match(warning.en, /sale line/);
+    });
+
+    await ctx.test('and destroying it is refused in words, not by the database', async () => {
+      await getDb().prepare("UPDATE trash_items SET purge_after = '2020-01-01T00:00:00.000Z' WHERE id = ?")
+        .run(entry.id);
+      await assert.rejects(
+        () => trash.purge(entry.id, { context }),
+        (error) => {
+          assert.match(error.message, /sale line/, 'the refusal names what depends on it');
+          assert.doesNotMatch(error.message, /FOREIGN KEY/i,
+            'a raw constraint error must never reach the shop');
+          return true;
+        },
+      );
+      assert.ok(await getDb().prepare('SELECT id FROM products WHERE id = 900').get(),
+        'and it is still there, hidden, exactly as the refusal promised');
+    });
+
+    await ctx.test('a product nothing has traded IS destroyed, trail and all', async () => {
+      const db = getDb();
+      await db.prepare(`
+        INSERT INTO products (id, sku_prefix, name_en, name_ar, is_active)
+        VALUES (911,'P911','Never Sold','ماتباعش',1)
+      `).run();
+      const inserted = await db.prepare(`
+        INSERT INTO product_variants (product_id, sku, barcode, variant_label, cost_price, selling_price)
+        VALUES (911,'P911-A','P911-A','Default',5,9)
+      `).run();
+      // It has stock, so it has a movement ledger — the one thing that does not
+      // cascade, and the reason the purge needs a hand.
+      await inventoryService.postMovement({
+        variantId: Number(inserted.lastInsertRowid),
+        warehouseId,
+        movementType: 'purchase_receipt',
+        quantity: 3,
+        unitCost: 5,
+        referenceType: 'seed',
+        actorId: 1,
+      });
+
+      const spare = await trash.remove('product', 911, { context });
+      await getDb().prepare("UPDATE trash_items SET purge_after = '2020-01-01T00:00:00.000Z' WHERE id = ?")
+        .run(spare.id);
+      await trash.purge(spare.id, { context });
+
+      assert.ok(!await getDb().prepare('SELECT id FROM products WHERE id = 911').get());
+      assert.ok(!await getDb().prepare('SELECT id FROM product_variants WHERE product_id = 911').get(),
+        'its variants went with it');
+      assert.equal(
+        (await getDb().prepare(`
+          SELECT COUNT(*) AS n FROM stock_movements
+           WHERE variant_id = ?
+        `).get(Number(inserted.lastInsertRowid))).n,
+        0,
+        'and so did its stock ledger, which is about nothing else',
+      );
+    });
+
+    assert.ok(sale.id, 'the invoice itself is untouched by any of this');
+  });
+
 test('the bin refuses what it does not know, and says what it does', async (ctx) => {
   await ctx.test('an unknown kind of thing', async () => {
     await assert.rejects(() => trash.preview('spaceship', 1), /cannot be deleted/i);

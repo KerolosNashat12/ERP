@@ -163,6 +163,27 @@ const valueName = (value) => (getLanguage() === 'ar'
 const groupName = (group) => (getLanguage() === 'ar'
   ? (group.name_ar || group.name_en) : (group.name_en || group.name_ar));
 
+
+/**
+ * The price line on a product page, with an offer on it when there is one.
+ *
+ * Its own function because it is drawn once and then REDRAWN every time a
+ * shopper picks a different option — and both paths have to produce the same
+ * thing. The first version of this page updated `textContent`, which quietly
+ * threw away the struck-through price the moment somebody chose a size.
+ */
+function paintPrice(node, { price, listPrice, range }) {
+  if (!(listPrice > price)) {
+    fill(node, el('span', range || money(price)));
+    return;
+  }
+  const percent = Math.round(((listPrice - price) / listPrice) * 100);
+  fill(node,
+    el('span.price-now', range || money(price)),
+    el('s.price-was', { 'aria-hidden': 'true' }, money(listPrice)),
+    el('span.price-off', t('saveOff', percent)));
+}
+
 /**
  * Does the price change between options? If every one costs the same, the
  * figure belongs to the product and is printed once, above.
@@ -544,11 +565,19 @@ export default async function productView(root, route) {
   });
 
   const view = gallery(product);
-  const priceNode = el('p.price', priceRange(product.price_from, product.price_to));
+  const priceNode = el('p.price', { class: product.on_sale ? 'is-sale' : '' });
+  paintPrice(priceNode, {
+    price: product.price_from,
+    listPrice: product.on_sale ? product.list_price_from : 0,
+    range: priceRange(product.price_from, product.price_to),
+  });
   const badgeNode = el('div.availability', availabilityBadge(product.availability));
 
   const picker = variantPicker(product, (variant) => {
-    priceNode.textContent = money(variant.price);
+    // The chosen variant's own offer, not the product's range: picking 50ml on
+    // a product that is 20% off shows the 50ml pair of prices.
+    priceNode.classList.toggle('is-sale', Boolean(variant.list_price));
+    paintPrice(priceNode, { price: variant.price, listPrice: variant.list_price || 0 });
     fill(badgeNode, availabilityBadge(variant.availability));
     // Picking a colour should show that colour: the variant's own photo wins
     // when it has one, and the gallery is left alone when it does not, rather
@@ -615,7 +644,10 @@ export default async function productView(root, route) {
 
   // If a single option was pre-selected, show its price rather than a range of one.
   const initial = selected();
-  if (initial && (product.variants || []).length === 1) priceNode.textContent = money(initial.price);
+  if (initial && (product.variants || []).length === 1) {
+    priceNode.classList.toggle('is-sale', Boolean(initial.list_price));
+    paintPrice(priceNode, { price: initial.price, listPrice: initial.list_price || 0 });
+  }
   if (initial && picker.node) {
     priceNode.textContent = money(initial.price);
     fill(badgeNode, availabilityBadge(initial.availability));

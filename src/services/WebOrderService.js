@@ -51,6 +51,7 @@ import {
 import { BusinessRuleError, NotFoundError, ValidationError } from '../shared/errors.js';
 import { calculateLine, round2, round3 } from '../shared/money.js';
 import { deliveryFor } from '../shared/delivery.js';
+import { offerPrice } from '../shared/pricing.js';
 import inventoryService from './InventoryService.js';
 import salesService from './SalesService.js';
 import { customerService } from './masterDataServices.js';
@@ -153,9 +154,17 @@ export class WebOrderService {
 
         const description = [variant.product_name_en, variant.variant_label]
           .filter(Boolean).join(' — ');
+        /*
+         * The offer decides the price here exactly as it does at the till —
+         * same function, same day, same rounding. A shopper who put a piece in
+         * the basket while it was on offer and checks out after it ended pays
+         * today's price, which is the price the checkout page has been showing
+         * her all along: every screen she saw was priced by this same rule.
+         */
+        const offer = offerPrice(variant.selling_price, variant);
         const computed = calculateLine({
           quantity: item.quantity,
-          unitPrice: round2(variant.selling_price),
+          unitPrice: offer.price,
           taxRate: variant.tax_rate,
         });
 
@@ -181,7 +190,7 @@ export class WebOrderService {
           sku: variant.sku,
           description,
           quantity: item.quantity,
-          unit_price: round2(variant.selling_price),
+          unit_price: offer.price,
           tax_rate: Number(variant.tax_rate || 0),
           tax_amount: computed.taxAmount,
           line_total: computed.lineTotal,
@@ -681,7 +690,13 @@ export class WebOrderService {
              p.id            AS product_id,
              p.name_en       AS product_name_en,
              p.tax_rate      AS tax_rate,
-             p.track_inventory AS track_inventory
+             p.track_inventory AS track_inventory,
+             -- The offer, read here so the order is priced from the database
+             -- and never from what the browser believed the price was.
+             p.discount_type      AS discount_type,
+             p.discount_value     AS discount_value,
+             p.discount_starts_on AS discount_starts_on,
+             p.discount_ends_on   AS discount_ends_on
       FROM product_variants v
       JOIN products p ON p.id = v.product_id
       WHERE v.id = ? AND ${ORDERABLE_VARIANT}

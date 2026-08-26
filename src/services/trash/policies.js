@@ -61,9 +61,26 @@ import { round2 } from '../../shared/money.js';
 
 const db = () => getDb();
 
-/** How many rows of a table point at this id — the dependency question, asked once. */
-async function countRefs(table, column, id) {
-  const row = await db().prepare(`SELECT COUNT(*) AS n FROM ${table} WHERE ${column} = ?`).get(id);
+/**
+ * How many rows of a table point at this id — the dependency question, asked
+ * once and asked correctly.
+ *
+ * `via: 'variants'` is the case that made this function grow a second half. A
+ * product is never referenced directly by a sale line; the line points at a
+ * VARIANT, and the variant points at the product. Counting
+ * `sale_lines.variant_id = <product id>` compares two different kinds of number
+ * and answers nonsense — usually zero, which is the dangerous direction: the
+ * dialog says nothing depends on this, the purge goes ahead, and SQLite refuses
+ * it with a bare FOREIGN KEY error that reaches the shop as "This record is
+ * linked to other data". Which is exactly what the owner was shown.
+ */
+async function countRefs(table, column, id, via = null) {
+  const sql = via === 'variants'
+    ? `SELECT COUNT(*) AS n FROM ${table} t
+         JOIN product_variants v ON v.id = t.${column}
+        WHERE v.product_id = ?`
+    : `SELECT COUNT(*) AS n FROM ${table} WHERE ${column} = ?`;
+  const row = await db().prepare(sql).get(id);
   return Number(row?.n || 0);
 }
 
@@ -82,6 +99,7 @@ const blocker = (code, en, ar) => ({ code, en, ar });
  */
 function masterData({
   entityType, module, table, labelOf, detailOf = () => null, references = [],
+  beforeDestroy = null,
 }) {
   return {
     entityType,
@@ -104,7 +122,7 @@ function masterData({
       const held = [];
       for (const ref of references) {
         // eslint-disable-next-line no-await-in-loop
-        const n = await countRefs(ref.table, ref.column, row.id);
+        const n = await countRefs(ref.table, ref.column, row.id, ref.via);
         if (n > 0) held.push({ ...ref, count: n });
       }
       return {
@@ -138,13 +156,25 @@ function masterData({
     async purge(row) {
       for (const ref of references) {
         // eslint-disable-next-line no-await-in-loop
-        const n = await countRefs(ref.table, ref.column, row.id);
+        const n = await countRefs(ref.table, ref.column, row.id, ref.via);
         if (n > 0) {
           throw new BusinessRuleError(
             `"${labelOf(row)}" is used by ${n} ${ref.en} and cannot be destroyed. It stays hidden.`,
           );
         }
       }
+      /*
+       * Its own trail goes with it.
+       *
+       * Everything above is somebody ELSE'S document pointing at this record,
+       * and none of those may be touched. What is left belongs to the record
+       * itself — a product's stock ledger, its levels, its variants, its
+       * photographs — and has no meaning once it is gone. The schema cascades
+       * most of it; `beforeDestroy` clears what it does not, IN ORDER, because
+       * `PRAGMA foreign_keys` is on and a DELETE that trips it would surface as
+       * a bare constraint error rather than as a sentence anybody can read.
+       */
+      if (beforeDestroy) await beforeDestroy(row);
       await db().prepare(`DELETE FROM ${table} WHERE id = ?`).run(row.id);
       return { destroyed: true };
     },
@@ -158,6 +188,15 @@ export function buildPolicies({ sales, returns, purchases, inventory, costs }) {
   const add = (policy) => policies.set(policy.entityType, policy);
 
   // ------------------------------------------------------------ master data
+  /*
+   * A product is referenced THROUGH its variants — every one of these tables
+   * holds a `variant_id`, never a `product_id` — so each is counted with
+   * `via: 'variants'`. All four are DOCUMENTS: an invoice, a refund, an order
+   * to a supplier, a stock count. They are the shop's own history and none of
+   * them may lose the thing it points at, which is why they block destruction
+   * rather than deletion: the product comes off every screen immediately and
+   * simply stays hidden.
+   */
   add(masterData({
     entityType: 'product',
     module: 'products',
@@ -165,15 +204,33 @@ export function buildPolicies({ sales, returns, purchases, inventory, costs }) {
     labelOf: (row) => row.name_en || row.name_ar || `#${row.id}`,
     detailOf: (row) => row.sku_prefix || null,
     references: [
+      { table: 'sale_lines', column: 'variant_id', en: 'sale line(s)', ar: 'سطر بيع', via: 'variants' },
       {
-        table: 'sale_lines',
-        column: 'variant_id',
-        en: 'sale line(s)',
-        ar: 'سطر بيع',
-        // A product is referenced THROUGH its variants; see `productRefs`.
-        via: 'variants',
+        table: 'sales_return_lines', column: 'variant_id', en: 'return line(s)', ar: 'سطر مرتجع', via: 'variants',
+      },
+      {
+        table: 'purchase_order_lines', column: 'variant_id', en: 'purchase line(s)', ar: 'سطر شراء', via: 'variants',
+      },
+      {
+        table: 'stock_adjustment_lines', column: 'variant_id', en: 'stock count line(s)', ar: 'سطر جرد', via: 'variants',
       },
     ],
+    /*
+     * What is left once no document points at it is the product's own trail:
+     * the movements that put stock on its shelf and took it off again. Those
+     * are about this product and nothing else, and they are the one table on
+     * the list that the schema does not cascade — `stock_movements` keeps a
+     * plain reference so a movement can never lose its variant by accident.
+     * Cleared here, deliberately and last, so the DELETE below can succeed.
+     * Variants, stock levels, images, declared attributes and their values all
+     * cascade from the product row itself.
+     */
+    async beforeDestroy(row) {
+      await db().prepare(`
+        DELETE FROM stock_movements
+         WHERE variant_id IN (SELECT id FROM product_variants WHERE product_id = ?)
+      `).run(row.id);
+    },
   }));
 
   add(masterData({
@@ -222,7 +279,10 @@ export function buildPolicies({ sales, returns, purchases, inventory, costs }) {
     entityType: 'employee',
     module: 'employees',
     table: 'employees',
-    labelOf: (row) => row.full_name || `#${row.id}`,
+    // `name`, not `full_name` — that is `users`. An employee in the bin was
+    // showing as "#12" because of it.
+    labelOf: (row) => row.name || `#${row.id}`,
+    detailOf: (row) => row.job_title || null,
     references: [{ table: 'costs', column: 'employee_id', en: 'salary payment(s)', ar: 'صرف مرتب' }],
   }));
 
@@ -334,6 +394,26 @@ export function buildPolicies({ sales, returns, purchases, inventory, costs }) {
 
     async check(row) {
       const blockers = [];
+
+      /*
+       * Half of an exchange is not a document anybody may delete on its own.
+       *
+       * Deleting this return would un-do the credit — but the replacement was
+       * already handed over and its invoice would still stand, paid for by
+       * credit that no longer exists. The refusal names the exchange so the
+       * person can go and look at what they are actually trying to undo.
+       */
+      const exchange = await db().prepare(
+        'SELECT exchange_no, new_invoice_no FROM exchanges WHERE return_id = ?',
+      ).get(row.id);
+      if (exchange) {
+        blockers.push(blocker(
+          'part_of_exchange',
+          `This return is half of exchange ${exchange.exchange_no} — the customer already took ${exchange.new_invoice_no} away. Undo it by returning that invoice instead.`,
+          `المرتجع ده نص عملية استبدال ${exchange.exchange_no} — العميل خد ${exchange.new_invoice_no} وراح. لو عايز تلغيها ارجّع الفاتورة الجديدة نفسها.`,
+        ));
+      }
+
       if (row.store_credit_code) {
         const voucher = await db().prepare(
           "SELECT id, is_active FROM promotions WHERE code = ? AND kind = 'voucher'",

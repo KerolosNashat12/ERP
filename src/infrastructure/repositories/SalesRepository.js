@@ -4,6 +4,29 @@ import { getDb } from '../database/connection.js';
 import { matchReasonColumns } from '../database/productSearch.js';
 import { notInBin } from '../../shared/trashFilter.js';
 
+/**
+ * How much of an invoice has come back: 'none', 'partial' or 'full'.
+ *
+ * DERIVED, never stored. The temptation is a `status` value — the owner asked
+ * for the invoice to be "marked as fully returned" — but a stored flag has to
+ * be maintained by the return path, the reversal path, the recycle bin and
+ * anything written next year, and the first one to forget makes the invoice
+ * say something its own lines contradict. The lines already know; this reads
+ * them.
+ *
+ * A line with nothing left to return is what "returned" means here, so a
+ * partially returned line keeps the invoice partial, which is exactly what the
+ * counter needs to know when the customer comes back with the rest.
+ */
+export function returnState(lines = []) {
+  const sold = lines.reduce((sum, line) => sum + Number(line.quantity || 0), 0);
+  const back = lines.reduce((sum, line) => sum + Number(line.returned_quantity || 0), 0);
+  if (!sold || back <= 0) return 'none';
+  // A hundredth of a piece is rounding, not stock: quantities are REAL and a
+  // third of a kilo three times does not add back to one.
+  return back >= sold - 0.001 ? 'full' : 'partial';
+}
+
 export class SalesRepository extends BaseRepository {
   constructor() {
     super({
@@ -66,7 +89,14 @@ export class SalesRepository extends BaseRepository {
     const rows = await this.db.prepare(`
       SELECT s.*, c.name AS customer_name, c.phone AS customer_phone,
              w.name_en AS warehouse_name, u.full_name AS cashier_name,
-             (SELECT COUNT(*) FROM sale_lines l WHERE l.sale_id = s.id) AS line_count
+             (SELECT COUNT(*) FROM sale_lines l WHERE l.sale_id = s.id) AS line_count,
+             /*
+              * What has come back, counted in SQL rather than by opening every
+              * invoice on the page. Two sums the screen turns into one word —
+              * see returnState() above, which is the only definition of it.
+              */
+             (SELECT COALESCE(SUM(l2.quantity), 0) FROM sale_lines l2 WHERE l2.sale_id = s.id) AS sold_units,
+             (SELECT COALESCE(SUM(l3.returned_quantity), 0) FROM sale_lines l3 WHERE l3.sale_id = s.id) AS returned_units
              ${reason ? `, ${reason.sql}` : ''}
       FROM sales s ${joins}
       ${whereSql}
@@ -107,6 +137,10 @@ export class SalesRepository extends BaseRepository {
     sale.returns = await this.db
       .prepare('SELECT * FROM sales_returns WHERE sale_id = ? ORDER BY id')
       .all(id);
+    sale.return_state = returnState(sale.lines);
+    sale.exchanges = await this.db
+      .prepare('SELECT * FROM exchanges WHERE sale_id = ? OR new_sale_id = ? ORDER BY id')
+      .all(id, id);
     return sale;
   }
 
@@ -117,9 +151,9 @@ export class SalesRepository extends BaseRepository {
   async insertLines(saleId, lines) {
     const insert = this.db.prepare(`
       INSERT INTO sale_lines
-        (sale_id, variant_id, sku, description, quantity, unit_price, unit_cost,
+        (sale_id, variant_id, sku, description, quantity, unit_price, list_price, unit_cost,
          discount_percent, discount_amount, tax_rate, tax_amount, line_total)
-      VALUES (@sale_id, @variant_id, @sku, @description, @quantity, @unit_price, @unit_cost,
+      VALUES (@sale_id, @variant_id, @sku, @description, @quantity, @unit_price, @list_price, @unit_cost,
               @discount_percent, @discount_amount, @tax_rate, @tax_amount, @line_total)
     `);
     // Sequential on purpose: line ids are assigned in insert order and the

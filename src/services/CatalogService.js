@@ -9,6 +9,9 @@ import repositories from '../infrastructure/repositories/index.js';
 import { transaction, currentTenant } from '../infrastructure/database/connection.js';
 import { BusinessRuleError, ConflictError, NotFoundError, ValidationError } from '../shared/errors.js';
 import { round2, round3 } from '../shared/money.js';
+import {
+  DEFAULT_GENDER, isGender, isDiscountType, suggestGender, offerPrice,
+} from '../shared/pricing.js';
 import auditService from './AuditService.js';
 
 const nowIso = () => new Date().toISOString();
@@ -30,6 +33,88 @@ const normalisePrefix = (value) => String(value || '')
 /** Marks the variant the service invents for an attribute-less product. */
 const GENERATED = Symbol('generated default variant');
 
+/**
+ * The four offer columns, normalised.
+ *
+ * Written as a function rather than inline because both halves of the rule need
+ * saying out loud:
+ *
+ *  · An offer that is switched OFF is switched off completely — type 'none',
+ *    value zero, both dates cleared. Leaving a stale rate behind in a column
+ *    nobody reads is how an offer comes back from the dead six months later
+ *    when somebody flips the type back and does not look at the value.
+ *  · A caller that mentions none of these keeps exactly what the product had.
+ *    The bulk price tool, an offline till replaying a queued save and every
+ *    script written before this release send the product without them, and none
+ *    of them may silently end an offer that is running.
+ *
+ * How MUCH is not settled here — a percent over 100 is refused by the API
+ * schema, and an amount larger than the price is capped against that price at
+ * the moment it is applied, because only then is the price known.
+ */
+/**
+ * The fields a bulk change may touch, and how each one is checked.
+ *
+ * One entry per field, and adding the next one is one entry — which is the
+ * whole reason this is a table rather than four `if` statements. `clean`
+ * returns the value to store or throws a sentence a cashier can act on; a
+ * foreign key is verified to EXIST, because pointing two hundred products at a
+ * brand that was deleted this morning is exactly the kind of damage a bulk tool
+ * does before anybody notices.
+ */
+const BULK_LIMIT = 500;
+
+const BULK_FIELDS = {
+  gender: {
+    async clean(value) {
+      if (!isGender(value)) throw new ValidationError('Choose Women, Men or Unisex');
+      return value;
+    },
+  },
+  brand_id: {
+    async clean(value, service) { return service.assertExists('brands', value, 'Brand'); },
+  },
+  category_id: {
+    async clean(value, service) { return service.assertExists('categories', value, 'Category'); },
+  },
+  supplier_id: {
+    async clean(value, service) { return service.assertExists('suppliers', value, 'Supplier'); },
+  },
+};
+
+function offerFields(payload, existing) {
+  const mentioned = payload.discount_type !== undefined
+    || payload.discount_value !== undefined
+    || payload.discount_starts_on !== undefined
+    || payload.discount_ends_on !== undefined;
+
+  if (!mentioned) {
+    return {
+      discount_type: existing?.discount_type || 'none',
+      discount_value: Number(existing?.discount_value || 0),
+      discount_starts_on: existing?.discount_starts_on || null,
+      discount_ends_on: existing?.discount_ends_on || null,
+    };
+  }
+
+  const type = isDiscountType(payload.discount_type) ? payload.discount_type : 'none';
+  const value = round2(Number(payload.discount_value) || 0);
+  if (type === 'none' || value <= 0) {
+    return {
+      discount_type: 'none', discount_value: 0, discount_starts_on: null, discount_ends_on: null,
+    };
+  }
+
+  const from = payload.discount_starts_on || null;
+  const to = payload.discount_ends_on || null;
+  if (from && to && to < from) {
+    throw new ValidationError('The offer ends before it starts');
+  }
+  return {
+    discount_type: type, discount_value: value, discount_starts_on: from, discount_ends_on: to,
+  };
+}
+
 export class CatalogService {
   constructor(deps = {}) {
     this.products = deps.products || repositories.products;
@@ -40,8 +125,30 @@ export class CatalogService {
     this.audit = deps.audit || auditService;
   }
 
+  /**
+   * The products screen.
+   *
+   * The offer is resolved HERE rather than on the screen: whether one is
+   * running today is a question about dates, and a browser that has been open
+   * since yesterday would answer it wrongly. Every row therefore arrives with
+   * `on_offer`, `offer_price` and `offer_percent` already decided by the same
+   * rule the till and the website use.
+   */
   async list(query) {
-    return this.products.search(query || {});
+    const result = await this.products.search(query || {});
+    return {
+      ...result,
+      rows: result.rows.map((row) => {
+        const offer = offerPrice(row.min_price, row);
+        return {
+          ...row,
+          gender: row.gender || DEFAULT_GENDER,
+          on_offer: offer.onSale,
+          offer_price: offer.onSale ? offer.price : null,
+          offer_percent: offer.percent,
+        };
+      }),
+    };
   }
 
   async get(productId) {
@@ -117,6 +224,205 @@ export class CatalogService {
    * Create or replace a product together with its variants.
    * @param {object} payload product fields + { attribute_ids, variants }
    */
+
+
+  /**
+   * Change the same field on many products at once.
+   *
+   * ── The shape, and why it is a map of changes rather than a field and a value
+   * The screen today sets one field. Building it as `{ids, changes}` costs
+   * nothing now and means the second field — and the fifth — is a line in
+   * `BULK_FIELDS` below rather than a new endpoint, a new validator and a new
+   * dialog. The owner asked for exactly that: "should support other
+   * bulk-editable fields in the future, not only gender".
+   *
+   * ── What may be changed here, and what may not ──────────────────────────
+   * Classification only: who the piece is for, whose brand it is, which shelf
+   * it belongs on, who supplies it. Deliberately NOT price, cost, stock or
+   * publication — every one of those is a decision per product with money or a
+   * shop window behind it, and the whole risk of a bulk tool is that it is one
+   * click away from being applied to the wrong two hundred rows. Prices already
+   * have their own tool, which shows each one before and after.
+   *
+   * ── What it refuses ─────────────────────────────────────────────────────
+   * An empty selection, an empty change, a value the column does not allow, and
+   * a brand/category/supplier id that does not exist — the last one because a
+   * bulk update pointed at a deleted brand would silently orphan two hundred
+   * products at once.
+   *
+   * Only rows that actually MOVE are written, and each writes one audit entry.
+   * Sending three hundred products to the gender they already have is not three
+   * hundred changes, and must not read as three hundred in the log.
+   */
+  /**
+   * A foreign key that must be real, or an explicit "none".
+   *
+   * An empty value means clearing the field — which is a legitimate bulk
+   * change, and the reason this returns null rather than refusing.
+   */
+  async assertExists(table, value, label) {
+    if (value === null || value === undefined || value === '' || Number(value) === 0) return null;
+    const id = Number(value);
+    if (!Number.isInteger(id) || id <= 0) throw new ValidationError(`${label} is not valid`);
+    const row = await this.products.db.prepare(`SELECT id FROM ${table} WHERE id = ?`).get(id);
+    if (!row) throw new NotFoundError(label, id);
+    return id;
+  }
+
+  async bulkUpdate({ ids = [], changes = {} } = {}, context = {}) {
+    const wanted = [...new Set(ids.map((value) => Number(value))
+      .filter((value) => Number.isInteger(value) && value > 0))];
+    if (!wanted.length) throw new ValidationError('Select at least one product');
+    if (wanted.length > BULK_LIMIT) {
+      throw new ValidationError(`A bulk change is limited to ${BULK_LIMIT} products at a time`);
+    }
+
+    const patch = {};
+    for (const [field, spec] of Object.entries(BULK_FIELDS)) {
+      const value = changes[field];
+      if (value === undefined) continue;
+      patch[field] = await spec.clean(value, this);
+    }
+    if (!Object.keys(patch).length) throw new ValidationError('Choose what to change');
+
+    return transaction(async () => {
+      let changed = 0;
+      const touched = [];
+      for (const id of wanted) {
+        const before = await this.products.findById(id);
+        if (!before) continue;
+
+        // Only the fields that would actually differ. A product already sitting
+        // on the value it was sent is skipped whole.
+        const diff = {};
+        for (const [field, value] of Object.entries(patch)) {
+          const current = before[field] === undefined || before[field] === null
+            ? null
+            : before[field];
+          if (String(current ?? '') !== String(value ?? '')) diff[field] = value;
+        }
+        if (!Object.keys(diff).length) continue;
+
+        await this.products.update(id, diff);
+        changed += 1;
+        touched.push(before.name_en);
+        await this.audit.record({
+          action: 'UPDATE',
+          module: 'products',
+          entityType: 'product',
+          entityId: id,
+          entityLabel: before.name_en,
+          before: Object.fromEntries(Object.keys(diff).map((key) => [key, before[key] ?? null])),
+          after: diff,
+          message: 'Bulk update',
+          actor: context.actor,
+          request: context.request,
+        });
+      }
+
+      return {
+        requested: wanted.length,
+        changed,
+        unchanged: wanted.length - changed,
+        fields: Object.keys(patch),
+        sample: touched.slice(0, 5),
+      };
+    });
+  }
+
+  /**
+   * Every product, with a suggested gender beside the one it has.
+   *
+   * ── Why a screen and not a script ───────────────────────────────────────
+   * The shop had hundreds of products the day this field was added, and every
+   * one of them needed an answer. Two ways to get there: guess from the name
+   * and write it, or guess from the name and ASK. The first is faster by one
+   * evening and wrong on every gift set, every unisex oud whose name happens to
+   * contain "man", and every bottle labelled in a language the guesser does not
+   * read — and wrong on a live website, where a men's fragrance filed under
+   * حريمي is invisible to exactly the person looking for it.
+   *
+   * So this answers "what would you suggest", the screen shows it next to what
+   * the product has now, and a person confirms a page at a time. The suggestion
+   * itself is `suggestGender` in shared/pricing.js, which returns null when a
+   * name carries both a masculine and a feminine marker — because a gift set
+   * with two bottles in it genuinely has no answer, and inventing one is the
+   * failure this whole flow exists to avoid.
+   */
+  async genderReview({ onlyUnset = false } = {}) {
+    const rows = await this.products.db.prepare(`
+      SELECT p.id, p.sku_prefix, p.name_en, p.name_ar, p.gender,
+             b.name_en AS brand_name_en, b.name_ar AS brand_name_ar
+      FROM products p
+      LEFT JOIN brands b ON b.id = p.brand_id
+      WHERE p.is_active = 1
+      ORDER BY p.name_en COLLATE NOCASE
+    `).all();
+
+    const reviewed = rows.map((row) => {
+      const suggestion = suggestGender(row.name_en, row.name_ar);
+      return {
+        id: row.id,
+        sku_prefix: row.sku_prefix,
+        name_en: row.name_en,
+        name_ar: row.name_ar,
+        brand_name_en: row.brand_name_en,
+        brand_name_ar: row.brand_name_ar,
+        gender: row.gender || DEFAULT_GENDER,
+        suggested: suggestion,
+        // What the screen sorts and colours by: a row where the suggestion
+        // disagrees with what is stored is the only kind worth a person's time.
+        differs: Boolean(suggestion) && suggestion !== (row.gender || DEFAULT_GENDER),
+      };
+    });
+
+    return {
+      rows: onlyUnset ? reviewed.filter((row) => row.differs) : reviewed,
+      total: reviewed.length,
+      unclassified: reviewed.filter((row) => row.gender === DEFAULT_GENDER).length,
+      suggestions: reviewed.filter((row) => row.differs).length,
+    };
+  }
+
+  /**
+   * Set the gender on many products at once.
+   *
+   * One transaction and one audit row per product that actually MOVED. A row
+   * that already held the value it was sent is skipped rather than rewritten:
+   * confirming a page of suggestions must not fill the audit log with three
+   * hundred entries saying nothing changed.
+   */
+  async assignGenders(assignments = [], context = {}) {
+    const wanted = assignments
+      .map((entry) => ({ id: Number(entry.id), gender: String(entry.gender || '') }))
+      .filter((entry) => Number.isInteger(entry.id) && entry.id > 0 && isGender(entry.gender));
+    if (!wanted.length) throw new ValidationError('Nothing to classify');
+
+    return transaction(async () => {
+      let changed = 0;
+      for (const entry of wanted) {
+        const before = await this.products.findById(entry.id);
+        if (!before) continue;
+        if ((before.gender || DEFAULT_GENDER) === entry.gender) continue;
+
+        await this.products.update(entry.id, { gender: entry.gender });
+        changed += 1;
+        await this.audit.record({
+          action: 'UPDATE',
+          module: 'products',
+          entityType: 'product',
+          entityId: entry.id,
+          entityLabel: before.name_en,
+          before: { gender: before.gender || DEFAULT_GENDER },
+          after: { gender: entry.gender },
+          actor: context.actor,
+          request: context.request,
+        });
+      }
+      return { requested: wanted.length, changed };
+    });
+  }
+
   async save(payload, context = {}, productId = null) {
     return transaction(async () => {
       const isUpdate = Boolean(productId);
@@ -157,6 +463,19 @@ export class CatalogService {
         published_at: published ? (existingProduct?.published_at || nowIso()) : (existingProduct?.published_at || null),
         web_description_en: payload.web_description_en || null,
         web_description_ar: payload.web_description_ar || null,
+
+        /*
+         * Gender, and the offer.
+         *
+         * `??` and not `||` for the gender: a caller that sends nothing keeps
+         * whatever the product already had, and only an explicit value changes
+         * it. A new product with no answer is 'unisex' — visible to everybody,
+         * which is the one default that cannot hide a piece from half the shop.
+         */
+        gender: isGender(payload.gender)
+          ? payload.gender
+          : (existingProduct?.gender || DEFAULT_GENDER),
+        ...offerFields(payload, existingProduct),
       };
 
       const product = isUpdate

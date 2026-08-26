@@ -55,6 +55,10 @@ export async function seedBaseline() {
     await insertSequence.run('purchase_order', 'PO', 5, year);
     await insertSequence.run('sales_return', 'RET', 5, year);
     await insertSequence.run('stock_adjustment', 'ADJ', 5, year);
+    // An exchange is a document a customer can quote over the phone, so it is
+    // numbered like one rather than being identified by the pair of documents
+    // underneath it.
+    await insertSequence.run('exchange', 'EXC', 5, year);
     // Web orders are numbered apart from counter sales: WEB-2026-00001 tells
     // staff where it came from before they open it, and an order that is later
     // cancelled leaves no gap in the invoice book.
@@ -345,10 +349,19 @@ export async function seedExample() {
     const productId = (await db.prepare(`
       INSERT INTO products (sku_prefix, name_en, name_ar, description_en, description_ar,
                             brand_id, category_id, supplier_id, unit, tax_rate,
-                            base_cost, base_price, tags, created_by)
+                            base_cost, base_price, tags, created_by,
+                            -- The demo shop exercises both new fields on
+                            -- purpose: a gender other than the default, so the
+                            -- website's filter has more than one bucket to
+                            -- show, and a running offer, so the struck-through
+                            -- price and the sale badge are visible to anybody
+                            -- looking at a demo rather than only to a shop that
+                            -- has already set one up.
+                            gender, discount_type, discount_value)
       VALUES ('MM-HB01', 'Classic Tote Handbag', 'حقيبة يد كلاسيكية',
               'Full-grain leather tote with cotton lining.', 'حقيبة جلد طبيعي ببطانة قطنية.',
-              ?, ?, ?, 'piece', 14, 620, 1250, 'handbag,leather,tote', ?)
+              ?, ?, ?, 'piece', 14, 620, 1250, 'handbag,leather,tote', ?,
+              'women', 'percent', 15)
     `).run(brandId, categoryId, supplierId, adminId)).lastInsertRowid;
 
     const sizeAttributeId = await attributeId('SIZE');

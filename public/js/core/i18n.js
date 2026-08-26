@@ -102,6 +102,43 @@ const dictionary = {
     refunded: 'refunded', afterRefunds: 'after refunds',
     // الهدر — stock the shop paid for and will never sell.
     wastage: 'Wastage', wastageHint: 'Broken, lost, stolen or expired — at what it cost',
+
+    // Who a piece is for, and the offer on it (round 14).
+    gender: 'For', genderHint: 'Shoppers filter by this on the website',
+
+    // Bulk edits (round 15).
+    bulkEdit: 'Change selected',
+    bulkSelected: '{n} selected',
+    bulkSelectAll: 'Select all {n} matching',
+    bulkSelectPage: 'Select this page',
+    bulkClear: 'Clear selection',
+    bulkField: 'What to change', bulkNewValue: 'New value',
+    bulkOn: 'This will change {n} product(s).',
+    andNMore: 'and {n} more',
+    bulkConfirm: 'Set {field} to "{value}" on {n} product(s)?',
+    bulkApply: 'Apply',
+    bulkApplied: '{changed} changed, {same} already had it',
+    bulkCapped: 'Selected {n} of {total} — apply these, then select the rest',
+    none: 'None',
+    genderWomen: 'Women', genderMen: 'Men', genderUnisex: 'Unisex',
+    genderReview: 'Classify by gender',
+    genderReviewHint: 'Every product, with a suggestion read from its own name. Check the column, fix what is wrong, then apply — nothing is saved until you do.',
+    genderReviewSummary: '{total} products · {suggested} with a suggestion',
+    genderOnlySuggested: 'Only what I suggest changing',
+    genderShowAll: 'Show everything',
+    genderCurrent: 'Now', genderSuggested: 'Suggested', genderSetTo: 'Set to',
+    genderApply: 'Apply', genderApplied: '{n} product(s) classified',
+    genderNothingToReview: 'Nothing to change — every product is classified',
+    genderNothingChanged: 'Nothing was changed',
+
+    offer: 'Offer', offerRunning: 'On offer now',
+    offerHint: 'While it runs this is the price everywhere — website, online orders and this till',
+    offerNone: 'No offer', offerPercent: 'Percent off', offerAmount: 'Amount off',
+    offerValue: 'Discount',
+    offerStarts: 'Starts', offerStartsHint: 'Leave empty to start now',
+    offerEnds: 'Ends', offerEndsHint: 'Leave empty to run until you stop it',
+    offerNoneNote: 'No offer — the product sells at its own price.',
+    offerPreviewNote: 'on the website, online and at the till',
     recordWastage: 'Record a loss',
     lostQty: 'How many were lost',
     pickAnItem: 'Scan or search for the piece',
@@ -284,6 +321,44 @@ const dictionary = {
     errBackupTooLarge: 'This shop has more data than one file can hold. Ask for help before trying again — nothing was changed.',
     errRequestInProgress: 'This is still being processed — it has not been lost. Please wait.',
     errForbidden: 'You do not have permission to do this.',
+
+    // Returns and exchanges — refusals a cashier reads out with a customer
+    // standing there, so they say what to do next, not what went wrong inside.
+    returnWholeInvoice: 'Return the whole invoice',
+    exchangeHint: 'Take something back and give something else — one transaction, both invoices linked',
+    exchangeStep1: '1 · Find the invoice',
+    exchangeStep2: '2 · What is coming back',
+    exchangeStep3: '3 · What they are taking instead',
+    exchangeStep4: '4 · Settle the difference',
+    exchangeCredit: 'Credit for what came back',
+    exchangeReplacement: 'The replacement',
+    customerPays: 'Customer pays', shopPaysBack: 'Pay back to customer',
+    nothingToSettle: 'Nothing to settle',
+    settlementMethod: 'Paid by', completeExchange: 'Complete the exchange',
+    exchangeDone: 'Exchange complete',
+    pickReplacement: 'Scan or search for what they are taking',
+    noExchanges: 'No exchanges yet',
+    exchangePaperTrail: 'The three documents behind this exchange',
+    originalInvoice: 'Original invoice', newInvoice: 'New invoice',
+    difference: 'Difference', number: 'Number',
+    refundPerUnit: 'Refund each',
+    confirmExchangePay: 'The customer pays {amount}. Complete the exchange?',
+    confirmExchangeRefund: 'The shop hands back {amount}. Complete the exchange?',
+    confirmExchangeEven: 'The prices match exactly — nothing to settle. Complete the exchange?',
+    wholeInvoiceFilled: 'Everything still returnable has been filled in — check it, then save.',
+    returnedPartly: 'Partly returned', returnedFully: 'Returned in full',
+    exchange: 'Exchange', exchanges: 'Exchanges', newExchange: 'New exchange',
+
+    errReturnVoid: 'That invoice was cancelled, so there is nothing to return against it.',
+    errReturnAllDone: 'Invoice {invoice} has already been returned in full — there is nothing left on it.',
+    errReturnLineDone: '{sku} has already been returned in full on this invoice.',
+    errReturnTooMany: 'Only {left} of {sku} can still be returned — you asked for {asked}.',
+    errReturnWindow: 'This invoice is {days} days old and the return window is {window} days. A manager can allow it.',
+    errReturnNoReceiptOff: 'Returns without a receipt are switched off in Settings.',
+    errReturnNothingPicked: 'Choose at least one item, and how many of it, before saving.',
+    errExchangeNothingBack: 'Choose what the customer is bringing back.',
+    errExchangeNothingOut: 'Choose what the customer is taking instead.',
+    errExchangeVoid: 'That invoice was cancelled — there is nothing to exchange against.',
     errModuleNotEnabled: 'This shop\'s plan does not include this section.',
     sessionExpired: 'Your session has expired — sign in again.',
 
@@ -297,6 +372,7 @@ const dictionary = {
     permAdjust: 'Adjust', permCount: 'Count stock', permReceive: 'Receive goods',
     permApprove: 'Approve', permPay: 'Record a payment', permReversePayment: 'Undo a payment',
     permVoid: 'Void a sale', permReturn: 'Take a return', permReturnNoReceipt: 'Return without a receipt',
+    permExchange: 'Exchange a purchase',
     permDiscount: 'Give a discount', permExport: 'Export', permResetPassword: 'Reset a password',
     permBackup: 'Back up on this computer', permExportData: 'Download the whole shop',
     // الهدر and سلة المهملات. `purge` is the only irreversible act a person can
@@ -901,6 +977,41 @@ const dictionary = {
     discount: 'الخصم', tax: 'الضريبة', paid: 'المدفوع', outstanding: 'المتبقي',
     refunded: 'مرتجع', afterRefunds: 'بعد المرتجعات',
     wastage: 'الهدر', wastageHint: 'مكسور أو ضايع أو مسروق أو منتهي — بتكلفته على المحل',
+
+    gender: 'لمين', genderHint: 'الزباين بتفلتر بيه على الموقع',
+
+    bulkEdit: 'غيّر المحدد',
+    bulkSelected: 'محدد {n}',
+    bulkSelectAll: 'حدد كل الـ {n}',
+    bulkSelectPage: 'حدد الصفحة دي',
+    bulkClear: 'إلغاء التحديد',
+    bulkField: 'تغيير إيه', bulkNewValue: 'القيمة الجديدة',
+    bulkOn: 'ده هيغيّر {n} منتج.',
+    andNMore: 'و{n} كمان',
+    bulkConfirm: 'تخلي «{field}» = «{value}» في {n} منتج؟',
+    bulkApply: 'طبّق',
+    bulkApplied: 'اتغيّر {changed}، و{same} كانوا كده أصلاً',
+    bulkCapped: 'اتحدد {n} من {total} — طبّق دول الأول وبعدين كمّل',
+    none: 'بدون',
+    genderWomen: 'حريمي', genderMen: 'رجالي', genderUnisex: 'للجنسين',
+    genderReview: 'تصنيف النوع',
+    genderReviewHint: 'كل المنتجات، وجنب كل واحد اقتراح مقروء من اسمه نفسه. بص على العمود، صلّح اللي غلط، وبعدين طبّق — مفيش حاجة بتتحفظ قبل كده.',
+    genderReviewSummary: '{total} منتج · {suggested} عندهم اقتراح',
+    genderOnlySuggested: 'اللي مقترح أغيّره بس',
+    genderShowAll: 'اعرض الكل',
+    genderCurrent: 'دلوقتي', genderSuggested: 'المقترح', genderSetTo: 'يبقى',
+    genderApply: 'طبّق', genderApplied: 'اتصنّف {n} منتج',
+    genderNothingToReview: 'مفيش حاجة تتغيّر — كل المنتجات متصنّفة',
+    genderNothingChanged: 'مفيش حاجة اتغيّرت',
+
+    offer: 'عرض', offerRunning: 'عليه عرض دلوقتي',
+    offerHint: 'طول ما العرض شغال ده هو السعر في كل حتة — الموقع والأوردرات والكاشير',
+    offerNone: 'من غير عرض', offerPercent: 'خصم بنسبة', offerAmount: 'خصم بمبلغ',
+    offerValue: 'الخصم',
+    offerStarts: 'يبدأ', offerStartsHint: 'سيبها فاضية يبدأ دلوقتي',
+    offerEnds: 'ينتهي', offerEndsHint: 'سيبها فاضية يفضل شغال لحد ما توقفه',
+    offerNoneNote: 'مفيش عرض — المنتج بسعره العادي.',
+    offerPreviewNote: 'على الموقع وفي الأوردرات وعند الكاشير',
     recordWastage: 'سجّل هدر',
     lostQty: 'الكمية اللي ضاعت',
     pickAnItem: 'امسح الكود أو دوّر على القطعة',
@@ -1053,6 +1164,42 @@ const dictionary = {
     errBackupTooLarge: 'بيانات هذا المتجر أكبر من أن يحملها ملف واحد. اطلب المساعدة قبل المحاولة مرة أخرى — لم يتغير شيء.',
     errRequestInProgress: 'الطلب ما زال قيد التنفيذ — لم يضع. من فضلك انتظر.',
     errForbidden: 'ليست لديك صلاحية للقيام بهذا الإجراء.',
+
+    returnWholeInvoice: 'ارجّع الفاتورة كلها',
+    exchangeHint: 'ياخد حاجة ويرجّع حاجة — عملية واحدة، والفاتورتين مربوطين',
+    exchangeStep1: '١ · دوّر على الفاتورة',
+    exchangeStep2: '٢ · الراجع إيه',
+    exchangeStep3: '٣ · هياخد إيه بدله',
+    exchangeStep4: '٤ · تسوية الفرق',
+    exchangeCredit: 'قيمة اللي رجع',
+    exchangeReplacement: 'البديل',
+    customerPays: 'العميل يدفع', shopPaysBack: 'المحل يرجّع',
+    nothingToSettle: 'مفيش فرق',
+    settlementMethod: 'الدفع بـ', completeExchange: 'تمام الاستبدال',
+    exchangeDone: 'تم الاستبدال',
+    pickReplacement: 'اسكان أو دوّر على اللي هياخده',
+    noExchanges: 'مفيش استبدالات لسه',
+    exchangePaperTrail: 'التلات مستندات ورا الاستبدال ده',
+    originalInvoice: 'الفاتورة الأصلية', newInvoice: 'الفاتورة الجديدة',
+    difference: 'الفرق', number: 'الرقم',
+    refundPerUnit: 'المرتجع للقطعة',
+    confirmExchangePay: 'العميل هيدفع {amount}. تمام الاستبدال؟',
+    confirmExchangeRefund: 'المحل هيرجّع {amount}. تمام الاستبدال؟',
+    confirmExchangeEven: 'الأسعار متساوية — مفيش فرق. تمام الاستبدال؟',
+    wholeInvoiceFilled: 'اتملى كل اللي ينفع يرجع — راجعه وبعدين احفظ.',
+    returnedPartly: 'مرتجع جزئي', returnedFully: 'مرتجعة بالكامل',
+    exchange: 'استبدال', exchanges: 'الاستبدالات', newExchange: 'استبدال جديد',
+
+    errReturnVoid: 'الفاتورة دي اتلغت، مفيش حاجة ترجع عليها.',
+    errReturnAllDone: 'فاتورة {invoice} رجعت بالكامل خلاص — مفيش حاجة فاضلة فيها.',
+    errReturnLineDone: '{sku} رجع بالكامل على الفاتورة دي.',
+    errReturnTooMany: 'اللي فاضل من {sku} هو {left} بس — وانت طالب {asked}.',
+    errReturnWindow: 'الفاتورة دي عمرها {days} يوم ومدة المرتجع {window} يوم. المدير يقدر يسمح بيها.',
+    errReturnNoReceiptOff: 'المرتجع من غير فاتورة مقفول من الإعدادات.',
+    errReturnNothingPicked: 'اختار صنف على الأقل، وكميته، قبل الحفظ.',
+    errExchangeNothingBack: 'اختار العميل بيرجّع إيه.',
+    errExchangeNothingOut: 'اختار العميل هياخد إيه بدله.',
+    errExchangeVoid: 'الفاتورة دي اتلغت — مفيش حاجة تستبدل عليها.',
     errModuleNotEnabled: 'باقة هذا المتجر لا تشمل هذا القسم.',
     sessionExpired: 'انتهت الجلسة — من فضلك سجّل الدخول مرة أخرى.',
 
@@ -1060,6 +1207,7 @@ const dictionary = {
     permAdjust: 'تسوية', permCount: 'جرد المخزون', permReceive: 'استلام بضاعة',
     permApprove: 'اعتماد', permPay: 'تسجيل دفعة', permReversePayment: 'إلغاء دفعة',
     permVoid: 'إلغاء فاتورة', permReturn: 'قبول مرتجع', permReturnNoReceipt: 'مرتجع بدون فاتورة',
+    permExchange: 'عمل استبدال',
     permDiscount: 'منح خصم', permExport: 'تصدير', permResetPassword: 'إعادة تعيين كلمة مرور',
     permBackup: 'نسخة على هذا الجهاز', permExportData: 'تنزيل بيانات المتجر كاملة',
     permRecord: 'تسجيل هدر', permRestore: 'استرجاع', permPurge: 'حذف نهائي',
@@ -1604,7 +1752,35 @@ export const tCode = (code, fallback) => t(
  * which is the same trade `tCode()` makes: an English word on the screen is bad,
  * a blank toast where a refusal should be is worse.
  */
+/**
+ * A business rule, in the reader's own language.
+ *
+ * Every refusal from the returns and exchange paths carries a `rule` in its
+ * details — `return_too_many`, `return_line_done` — and this turns that into a
+ * sentence with the numbers filled in. The server's own English text is the
+ * fallback, so a rule nobody has written words for yet still says something
+ * true rather than nothing at all.
+ *
+ * Why refusals get this treatment when most errors do not: these are the ones a
+ * cashier meets with a customer standing in front of them, and "only 0 of that
+ * line remain unreturned" is not a sentence to read out loud in a shop.
+ */
+const BUSINESS_RULES = {
+  return_void: 'errReturnVoid',
+  return_all_done: 'errReturnAllDone',
+  return_line_done: 'errReturnLineDone',
+  return_too_many: 'errReturnTooMany',
+  return_window: 'errReturnWindow',
+  return_no_receipt_off: 'errReturnNoReceiptOff',
+  return_nothing_picked: 'errReturnNothingPicked',
+  exchange_nothing_back: 'errExchangeNothingBack',
+  exchange_nothing_out: 'errExchangeNothingOut',
+  exchange_void: 'errExchangeVoid',
+};
+
 const ERROR_CODES = {
+  BUSINESS_RULE: (details) => BUSINESS_RULES[details?.rule],
+  VALIDATION_ERROR: (details) => BUSINESS_RULES[details?.rule],
   EXPORT_RATE_LIMITED: (details) => (details?.reason === 'daily'
     ? 'errExportDailyLimit' : 'errExportRateLimited'),
   EXPORT_IN_PROGRESS: 'errExportInProgress',

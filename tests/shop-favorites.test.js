@@ -212,10 +212,20 @@ test('storefront favourites and the best-sellers flag', async (t) => {
       await dt.test('hands back the same card shape the grid already renders', async () => {
         const { rows } = await scoped(() => storefront.products({ ids: String(shop.alpha) }));
         const card = rows[0];
+        /*
+         * Round 14 added three: `gender`, and the pair that says whether this
+         * card is on offer. `list_price_from` / `list_price_to` are absent HERE
+         * on purpose — this fixture is not discounted, and a card that is not
+         * on sale must not carry an old price at all, or a template could
+         * strike through a number equal to the one beside it.
+         */
         assert.deepEqual(Object.keys(card).sort(), [
           'availability', 'brand_id', 'brand_name_ar', 'brand_name_en', 'category_id',
-          'id', 'image_id', 'name_ar', 'name_en', 'price_from', 'price_to',
+          'discount_percent', 'gender', 'id', 'image_id', 'name_ar', 'name_en',
+          'on_sale', 'price_from', 'price_to',
         ]);
+        assert.equal(card.on_sale, false);
+        assert.equal(card.gender, 'unisex');
         assert.equal(card.availability, 'in_stock');
         // The security rule this whole service exists for: no stock number, and
         // nothing about what the shop paid, on a listing.

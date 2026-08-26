@@ -14,14 +14,23 @@ import { setPageMeta } from '../core/seo.js';
 import { shopName } from '../core/branding.js';
 import { shop } from '../core/store.js';
 import { productGrid } from '../ui/cards.js';
+import { filterUi } from '../ui/filters.js';
 import { skeletonGrid, errorState, emptyState } from '../ui/states.js';
 
 const SORTS = [
   ['newest', 'sortNewest'],
   ['price_asc', 'sortPriceAsc'],
   ['price_desc', 'sortPriceDesc'],
+  ['discount', 'sortDiscount'],
   ['name', 'sortName'],
 ];
+
+/** A comma-separated query value, back into a list. */
+const listFrom = (value) => String(value || '').split(',').map((v) => v.trim()).filter(Boolean);
+const positive = (value) => {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? n : null;
+};
 
 /**
  * The listing routes carry their filter in the path and everything else in the
@@ -35,6 +44,18 @@ function readRoute(route, kind) {
     q: kind === 'search' ? (query.q || '') : '',
     sort: SORTS.some(([value]) => value === query.sort) ? query.sort : 'newest',
     page: Math.max(Number(query.page) || 1, 1),
+    /*
+     * The filter panel's state, read straight off the address. Held here and
+     * nowhere else: a shopper who narrows a shelf down and sends the link to a
+     * friend must send the shelf she is looking at, and the back button has to
+     * undo one choice rather than the whole session.
+     */
+    gender: listFrom(query.gender),
+    attr: listFrom(query.attr),
+    onSale: query.sale === '1',
+    inStock: query.stock === '1',
+    min: positive(query.min),
+    max: positive(query.max),
   };
 }
 
@@ -59,6 +80,14 @@ const buildPath = (state, changes = {}) => {
   const params = new URLSearchParams();
   if (next.q) params.set('q', next.q);
   if (next.sort && next.sort !== 'newest') params.set('sort', next.sort);
+  // Only what is switched ON reaches the address. A default never appears in
+  // it, so an unfiltered shelf keeps the short, shareable URL it always had.
+  if (next.gender?.length) params.set('gender', next.gender.join(','));
+  if (next.attr?.length) params.set('attr', next.attr.join(','));
+  if (next.onSale) params.set('sale', '1');
+  if (next.inStock) params.set('stock', '1');
+  if (next.min) params.set('min', String(next.min));
+  if (next.max) params.set('max', String(next.max));
   if (next.page > 1) params.set('page', String(next.page));
   const query = params.toString();
   const base = basePath(next);
@@ -134,39 +163,90 @@ export function listingView(kind) {
       el('div',
         el('h1.page-title', title),
         el('p.page-note.muted', t('loading'))),
-      sortControl(state));
+      el('div.listing-tools', sortControl(state)));
     const body = el('div', skeletonGrid(8));
-    root.append(el('div.wrap.stack', head, body));
+    const side = el('div.listing-side');
+    root.append(el('div.wrap.stack', head, el('div.listing-layout', side, body)));
+
+    const scope = {
+      category: kind === 'category' ? state.id : undefined,
+      brand: kind === 'brand' ? state.id : undefined,
+      q: state.q || undefined,
+    };
 
     let result;
+    let options;
     try {
-      result = await api.products({
-        category: kind === 'category' ? state.id : undefined,
-        brand: kind === 'brand' ? state.id : undefined,
-        q: state.q || undefined,
-        sort: state.sort,
-        page: state.page,
-      });
+      /*
+       * The listing and the panel are fetched together. They are two requests
+       * because they answer two different questions — what is on this page, and
+       * what could be narrowed down — but they are asked at the same moment so
+       * the page never paints a grid above an empty sidebar.
+       *
+       * The panel is allowed to fail on its own: a shop with no filters is a
+       * shop that still sells things. `Promise.allSettled` rather than `all`
+       * for exactly that.
+       */
+      const [listing, facets] = await Promise.allSettled([
+        api.products({
+          ...scope,
+          sort: state.sort,
+          page: state.page,
+          gender: state.gender.length ? state.gender.join(',') : undefined,
+          attr: state.attr.length ? state.attr.join(',') : undefined,
+          onSale: state.onSale ? '1' : undefined,
+          inStock: state.inStock ? '1' : undefined,
+          minPrice: state.min || undefined,
+          maxPrice: state.max || undefined,
+        }),
+        api.filters(scope),
+      ]);
+      if (listing.status === 'rejected') throw listing.reason;
+      result = listing.value;
+      options = facets.status === 'fulfilled' ? facets.value : null;
     } catch (error) {
       head.querySelector('.page-note').remove();
       fill(body, errorState(error, () => { root.replaceChildren(); render(root, route); }));
       return;
     }
 
+    if (options) {
+      const ui = filterUi(options, state, (nextState) => navigate(buildHref(state, nextState)));
+      fill(side, ui.panel, ui.scrim);
+      head.querySelector('.listing-tools').prepend(ui.toggle);
+    }
+
     head.querySelector('.page-note').textContent = t('productsFound', result.total);
 
     if (!result.rows.length) {
-      fill(body, state.q
+      /*
+       * Three different empties, because they need three different ways out.
+       * A shopper who filtered herself into a corner wants the filters gone —
+       * not a link to the home page, which reads as "give up".
+       */
+      const filtered = state.gender.length || state.attr.length
+        || state.onSale || state.inStock || state.min || state.max;
+      fill(body, filtered
         ? emptyState({
-          title: t('noResultsTitle'),
-          body: t('noResultsBody'),
-          action: el('a.btn.btn-ghost', { href: href('products') }, t('allProducts')),
+          title: t('noMatchesTitle'),
+          body: t('noMatchesBody'),
+          action: el('a.btn.btn-ghost', {
+            href: buildHref(state, {
+              gender: [], attr: [], onSale: false, inStock: false, min: null, max: null, page: 1,
+            }),
+          }, t('clearFilters')),
         })
-        : emptyState({
-          title: t('nothingHere'),
-          body: t('nothingHereBody'),
-          action: el('a.btn.btn-ghost', { href: href('') }, t('home')),
-        }));
+        : state.q
+          ? emptyState({
+            title: t('noResultsTitle'),
+            body: t('noResultsBody'),
+            action: el('a.btn.btn-ghost', { href: href('products') }, t('allProducts')),
+          })
+          : emptyState({
+            title: t('nothingHere'),
+            body: t('nothingHereBody'),
+            action: el('a.btn.btn-ghost', { href: href('') }, t('home')),
+          }));
       return;
     }
 

@@ -17,6 +17,56 @@ import { onScan } from '../core/scanner.js';
 
 const HOLD_KEY = 'mm.pos.held';
 
+
+/**
+ * The offer on a variant row, computed the same way the server computes it.
+ *
+ * A copy of the rule rather than an import, for the reason every other shared
+ * rule in this codebase is copied into the browser (see `shared/delivery.js`
+ * and the storefront's `store.js`): there is no build step, and `src/` is not
+ * served. It is DISPLAY only — the price that is charged is always the
+ * server's, so a drift here shows a stale number for a moment and can never
+ * take the wrong money.
+ */
+function offerFor(variant) {
+  const list = Number(variant.selling_price || 0);
+  const type = String(variant.discount_type || 'none');
+  const value = Number(variant.discount_value || 0);
+  const none = { price: list, listPrice: list, onSale: false, percent: 0 };
+  if (!list || (type !== 'percent' && type !== 'amount') || !(value > 0)) return none;
+
+  const day = new Date().toISOString().slice(0, 10);
+  const from = variant.discount_starts_on ? String(variant.discount_starts_on).slice(0, 10) : null;
+  const to = variant.discount_ends_on ? String(variant.discount_ends_on).slice(0, 10) : null;
+  if ((from && day < from) || (to && day > to)) return none;
+
+  const round2 = (n) => Math.round(n * 100) / 100;
+  const off = type === 'percent'
+    ? round2(list * (Math.min(Math.max(value, 0), 100) / 100))
+    : round2(Math.min(Math.max(value, 0), list));
+  const price = round2(Math.max(list - off, 0));
+  if (!(list - price > 0)) return none;
+  return { price, listPrice: list, onSale: true, percent: Math.round(((list - price) / list) * 100) };
+}
+
+/**
+ * One basket line, as the server should read it.
+ *
+ * `unit_price` is sent ONLY when a person typed one. Otherwise it is left out
+ * entirely, which is what tells `SalesService` to price the line itself — from
+ * the product's own offer, on the server's clock.
+ */
+function lineForServer(line) {
+  const payload = {
+    key: line.key,
+    variant_id: line.variant_id,
+    quantity: line.quantity,
+    discount_percent: line.discount_percent,
+  };
+  if (line.priceEdited) payload.unit_price = line.unit_price;
+  return payload;
+}
+
 export async function posView(root) {
   const state = {
     lines: [],
@@ -56,13 +106,26 @@ export async function posView(root) {
     const existing = state.lines.find((l) => l.variant_id === variant.variant_id);
     if (existing) existing.quantity += quantity;
     else {
+      /*
+       * The offer is shown here and DECIDED on the server.
+       *
+       * The line opens at the offer price so the cashier reads the customer the
+       * same number the website is showing — but `priceEdited` stays false, and
+       * a line that has not been edited is sent WITHOUT a price. The server
+       * then prices it from the database, on the server's own idea of what day
+       * it is. A till that has been open since yesterday, or a queued offline
+       * sale replayed this morning, therefore cannot charge yesterday's offer.
+       */
+      const offer = offerFor(variant);
       state.lines.push({
         key: state.nextKey++,
         variant_id: variant.variant_id,
         sku: variant.sku,
         name: pick(variant, 'product_name'),
         variantLabel: variant.variant_label,
-        unit_price: variant.selling_price,
+        unit_price: offer.price,
+        list_price: offer.onSale ? offer.listPrice : 0,
+        priceEdited: false,
         quantity,
         discount_percent: 0,
         stock: variant.quantity,
@@ -141,7 +204,13 @@ export async function posView(root) {
           render: (line) => numberInput({
             value: line.unit_price, style: { width: '92px' },
             disabled: !can('sales.discount'),
-            onchange: (e) => { line.unit_price = Number(e.target.value) || 0; refreshQuote(); },
+            onchange: (e) => {
+              line.unit_price = Number(e.target.value) || 0;
+              // From here on this line's price is a person's decision, and the
+              // server must take it verbatim rather than re-pricing it.
+              line.priceEdited = true;
+              refreshQuote();
+            },
           }),
         },
         {
@@ -316,13 +385,7 @@ export async function posView(root) {
         promotion_code: state.promotionCode || null,
         manual_discount: state.manualDiscount || 0,
         loyalty_redeem_points: state.loyaltyRedeem || 0,
-        lines: state.lines.map((l) => ({
-          key: l.key,
-          variant_id: l.variant_id,
-          quantity: l.quantity,
-          unit_price: l.unit_price,
-          discount_percent: l.discount_percent,
-        })),
+        lines: state.lines.map((l) => lineForServer(l)),
       });
     } catch (error) {
       if (state.promotionCode) {
@@ -358,10 +421,7 @@ export async function posView(root) {
         payment_method: state.paymentMethod,
         paid_amount: paid,
         notes: state.notes || null,
-        lines: state.lines.map((l) => ({
-          key: l.key, variant_id: l.variant_id, quantity: l.quantity,
-          unit_price: l.unit_price, discount_percent: l.discount_percent,
-        })),
+        lines: state.lines.map((l) => lineForServer(l)),
       });
       toast(`${t('saleCompleted')} — ${sale.invoice_no}`);
       showReceiptDialog(sale);
@@ -489,7 +549,15 @@ export function buildReceipt(sale, options = {}) {
   h('table', { style: { fontSize: `${10.5 * scale}px` } }, sale.lines.map((line) => h('tr', {},
     h('td', { colspan: 2 },
       h('div', {}, line.description),
-      h('div', {}, `${number(line.quantity)} × ${money(line.unit_price, { withSymbol: false })}`)),
+      h('div', {}, `${number(line.quantity)} × ${money(line.unit_price, { withSymbol: false })}`),
+      // The saving, on the customer's own copy. A shop that discounts and does
+      // not say so on the receipt has given the discount and kept the credit
+      // for it — and a customer holding a slip that shows the old price beside
+      // the new one has a reason to come back for the next offer.
+      Number(line.list_price) > Number(line.unit_price)
+        ? h('div', { class: 'muted' },
+          `${t('offer')}: ${money(line.list_price, { withSymbol: false })} → ${money(line.unit_price, { withSymbol: false })}`)
+        : null),
     h('td', { style: { textAlign: 'end', verticalAlign: 'bottom' } },
       money(line.line_total, { withSymbol: false }))))),
   h('hr'),

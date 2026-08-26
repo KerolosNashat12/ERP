@@ -16,6 +16,7 @@ import inventoryService from '../../services/InventoryService.js';
 import purchaseService from '../../services/PurchaseService.js';
 import salesService from '../../services/SalesService.js';
 import returnService from '../../services/ReturnService.js';
+import exchangeService from '../../services/ExchangeService.js';
 import promotionService from '../../services/PromotionService.js';
 import reportService from '../../services/ReportService.js';
 import costService from '../../services/CostService.js';
@@ -293,9 +294,56 @@ router.post('/products/combinations', requirePermission('products.view'), asyncH
   res.json({ rows: await catalogService.generateCombinations(req.body.attribute_ids || []) });
 }));
 
+/**
+ * Change one field on many products at once.
+ *
+ * `products.update` — the same right as editing one, because that is all this
+ * is. The service decides which fields may be touched; this route only carries
+ * the request.
+ */
+/*
+ * الاستبدال — an exchange.
+ *
+ * `sales.exchange`, which migration 023 grants to whoever already takes
+ * returns. Every refusal a return has still applies underneath: this route is
+ * the door, and `ExchangeService` runs both halves inside one transaction.
+ */
+router.get('/exchanges', requirePermission('sales.view'), asyncHandler(async (req, res) => {
+  res.json(await exchangeService.list(req.query));
+}));
+router.get('/exchanges/:id', requirePermission('sales.view'), asyncHandler(async (req, res) => {
+  res.json(await exchangeService.get(Number(req.params.id)));
+}));
+router.post('/exchanges', requirePermission('sales.exchange'), validate(v.exchangeSchema),
+  asyncHandler(async (req, res) => {
+    res.status(201).json(await exchangeService.create(req.body, req.context));
+  }));
+
+router.post('/products/bulk', requirePermission('products.update'), validate(v.bulkProductSchema),
+  asyncHandler(async (req, res) => {
+    res.json(await catalogService.bulkUpdate(req.body, req.context));
+  }));
+
 router.post('/products/bulk-price', requirePermission('products.update'), asyncHandler(async (req, res) => {
   res.json(await catalogService.bulkUpdatePrices(req.body, req.context));
 }));
+
+/**
+ * The gender classifier: what the shop has, and what each name suggests.
+ *
+ * A read behind `products.view` and a write behind `products.update` — the same
+ * two rights that govern opening a product and editing one, because that is all
+ * this is: the same edit, made three hundred times, by somebody who would
+ * otherwise be making it three hundred times by hand.
+ */
+router.get('/products/gender-review', requirePermission('products.view'), asyncHandler(async (req, res) => {
+  res.json(await catalogService.genderReview({ onlyUnset: req.query.onlyUnset === '1' }));
+}));
+
+router.post('/products/gender', requirePermission('products.update'), validate(v.genderAssignSchema),
+  asyncHandler(async (req, res) => {
+    res.json(await catalogService.assignGenders(req.body.assignments, req.context));
+  }));
 
 router.get('/products/variants/:variantId', requirePermission('products.view'), asyncHandler(async (req, res) => {
   res.json(await catalogService.variantDetails(Number(req.params.variantId)));

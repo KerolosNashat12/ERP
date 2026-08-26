@@ -108,7 +108,18 @@ export class ReturnService {
         sold_quantity: line.quantity,
         returned_quantity: line.returned_quantity,
         returnable_quantity: returnable,
-        list_price: line.unit_price,
+        /*
+         * What this piece was SOLD for — the invoice's own price, which is what
+         * a refund is measured against. Named `sold_price` since round 14:
+         * `sale_lines` now has a real `list_price` column meaning the price
+         * BEFORE an offer, and two fields one letter apart meaning different
+         * things on the same screen is a bug waiting for a tired evening.
+         */
+        sold_price: line.unit_price,
+        // What it was marked at before an offer, when there was one. Straight
+        // off the line, so a returns screen can show why the refund is 800 on a
+        // bottle whose ticket says 1,000.
+        list_price: Number(line.list_price || 0),
         refund_per_unit: grossPerUnit,
         net_per_unit: round2(grossPerUnit - taxPerUnit),
         tax_per_unit: taxPerUnit,
@@ -170,7 +181,8 @@ export class ReturnService {
 
       if (type === 'no_receipt') {
         if (!policy.allowWithoutReceipt) {
-          throw new BusinessRuleError('Returns without a receipt are switched off in Settings');
+          throw new BusinessRuleError('Returns without a receipt are switched off in Settings',
+            { rule: 'return_no_receipt_off' });
         }
         if (!context.permissions?.includes('sales.return_no_receipt')) {
           throw new ForbiddenError('Returns without a receipt need a manager');
@@ -187,7 +199,9 @@ export class ReturnService {
         : await this.#prepareWithoutReceipt(payload);
 
       const { sale, lines } = prepared;
-      if (!lines.length) throw new ValidationError('Select at least one item to return');
+      if (!lines.length) {
+        throw new ValidationError('Select at least one item to return', { rule: 'return_nothing_picked' });
+      }
 
       const subtotal = round2(lines.reduce((s, l) => s + (l.line_total - l.tax_amount), 0));
       const taxAmount = round2(lines.reduce((s, l) => s + l.tax_amount, 0));
@@ -200,7 +214,27 @@ export class ReturnService {
       if (restockingFee > grossRefund) restockingFee = grossRefund;
       const refundTotal = round2(grossRefund - restockingFee);
 
-      const refundMethod = type === 'no_receipt' ? 'store_credit' : (payload.refund_method || 'cash');
+      /*
+       * An exchange settles its own refund.
+       *
+       * `settlement: 'exchange'` says: this return's money is not leaving the
+       * till, it is being spent on the replacement in the same breath. The
+       * method recorded is `store_credit`, which is exactly what it is — credit
+       * against this shop — but NO VOUCHER IS ISSUED, because the credit is
+       * consumed inside the same transaction by `ExchangeService`. A voucher
+       * here would be a second copy of the same money, redeemable again next
+       * week.
+       *
+       * `store_credit` and not a new word, deliberately: `refund_method` has a
+       * CHECK constraint on every database already in the field, and SQLite
+       * cannot add a value to one without rebuilding the table under a live
+       * shop. The exchange itself is recorded in `exchanges`, which is where a
+       * reader looks to see that this return was half of one.
+       */
+      const forExchange = payload.settlement === 'exchange';
+      const refundMethod = forExchange
+        ? 'store_credit'
+        : (type === 'no_receipt' ? 'store_credit' : (payload.refund_method || 'cash'));
       if (refundMethod === 'account' && !sale?.customer_id) {
         throw new BusinessRuleError('Crediting the account needs a registered customer');
       }
@@ -282,7 +316,7 @@ export class ReturnService {
 
       // --- money back
       let storeCreditCode = null;
-      if (refundMethod === 'store_credit') {
+      if (refundMethod === 'store_credit' && !forExchange) {
         storeCreditCode = await this.#issueStoreCredit(refundTotal, record.return_no, policy, context);
       } else if (refundMethod === 'account') {
         // Reduce what the customer owes us rather than handing cash over.
@@ -331,13 +365,33 @@ export class ReturnService {
     if (!header) throw new NotFoundError('Invoice', payload.invoice_no || payload.sale_id);
 
     const sale = await this.sales.findAggregate(header.id);
-    if (sale.status === 'void') throw new BusinessRuleError('Cannot return against a voided invoice');
+    if (sale.status === 'void') {
+      throw new BusinessRuleError('Cannot return against a voided invoice', { rule: 'return_void' });
+    }
+
+    /*
+     * Nothing left on it at all — said as its own refusal rather than as a
+     * quantity complaint about whichever line the cashier happened to tick
+     * first. "This invoice has already been returned in full" is what the
+     * person at the counter needs to hear; "only 0 of that line remain" makes
+     * them try the next line and hear it four more times.
+     */
+    const outstanding = sale.lines.reduce(
+      (sum, line) => sum + Math.max(round3(line.quantity - line.returned_quantity), 0), 0,
+    );
+    if (outstanding <= 0) {
+      throw new BusinessRuleError(
+        `Invoice ${sale.invoice_no} has already been returned in full`,
+        { rule: 'return_all_done', invoice: sale.invoice_no },
+      );
+    }
 
     const ageDays = Math.floor((Date.now() - new Date(sale.sale_date).getTime()) / 86_400_000);
     if (policy.windowDays > 0 && ageDays > policy.windowDays) {
       if (!context.permissions?.includes('sales.return_no_receipt')) {
         throw new BusinessRuleError(
           `This invoice is ${ageDays} days old; the return window is ${policy.windowDays} days. A manager can override.`,
+          { rule: 'return_window', days: ageDays, window: policy.windowDays },
         );
       }
     }
@@ -351,9 +405,24 @@ export class ReturnService {
       if (!saleLine) throw new NotFoundError('Invoice line', item.sale_line_id);
 
       const returnable = round3(saleLine.quantity - saleLine.returned_quantity);
+      /*
+       * Two different refusals, deliberately. "You already returned all of
+       * this" and "you are asking for more than is left" are different
+       * situations to the person holding the goods, and one sentence covering
+       * both leaves them guessing which it was.
+       */
+      if (returnable <= 0) {
+        throw new BusinessRuleError(
+          `${saleLine.sku} has already been returned in full on this invoice`,
+          { rule: 'return_line_done', sku: saleLine.sku },
+        );
+      }
       if (quantity > returnable) {
         throw new BusinessRuleError(
           `Cannot return ${quantity} × ${saleLine.sku}: only ${returnable} of that line remain unreturned`,
+          {
+            rule: 'return_too_many', sku: saleLine.sku, asked: quantity, left: returnable,
+          },
         );
       }
 

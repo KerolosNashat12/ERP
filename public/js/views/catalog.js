@@ -14,6 +14,27 @@ import { confirmDelete } from './trash.js';
 
 // ---------------------------------------------------------------- list view
 
+/** `women` → `Women`, so one `t()` key per value instead of a lookup table. */
+const genderKey = (value) => {
+  const text = String(value || 'unisex');
+  return text.charAt(0).toUpperCase() + text.slice(1);
+};
+
+/**
+ * The offer, as it reads on a list row: what it sells for now, and by how much.
+ *
+ * Drawn only when an offer is actually RUNNING today — a rate sitting in a
+ * column with next month's start date is not a price and must not look like
+ * one. The server sends `offer_price` and `on_offer` already resolved, so this
+ * never does date arithmetic of its own.
+ */
+function offerBadge(row) {
+  if (!row.on_offer) return null;
+  return h('div', { class: 'row', style: { gap: '4px', alignItems: 'center' } },
+    h('span', { class: 'strong ok' }, money(row.offer_price)),
+    tag(`−${row.offer_percent}%`, 'gold'));
+}
+
 export async function productsView(root, route) {
   const [, second, third] = route.segments;
   // products            → list
@@ -25,8 +46,22 @@ export async function productsView(root, route) {
 
   const state = {
     search: route.query.search || '', brandId: '', categoryId: '', supplierId: '',
-    isActive: '', page: 1, pageSize: 25,
+    isActive: '', gender: '', onOffer: '', page: 1, pageSize: 25,
   };
+
+  /*
+   * What is ticked, as a Map of id → name.
+   *
+   * A Map and not a Set of ids, because the confirmation has to be able to SAY
+   * what is about to change — "212 Sexy Men, Valentino Donna and 18 others" —
+   * and a page that has been scrolled past no longer has those rows to look the
+   * names up in. It survives paging and filtering on purpose: ticking twenty
+   * products across three pages and then applying is the whole point, and a
+   * selection that silently emptied itself when the page turned would be worse
+   * than none.
+   */
+  const picked = new Map();
+  const bulkBar = h('div');
 
   const [brands, categories, suppliers] = await Promise.all([
     lookup('brands', '/api/brands/options'),
@@ -37,11 +72,64 @@ export async function productsView(root, route) {
   const listHost = h('div', { class: 'card-body tight' }, spinner());
   const pagerHost = h('div');
 
+  /** The last page fetched, kept so a tick can redraw without a round trip. */
+  let current = { rows: [], total: 0, page: 1, pages: 1 };
+
   async function load() {
     mount(listHost, spinner());
-    const data = await api.get('/api/products', state);
+    current = await api.get('/api/products', state);
+    renderTable(current);
+    renderBulkBar();
+  }
+
+  function renderTable(data) {
+    const allOnPage = data.rows.length > 0 && data.rows.every((row) => picked.has(row.id));
     mount(listHost, dataTable({
       columns: [
+        {
+          key: '__pick',
+          // The header box ticks or clears THIS PAGE — never the whole
+          // catalogue silently. Selecting everything the filter matches is a
+          // separate, explicit action on the bar below, which says the number
+          // out loud first.
+          label: h('input', {
+            type: 'checkbox',
+            checked: allOnPage,
+            title: t('bulkSelectPage'),
+            onchange: (event) => {
+              for (const row of data.rows) {
+                if (event.target.checked) picked.set(row.id, pick(row, 'name'));
+                else picked.delete(row.id);
+              }
+              // Here the table IS redrawn: every row's box has to move, and
+              // the browser has only moved this one.
+              renderTable(data);
+              renderBulkBar();
+            },
+          }),
+          width: '1%',
+          render: (r) => h('input', {
+            type: 'checkbox',
+            checked: picked.has(r.id),
+            'aria-label': pick(r, 'name'),
+            onclick: (event) => event.stopPropagation(),
+            /*
+             * Only the bar is redrawn, never the table.
+             *
+             * Re-rendering the whole table on every tick throws away the very
+             * checkbox that was just clicked — the browser has already moved
+             * the tick, and rebuilding the row underneath it costs the focus,
+             * the scroll position and any chance of ticking twenty rows
+             * quickly. The header box is nudged by hand for the same reason.
+             */
+            onchange: (event) => {
+              if (event.target.checked) picked.set(r.id, pick(r, 'name'));
+              else picked.delete(r.id);
+              syncHeaderBox(data);
+              renderBulkBar();
+            },
+          }),
+        },
         { key: 'sku_prefix', label: t('sku'), class: 'mono small' },
         {
           key: 'name',
@@ -57,12 +145,26 @@ export async function productsView(root, route) {
           render: (r) => (r.is_published ? tag(t('published'), 'ok') : tag(t('notPublished'))),
         },
         {
+          key: 'gender',
+          label: t('gender'),
+          render: (r) => tag(t(`gender${genderKey(r.gender)}`, r.gender || 'unisex'),
+            r.gender === 'unisex' ? '' : 'info'),
+        },
+        {
           key: 'price',
           label: t('price'),
           type: 'money',
-          render: (r) => (r.min_price === r.max_price
-            ? money(r.min_price)
-            : `${money(r.min_price)} – ${money(r.max_price)}`),
+          /*
+           * The ticket price, with the offer under it when one is running —
+           * `أوفر` is not a state anybody should have to open a product to
+           * discover, least of all on the screen used to check what the shop
+           * is charging.
+           */
+          render: (r) => h('div', {},
+            h('div', {}, r.min_price === r.max_price
+              ? money(r.min_price)
+              : `${money(r.min_price)} – ${money(r.max_price)}`),
+            offerBadge(r)),
         },
         { key: 'total_stock', label: t('totalStock'), type: 'number', render: (r) => h('span', { class: r.total_stock <= 0 ? 'muted' : '' }, number(r.total_stock)) },
         { key: 'supplier_name_en', label: t('supplier'), render: (r) => r.supplier_name_en || '—' },
@@ -92,6 +194,168 @@ export async function productsView(root, route) {
     }));
   }
 
+  /** Keep the header box honest without rebuilding the rows under it. */
+  function syncHeaderBox(data) {
+    const box = listHost.querySelector('thead input[type="checkbox"]');
+    if (box) box.checked = data.rows.length > 0 && data.rows.every((row) => picked.has(row.id));
+  }
+
+  /**
+   * The bar that appears once something is ticked.
+   *
+   * Three things, in the order they are needed: how many are selected, a way to
+   * widen that to everything the current filter matches, and the action. It is
+   * absent entirely when nothing is ticked — a permanent empty toolbar is
+   * furniture, and this screen is used all day by people who are not doing bulk
+   * edits.
+   */
+  function renderBulkBar() {
+    if (!picked.size || !can('products.update')) {
+      mount(bulkBar);
+      return;
+    }
+    const matching = current.total || 0;
+    mount(bulkBar,
+      h('div', { class: 'bulk-bar' },
+        h('span', { class: 'strong' }, t('bulkSelected').replace('{n}', picked.size)),
+        // Offered only when there is genuinely more to take: the whole filtered
+        // set, said as a number so nobody applies a change to 300 products
+        // thinking they are applying it to 25.
+        picked.size < matching
+          ? h('button', {
+            class: 'btn sm ghost',
+            onclick: () => selectAllMatching(),
+          }, t('bulkSelectAll').replace('{n}', matching))
+          : null,
+        h('button', { class: 'btn sm ghost', onclick: () => { picked.clear(); renderTable(current); renderBulkBar(); } },
+          t('bulkClear')),
+        h('span', { class: 'spacer' }),
+        h('button', { class: 'btn sm primary', onclick: () => openBulkEdit() }, t('bulkEdit'))));
+  }
+
+  /**
+   * Tick everything the current filter matches, not merely what is on screen.
+   *
+   * Fetched as ids rather than assumed: the filter is a server-side query and
+   * the only honest way to know what it matches is to ask. Capped at the same
+   * 500 the server enforces, and said out loud when the cap bites, because a
+   * silent truncation here is a bulk edit that missed half its rows.
+   */
+  async function selectAllMatching() {
+    try {
+      const all = await api.get('/api/products', { ...state, page: 1, pageSize: 500 });
+      for (const row of all.rows) picked.set(row.id, pick(row, 'name'));
+      if (all.total > all.rows.length) {
+        toast(t('bulkCapped').replace('{n}', all.rows.length).replace('{total}', all.total), 'warn', 6000);
+      }
+      renderTable(current);
+      renderBulkBar();
+    } catch (error) { toastError(error); }
+  }
+
+  /**
+   * The dialog: what to change, to what, and on how many.
+   *
+   * One field at a time by design. A dialog that could set four things at once
+   * would need four "leave this alone" states, and the difference between "set
+   * the brand to nothing" and "do not touch the brand" is exactly the mistake
+   * that makes a bulk tool dangerous.
+   */
+  function openBulkEdit() {
+    const FIELDS = [
+      { value: 'gender', label: t('gender') },
+      { value: 'brand_id', label: t('brand') },
+      { value: 'category_id', label: t('category') },
+      { value: 'supplier_id', label: t('supplier') },
+    ];
+    const valuesFor = (name) => {
+      if (name === 'gender') {
+        return [
+          { value: 'women', label: t('genderWomen') },
+          { value: 'men', label: t('genderMen') },
+          { value: 'unisex', label: t('genderUnisex') },
+        ];
+      }
+      const rows = name === 'brand_id' ? brands : name === 'category_id' ? categories : suppliers;
+      // "None" is a real answer: clearing a supplier off a batch is a change
+      // somebody genuinely wants, and it has to be distinguishable from
+      // "leave it alone", which is what closing this dialog does.
+      return [{ value: '', label: `— ${t('none')} —` },
+        ...rows.map((row) => ({ value: String(row.id), label: pick(row, 'name') }))];
+    };
+
+    const valueHost = h('div');
+    let chosenField = 'gender';
+    let value = 'women';
+
+    const drawValue = () => {
+      const options = valuesFor(chosenField);
+      value = options[0].value;
+      mount(valueHost, field({ label: t('bulkNewValue'), input: selectInput({
+        value,
+        options,
+        onchange: (event) => { value = event.target.value; },
+      }) }));
+    };
+
+    const dialog = modal({
+      title: t('bulkEdit'),
+      body: h('div', { class: 'stack' },
+        h('p', { class: 'muted' }, t('bulkOn').replace('{n}', picked.size)),
+        // Named, not merely counted. Three names and a number is the difference
+        // between "I know what I ticked" and "I hope I ticked the right rows".
+        h('p', { class: 'small muted' },
+          [...picked.values()].slice(0, 3).join('، ')
+          + (picked.size > 3 ? ` ${t('andNMore').replace('{n}', picked.size - 3)}` : '')),
+        field({
+          label: t('bulkField'),
+          input: selectInput({
+            value: chosenField,
+            options: FIELDS,
+            onchange: (event) => { chosenField = event.target.value; drawValue(); },
+          }),
+        }),
+        valueHost),
+      footer: h('div', { class: 'row', style: { gap: '8px', justifyContent: 'flex-end' } },
+        h('button', { class: 'btn ghost', onclick: () => dialog.close() }, t('cancel')),
+        h('button', {
+          class: 'btn primary',
+          onclick: async () => {
+            const label = FIELDS.find((entry) => entry.value === chosenField)?.label || chosenField;
+            const chosen = valuesFor(chosenField).find((entry) => String(entry.value) === String(value));
+            const ok = await confirmDialog({
+              title: t('bulkEdit'),
+              message: t('bulkConfirm')
+                .replace('{n}', picked.size)
+                .replace('{field}', label)
+                .replace('{value}', chosen?.label || String(value)),
+              confirmLabel: t('bulkApply'),
+              danger: true,
+            });
+            if (!ok) return;
+            try {
+              const result = await api.post('/api/products/bulk', {
+                ids: [...picked.keys()],
+                changes: {
+                  [chosenField]: chosenField === 'gender'
+                    ? value
+                    : (value === '' ? null : Number(value)),
+                },
+              });
+              toast(t('bulkApplied')
+                .replace('{changed}', result.changed)
+                .replace('{same}', result.unchanged));
+              dialog.close();
+              picked.clear();
+              invalidate();
+              await load();
+            } catch (error) { toastError(error); }
+          },
+        }, t('bulkApply'))),
+    });
+    drawValue();
+  }
+
   const searchBox = textInput({
     placeholder: t('searchNameOrCode'),
     value: state.search,
@@ -107,6 +371,7 @@ export async function productsView(root, route) {
     h('div', { class: 'page-head' },
       h('div', {}, h('h2', {}, t('products')), h('p', {}, t('navCatalogue'))),
       h('span', { class: 'spacer' }),
+      can('products.update') ? h('button', { class: 'btn', onclick: () => openGenderReview(load) }, t('genderReview')) : null,
       can('products.update') ? h('button', { class: 'btn', onclick: () => openBulkPrice(load) }, t('bulkPrice')) : null,
       can('products.create') ? h('button', { class: 'btn primary', onclick: () => navigate('products/new') }, '＋ ' + t('newProduct')) : null),
     h('div', { class: 'card' },
@@ -115,8 +380,16 @@ export async function productsView(root, route) {
         h('div', { class: 'field' }, filterSelect('brandId', t('brand'), brands.map((b) => ({ value: b.id, label: pick(b, 'name') })))),
         h('div', { class: 'field' }, filterSelect('categoryId', t('category'), categories.map((c) => ({ value: c.id, label: pick(c, 'name') })))),
         h('div', { class: 'field' }, filterSelect('supplierId', t('supplier'), suppliers.map((s) => ({ value: s.id, label: pick(s, 'name') })))),
+        h('div', { class: 'field' }, filterSelect('gender', t('gender'), [
+          { value: 'women', label: t('genderWomen') },
+          { value: 'men', label: t('genderMen') },
+          { value: 'unisex', label: t('genderUnisex') },
+        ])),
+        h('div', { class: 'field' }, filterSelect('onOffer', t('offer'), [
+          { value: '1', label: t('offerRunning') },
+        ])),
         h('div', { class: 'field' }, filterSelect('isActive', t('status'), [{ value: '1', label: t('active') }, { value: '0', label: t('inactive') }]))),
-      listHost, pagerHost));
+      bulkBar, listHost, pagerHost));
 
   await load();
   return undefined;
@@ -166,6 +439,24 @@ async function productFormView(root, route) {
     { name: 'tax_rate', label: t('taxRate'), type: 'number' },
     { name: 'base_cost', label: t('costPrice'), type: 'number', hint: t('defaultForNewVariants') },
     { name: 'base_price', label: t('sellingPrice'), type: 'number', hint: t('defaultForNewVariants') },
+    /*
+     * Who the piece is for. A real column and a real filter on the website, so
+     * it sits with the product's identity — beside its brand and its category —
+     * rather than down with the web copy. Every product has a value, so the
+     * field is never blank: a product nobody has classified reads «للجنسين»,
+     * which shows it to everybody instead of hiding it from half the shop.
+     */
+    {
+      name: 'gender',
+      label: t('gender'),
+      type: 'select',
+      hint: t('genderHint'),
+      options: [
+        { value: 'women', label: t('genderWomen') },
+        { value: 'men', label: t('genderMen') },
+        { value: 'unisex', label: t('genderUnisex') },
+      ],
+    },
     { name: 'tags', label: t('tags'), span: 2 },
     { name: 'description_en', label: t('description'), type: 'textarea', span: 2 },
     { name: 'is_active', label: t('active'), type: 'checkbox', value: 1 },
@@ -175,10 +466,81 @@ async function productFormView(root, route) {
     // it says".
     { name: 'is_published', label: t('showOnWebsite'), type: 'checkbox', hint: t('showOnWebsiteHint') },
     { name: 'web_description_en', label: t('webDescriptionEn'), type: 'textarea', span: 2, hint: t('webDescriptionHint') },
-    { name: 'web_description_ar', label: t('webDescriptionAr'), type: 'textarea', span: 2 },
+    { name: 'web_description_ar', label: t('webDescriptionAr'), type: 'textarea', span: 3 },
+
+    /*
+     * The offer.
+     *
+     * Four fields, and a live preview under them that spells out the result in
+     * money — because "20" in a box beside a word is not a price, and the
+     * question anybody actually has is "so what does it sell for". The preview
+     * is built below, right after this form, and reads these four inputs.
+     *
+     * While an offer runs it is the price EVERYWHERE: the website, an online
+     * order, and this shop's own till. That sentence is in the hint, in both
+     * languages, because it is the one thing about this feature that can
+     * surprise somebody.
+     */
+    {
+      name: 'discount_type',
+      label: t('offer'),
+      type: 'select',
+      // Full width, so the three fields that qualify it — how much, from when,
+      // until when — land together on the row beneath instead of being split
+      // across a row boundary by whatever came before them.
+      span: 3,
+      hint: t('offerHint'),
+      options: [
+        { value: 'none', label: t('offerNone') },
+        { value: 'percent', label: t('offerPercent') },
+        { value: 'amount', label: t('offerAmount') },
+      ],
+    },
+    { name: 'discount_value', label: t('offerValue'), type: 'number' },
+    { name: 'discount_starts_on', label: t('offerStarts'), type: 'date', hint: t('offerStartsHint') },
+    { name: 'discount_ends_on', label: t('offerEnds'), type: 'date', hint: t('offerEndsHint') },
   ], existing || {
     is_active: 1, track_inventory: 1, unit: 'piece', tax_rate: 14, base_cost: 0, base_price: 0,
+    gender: 'unisex', discount_type: 'none', discount_value: 0,
   }, { columns: 3 });
+
+  /*
+   * What the offer actually does, in money, as it is typed.
+   *
+   * Reads the same four inputs the server will read and applies the same rule —
+   * a percent of the price, or an amount off it, floored at zero — to the
+   * product's own selling price. It is a preview and nothing more: the price
+   * that is charged is always computed on the server, because a browser can be
+   * a day out of date about what today is.
+   */
+  const offerPreview = h('div', { class: 'offer-preview' });
+  function refreshOfferPreview() {
+    const values = header.values();
+    const type = values.discount_type || 'none';
+    const rate = Number(values.discount_value || 0);
+    const list = Number(variants[0]?.selling_price || values.base_price || 0);
+    if (type === 'none' || !(rate > 0) || !(list > 0)) {
+      mount(offerPreview, h('span', { class: 'muted small' }, t('offerNoneNote')));
+      return;
+    }
+    const off = type === 'percent'
+      ? Math.round(list * (Math.min(Math.max(rate, 0), 100) / 100) * 100) / 100
+      : Math.min(Math.max(rate, 0), list);
+    const now = Math.round(Math.max(list - off, 0) * 100) / 100;
+    const percent = list > 0 ? Math.round(((list - now) / list) * 100) : 0;
+    mount(offerPreview,
+      h('span', { class: 'offer-was' }, money(list)),
+      h('span', { class: 'offer-now' }, money(now)),
+      h('span', { class: 'offer-off' }, `−${percent}%`),
+      h('span', { class: 'muted small' }, t('offerPreviewNote')));
+  }
+  for (const name of ['discount_type', 'discount_value', 'base_price']) {
+    const entry = header.inputs.get(name);
+    if (!entry) continue;
+    entry.input.addEventListener('input', refreshOfferPreview);
+    entry.input.addEventListener('change', refreshOfferPreview);
+  }
+  refreshOfferPreview();
 
   // ------------------------------------------------------------- scanning
   // On this screen a scan is not a lookup: it fills whichever code box the
@@ -386,7 +748,7 @@ async function productFormView(root, route) {
 
     h('div', { class: 'card' },
       h('div', { class: 'card-head' }, h('h3', {}, t('details'))),
-      h('div', { class: 'card-body' }, header.node)),
+      h('div', { class: 'card-body' }, header.node, offerPreview)),
 
     h('div', { class: 'card', style: { marginTop: '14px' } },
       h('div', { class: 'card-head' },
@@ -691,6 +1053,161 @@ function photosCard(productId, productVariants = []) {
 }
 
 // -------------------------------------------------------- bulk price update
+
+
+/**
+ * تصنيف النوع — every product, its suggested gender, and one button.
+ *
+ * ── The problem this solves ─────────────────────────────────────────────────
+ * The gender field arrived on a shop that already had hundreds of products, and
+ * a field nobody fills in is worse than no field at all: the website's filter
+ * would show every piece under «للجنسين» and a shopper looking for a men's
+ * fragrance would be told the shop has none.
+ *
+ * Opening three hundred products one at a time is not a plan anybody carries
+ * out. So the whole catalogue is on one screen with a suggestion already
+ * chosen, read from each product's own name by the server — «212 سيكسي مان»
+ * proposes رجالي, «فلانتينو ابيض» proposes nothing and keeps what it has. The
+ * work becomes reading a column and correcting the few that are wrong.
+ *
+ * ── Why the suggestion is never applied on its own ──────────────────────────
+ * Because it is a guess about words. A gift set with two bottles in it, a name
+ * transliterated three ways, a brand whose name contains "HOMME" as part of the
+ * house name rather than the fragrance — all of them fool it, and the cost of
+ * being wrong lands on the live website where the owner cannot see it. So the
+ * screen suggests, a person confirms, and the difference between those two
+ * verbs is the whole design.
+ */
+async function openGenderReview(refresh) {
+  const state = { rows: [], filter: 'suggested' };
+  const listHost = h('div', { class: 'card-body tight' }, spinner());
+  const summary = h('div', { class: 'muted small' });
+  // What each row will be saved as. Seeded from the suggestion where there is
+  // one, and from what the product already holds where there is not.
+  const chosen = new Map();
+
+  const dialog = modal({
+    title: t('genderReview'),
+    size: 'wide',
+    body: h('div', { class: 'stack' },
+      h('p', { class: 'muted' }, t('genderReviewHint')),
+      h('div', { class: 'row', style: { gap: '8px', flexWrap: 'wrap' } },
+        h('button', { class: 'btn sm', onclick: () => setFilter('suggested') }, t('genderOnlySuggested')),
+        h('button', { class: 'btn sm ghost', onclick: () => setFilter('all') }, t('genderShowAll')),
+        h('span', { class: 'spacer' }),
+        summary),
+      h('div', { class: 'card' }, listHost)),
+    footer: h('div', { class: 'row', style: { gap: '8px', justifyContent: 'flex-end' } },
+      h('button', { class: 'btn ghost', onclick: () => dialog.close() }, t('cancel')),
+      h('button', { class: 'btn primary', onclick: () => apply() }, t('genderApply'))),
+  });
+
+  function setFilter(value) {
+    state.filter = value;
+    render();
+  }
+
+  async function load() {
+    try {
+      const data = await api.get('/api/products/gender-review');
+      state.rows = data.rows;
+      for (const row of data.rows) chosen.set(row.id, row.suggested || row.gender);
+      /*
+       * Open on the short list when there IS one, and on the whole catalogue
+       * when there is not.
+       *
+       * The screen defaulted to "only what I suggest changing", which is right
+       * on the day a shop first classifies three hundred products — and reads
+       * as a broken screen for a shop whose names carry no signal at all, where
+       * it opens empty. An empty first screen is not a filter working, it is a
+       * person closing the dialog.
+       */
+      if (!data.suggestions) state.filter = 'all';
+      mount(summary, h('span', {},
+        t('genderReviewSummary')
+          .replace('{total}', data.total)
+          .replace('{suggested}', data.suggestions)));
+      render();
+    } catch (error) {
+      toastError(error);
+      mount(listHost, h('div', { class: 'empty' }, error.message));
+    }
+  }
+
+  function render() {
+    const rows = state.filter === 'suggested'
+      ? state.rows.filter((row) => row.differs)
+      : state.rows;
+    mount(listHost, dataTable({
+      columns: [
+        {
+          key: 'name',
+          label: t('product'),
+          render: (r) => h('div', {},
+            h('div', { class: 'strong' }, pick(r, 'name')),
+            h('small', { class: 'muted' },
+              [r.sku_prefix, pick(r, 'brand_name')].filter(Boolean).join(' · '))),
+        },
+        {
+          key: 'current',
+          label: t('genderCurrent'),
+          render: (r) => tag(t(`gender${genderKey(r.gender)}`), r.gender === 'unisex' ? '' : 'info'),
+        },
+        {
+          key: 'suggested',
+          label: t('genderSuggested'),
+          // Said plainly when there is nothing to say. A dash is the honest
+          // answer for a name that carries no signal, and for a gift set that
+          // carries both.
+          render: (r) => (r.suggested
+            ? tag(t(`gender${genderKey(r.suggested)}`), 'gold')
+            : h('span', { class: 'muted' }, '—')),
+        },
+        {
+          key: 'choice',
+          label: t('genderSetTo'),
+          width: '1%',
+          render: (r) => selectInput({
+            value: chosen.get(r.id) || r.gender,
+            options: [
+              { value: 'women', label: t('genderWomen') },
+              { value: 'men', label: t('genderMen') },
+              { value: 'unisex', label: t('genderUnisex') },
+            ],
+            onchange: (event) => chosen.set(r.id, event.target.value),
+          }),
+        },
+      ],
+      rows,
+      empty: t('genderNothingToReview'),
+    }));
+  }
+
+  async function apply() {
+    /*
+     * Only what actually MOVES is sent. A catalogue of three hundred where
+     * eleven need changing is eleven assignments, eleven audit rows and one
+     * short transaction — not three hundred writes that mostly say nothing.
+     */
+    const assignments = state.rows
+      .filter((row) => chosen.get(row.id) && chosen.get(row.id) !== row.gender)
+      .map((row) => ({ id: row.id, gender: chosen.get(row.id) }));
+
+    if (!assignments.length) {
+      toast(t('genderNothingChanged'), 'warn');
+      return;
+    }
+    try {
+      const result = await api.post('/api/products/gender', { assignments });
+      toast(t('genderApplied').replace('{n}', result.changed));
+      dialog.close();
+      invalidate();
+      if (refresh) await refresh();
+    } catch (error) { toastError(error); }
+  }
+
+  await load();
+}
 
 async function openBulkPrice(refresh) {
   const results = h('div');

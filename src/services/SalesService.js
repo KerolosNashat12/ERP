@@ -11,12 +11,20 @@
  * own use-case rather than being bolted on here.
  */
 import repositories from '../infrastructure/repositories/index.js';
+import { returnState } from '../infrastructure/repositories/SalesRepository.js';
 import { transaction } from '../infrastructure/database/connection.js';
 import { BusinessRuleError, NotFoundError, ValidationError } from '../shared/errors.js';
 import { calculateLine, percentOf, round2, round3 } from '../shared/money.js';
+import { offerPrice } from '../shared/pricing.js';
 import inventoryService from './InventoryService.js';
 import promotionService from './PromotionService.js';
 import auditService from './AuditService.js';
+
+/**
+ * What `sales.payment_method` is allowed to hold — the CHECK on that column,
+ * mirrored here so the service can keep to it rather than discover it.
+ */
+const HEADER_METHODS = new Set(['cash', 'card', 'transfer', 'wallet', 'credit', 'mixed']);
 
 export class SalesService {
   constructor(deps = {}) {
@@ -31,8 +39,23 @@ export class SalesService {
     this.audit = deps.audit || auditService;
   }
 
+  /**
+   * The sales screen. Each row carries `return_state` — 'none', 'partial' or
+   * 'full' — worked out from the two sums the query brings back, so the screen
+   * can badge a fully-returned invoice without opening it and without a stored
+   * flag that could disagree with its own lines.
+   */
   async list(query) {
-    return this.sales.listDetailed(query || {});
+    const result = await this.sales.listDetailed(query || {});
+    return {
+      ...result,
+      rows: result.rows.map((row) => ({
+        ...row,
+        return_state: returnState([{
+          quantity: row.sold_units, returned_quantity: row.returned_units,
+        }]),
+      })),
+    };
   }
 
   async get(id) {
@@ -66,9 +89,33 @@ export class SalesService {
     for (const [index, line] of lines.filter((l) => Number(l.quantity) > 0).entries()) {
       const details = await this.variants.details(line.variant_id);
       if (!details) throw new NotFoundError('Variant', line.variant_id);
-      const defaultPrice = useWholesale && details.wholesale_price > 0
-        ? details.wholesale_price
-        : details.selling_price;
+      /*
+       * The shelf price, then the offer on it.
+       *
+       * A wholesale customer keeps the wholesale price and is NOT given the
+       * retail offer on top of it: the offer is the shop's public price for
+       * this week, and wholesale is a different price list altogether. Stacking
+       * the two would quietly sell stock below cost on exactly the orders that
+       * are large enough to matter.
+       *
+       * For everybody else the offer price IS the price. This is the whole
+       * reason it is computed on the server rather than sent by the till: the
+       * browser can be a day out of date, a queued offline sale can be a week
+       * out, and neither may decide what a customer is charged.
+       */
+      const wholesale = useWholesale && details.wholesale_price > 0;
+      const listPrice = round2(wholesale ? details.wholesale_price : details.selling_price);
+      const offer = wholesale
+        ? { price: listPrice, listPrice, onSale: false }
+        : offerPrice(details.selling_price, details);
+      const defaultPrice = offer.price;
+
+      /*
+       * A price typed by hand still wins — a manager knocking money off at the
+       * counter is a real thing this till has always allowed. What it does not
+       * do is erase the record: `list_price` below keeps what the piece was
+       * marked at, whether the difference came from an offer or from a person.
+       */
       const unitPrice = line.unit_price !== undefined && line.unit_price !== null && line.unit_price !== ''
         ? round2(line.unit_price)
         : round2(defaultPrice);
@@ -92,6 +139,10 @@ export class SalesService {
         variant_label: details.variant_label,
         quantity: round3(line.quantity),
         unit_price: unitPrice,
+        // What it was marked at, when that is more than what is being charged.
+        // Zero means "no offer, nothing struck through" — see migration 022.
+        list_price: listPrice > unitPrice ? listPrice : 0,
+        on_offer: Boolean(offer.onSale && unitPrice <= offer.price),
         unit_cost: Number(details.cost_price || 0),
         discount_percent: Number(line.discount_percent || 0),
         discount_amount: computed.discountAmount,
@@ -209,9 +260,21 @@ export class SalesService {
       ).filter((p) => Number(p.amount) > 0);
 
       const paid = round2(payments.reduce((s, p) => s + Number(p.amount), 0));
-      const method = payments.length > 1
+      const tendered = payments.length > 1
         ? 'mixed'
         : (payments[0]?.method || payload.payment_method || 'cash');
+      /*
+       * The header can only say what its own column allows.
+       *
+       * `sale_payments.method` is free text and carries the truth — including
+       * kinds the header has never heard of, like `exchange_credit`, where part
+       * of an invoice is paid for by goods that came back. A payment kind this
+       * column does not know reads as `mixed`, which is honest (it was settled
+       * by something other than one plain tender) and, more to the point, keeps
+       * a CHECK constraint that exists on every live database from refusing the
+       * write. The detail is one join away and always exact.
+       */
+      const method = HEADER_METHODS.has(tendered) ? tendered : 'mixed';
       const isCredit = method === 'credit' || paid < totals.totalAmount;
 
       if (isCredit && !customer) {
@@ -226,7 +289,7 @@ export class SalesService {
         }
       }
 
-      const change = method === 'cash' && paid > totals.totalAmount
+      const change = tendered === 'cash' && paid > totals.totalAmount
         ? round2(paid - totals.totalAmount)
         : 0;
       const settled = round2(Math.min(paid, totals.totalAmount));
@@ -266,6 +329,7 @@ export class SalesService {
         description: l.description,
         quantity: l.quantity,
         unit_price: l.unit_price,
+        list_price: Number(l.list_price || 0),
         unit_cost: l.unit_cost,
         discount_percent: l.discount_percent,
         discount_amount: round2(l.discount_amount + l.allocated_order_discount),

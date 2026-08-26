@@ -37,6 +37,7 @@
  * a file that has to be built inside a function's memory limit.
  */
 import { buildWorkbook, MAX_SHEET_ROWS } from '../shared/workbook.js';
+import { offerRunning, offerPrice } from '../shared/pricing.js';
 
 /** How many rows one lookup map may hold before it stops learning names. */
 const MAX_LOOKUP = Number(process.env.MM_EXPORT_MAX_LOOKUP || 250_000);
@@ -77,6 +78,10 @@ const WORDS = {
   partial: ['Partial', 'جزئي'],
   paid: ['Paid', 'مدفوع'],
   unpaid: ['Unpaid', 'غير مدفوع'],
+  // products.gender
+  women: ['Women', 'حريمي'],
+  men: ['Men', 'رجالي'],
+  unisex: ['Unisex', 'للجنسين'],
   // payment methods
   cash: ['Cash', 'نقدًا'],
   card: ['Card', 'بطاقة'],
@@ -105,6 +110,29 @@ const WORDS = {
   wholesale: ['Wholesale', 'جملة'],
 };
 
+/**
+ * An offer, in one cell: "20% off, to 30 Aug" or "100 off". Empty when there is
+ * none, so the column is quiet on the vast majority of rows.
+ *
+ * A date is written as it is stored — a plain day — rather than formatted:
+ * this cell is read beside a price, not parsed, and a shop comparing two
+ * exports wants the same characters both times.
+ */
+function offerWord(product, lang) {
+  const type = String(product?.discount_type || 'none');
+  const value = Number(product?.discount_value || 0);
+  if ((type !== 'percent' && type !== 'amount') || !(value > 0)) return '';
+  const head = type === 'percent'
+    ? (lang === 'ar' ? `خصم ${value}٪` : `${value}% off`)
+    : (lang === 'ar' ? `خصم ${value}` : `${value} off`);
+  const from = product.discount_starts_on || null;
+  const to = product.discount_ends_on || null;
+  if (from && to) return `${head} (${from} → ${to})`;
+  if (to) return `${head} (→ ${to})`;
+  if (from) return `${head} (${from} →)`;
+  return head;
+}
+
 const word = (value, lang) => {
   if (value === null || value === undefined || value === '') return '';
   const entry = WORDS[String(value)];
@@ -131,6 +159,10 @@ const SHEETS = [
       ['Supplier', 'المورد'], ['Unit', 'الوحدة'], ['Cost', 'التكلفة'],
       ['Selling price', 'سعر البيع'], ['Wholesale', 'سعر الجملة'],
       ['On hand', 'الرصيد'], ['Reorder level', 'حد إعادة الطلب'], ['Active', 'مفعّل'],
+      // Round 14. Appended rather than inserted: a shop opens last month's
+      // workbook beside this month's, and a column that moved is a column two
+      // spreadsheets disagree about.
+      ['For', 'لمين'], ['Offer', 'العرض'], ['Offer price', 'سعر العرض'],
     ],
   },
   {
@@ -168,7 +200,8 @@ const SHEETS = [
     labels: [
       ['Invoice', 'رقم الفاتورة'], ['Date', 'التاريخ'], ['SKU', 'الكود'],
       ['Description', 'الصنف'], ['Quantity', 'الكمية'], ['Returned', 'المرتجع'],
-      ['Unit price', 'سعر الوحدة'], ['Discount', 'الخصم'], ['Tax', 'الضريبة'],
+      ['Unit price', 'سعر الوحدة'], ['Was', 'السعر قبل العرض'],
+      ['Discount', 'الخصم'], ['Tax', 'الضريبة'],
       ['Line total', 'إجمالي البند'],
     ],
   },
@@ -390,6 +423,11 @@ export class SheetCollector {
       category: this.#lookup.categories.get(row.category_id) || '',
       supplier: this.#lookup.suppliers.get(row.supplier_id) || '',
       unit: row.unit,
+      gender: row.gender || 'unisex',
+      discount_type: row.discount_type || 'none',
+      discount_value: Number(row.discount_value || 0),
+      discount_starts_on: row.discount_starts_on || null,
+      discount_ends_on: row.discount_ends_on || null,
     });
   }
 
@@ -403,6 +441,11 @@ export class SheetCollector {
       // Filled in by `finish()`: stock_levels is read long after this row.
       { stockFor: row.id },
       num(row.reorder_level), yes(row.is_active, this.lang),
+      word(product.gender || 'unisex', this.lang),
+      offerWord(product, this.lang),
+      // What it actually sells for today, so the sheet answers the question
+      // rather than making the reader apply a percentage by hand.
+      offerRunning(product) ? num(offerPrice(row.selling_price, product).price) : '',
     ]);
   }
 
@@ -411,7 +454,7 @@ export class SheetCollector {
   _promotions(row) {
     this.#push('promotions', [
       row.code, this.#pick(row), row.kind,
-      row.discount_type === 'percent' ? `${num(row.value)}%` : num(row.value),
+      row.discount_type === 'percentage' ? `${num(row.value)}%` : num(row.value),
       day(row.starts_at), day(row.ends_at), num(row.usage_count),
       yes(row.is_active, this.lang),
     ]);
@@ -437,6 +480,9 @@ export class SheetCollector {
     this.#push('saleLines', [
       sale.invoice || '', day(sale.date), row.sku, row.description,
       num(row.quantity), num(row.returned_quantity), num(row.unit_price),
+      // Blank rather than zero when there was no offer: a column of zeroes
+      // reads as "everything was free before", which is worse than a gap.
+      Number(row.list_price) > 0 ? num(row.list_price) : '',
       num(row.discount_amount), num(row.tax_amount), num(row.line_total),
     ]);
   }

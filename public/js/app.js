@@ -21,6 +21,7 @@ import { purchasesView } from './views/purchasing.js';
 import { salesView } from './views/sales.js';
 import { webOrdersView } from './views/webOrders.js';
 import { returnsView } from './views/returns.js';
+import exchangesRouter from './views/exchange.js';
 import { promotionsView } from './views/promotions.js';
 import { reportsView } from './views/reports.js';
 import { costsView, costCategoriesView } from './views/costs.js';
@@ -40,6 +41,7 @@ const NAV = [
       { path: 'pos', label: 'pos', icon: '▤', permission: 'sales.create' },
       { path: 'sales', label: 'sales', icon: '₪', permission: 'sales.view' },
       { path: 'returns', label: 'returns', icon: '↩', permission: 'sales.view' },
+      { path: 'exchanges', label: 'exchanges', icon: '⇄', permission: 'sales.view' },
       {
         path: 'web-orders',
         label: 'webOrders',
@@ -175,6 +177,7 @@ const navItemVisible = (item) => can(item.permission) && moduleEnabled(item.perm
 
 const ROUTE_PERMISSIONS = {
   dashboard: 'dashboard.view', pos: 'sales.create', sales: 'sales.view', returns: 'sales.view',
+  exchanges: 'sales.view',
   'web-orders': 'weborders.view',
   products: 'products.view', brands: 'brands.view', categories: 'categories.view',
   attributes: 'attributes.view', labels: 'labels.view', inventory: 'inventory.view',
@@ -334,6 +337,7 @@ async function startApp() {
     pos: posView,
     sales: salesView,
     returns: returnsView,
+    exchanges: exchangesRouter,
     'web-orders': webOrdersView,
     products: productsView,
     brands: brandsView,

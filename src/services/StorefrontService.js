@@ -33,6 +33,7 @@
  */
 import { getDb, currentTenant } from '../infrastructure/database/connection.js';
 import { NotFoundError } from '../shared/errors.js';
+import { GENDERS, offerPrice } from '../shared/pricing.js';
 import { buildBranding, companyNameFrom } from '../shared/branding.js';
 
 /** Settings the storefront reads. Listed so `config()` can fetch them in one query. */
@@ -163,6 +164,28 @@ const FEATURED_DAYS = 90;
 const PUBLISHED_PRODUCT = `
   p.is_active = 1
   AND p.is_published = 1
+  /*
+   * Deleted is deleted, on the public side too.
+   *
+   * This gate is the storefront's own — deliberately not the ERP's shared
+   * predicate, because it must never reveal an unpublished product — so the
+   * recycle bin has to be named here as well. It was not, and a product the
+   * shop had deleted went on being offered for sale on the website while the
+   * ERP had already hidden it. The bin is the one place that decides what
+   * "deleted" means; every screen, public or private, asks it the same way.
+   *
+   * The brand and the category are asked too: a brand in the bin must not lead
+   * a shopper to a page of products that are still perfectly published.
+   */
+  AND NOT EXISTS (SELECT 1 FROM trash_items tp
+                   WHERE tp.entity_type = 'product' AND tp.entity_id = p.id
+                     AND tp.status = 'in_bin')
+  AND NOT EXISTS (SELECT 1 FROM trash_items tb
+                   WHERE tb.entity_type = 'brand' AND tb.entity_id = p.brand_id
+                     AND tb.status = 'in_bin')
+  AND NOT EXISTS (SELECT 1 FROM trash_items tc
+                   WHERE tc.entity_type = 'category' AND tc.entity_id = p.category_id
+                     AND tc.status = 'in_bin')
   AND (p.brand_id IS NULL OR EXISTS (
         SELECT 1 FROM brands bg WHERE bg.id = p.brand_id AND bg.is_published = 1))
   AND (p.category_id IS NULL OR EXISTS (
@@ -170,6 +193,103 @@ const PUBLISHED_PRODUCT = `
   AND EXISTS (
         SELECT 1 FROM product_variants vg WHERE vg.product_id = p.id AND vg.is_active = 1)
 `;
+
+
+/**
+ * One value, several comma-separated values, or an array — all read as a list.
+ *
+ * `?gender=women&gender=men`, `?gender=women,men` and a JSON array from the
+ * favourites page all mean the same thing to a shopper, so they mean the same
+ * thing here. Blank entries are dropped, which is what an untouched checkbox
+ * group sends.
+ */
+const asList = (value) => (Array.isArray(value) ? value : String(value ?? '').split(','))
+  .map((entry) => String(entry).trim())
+  .filter(Boolean);
+
+/** A checkbox, over a query string: `1`, `true`, `on` and `yes` all mean yes. */
+const isTrue = (value) => ['1', 'true', 'on', 'yes'].includes(String(value ?? '').toLowerCase());
+
+
+/**
+ * The two prices a card shows, from the one rule.
+ *
+ * `price_from` / `price_to` are always WHAT IS CHARGED — so a page that knows
+ * nothing about offers still prints the right number — and the old prices ride
+ * alongside them, present only when there is a real saving to show. That is
+ * deliberate: a card cannot accidentally strike through a price that is not
+ * actually lower, because when the offer is off these fields are simply not
+ * there.
+ *
+ * `discount_percent` is a whole number for the badge. It is computed from the
+ * range's LOW end, which is the number the card leads with; a product whose
+ * variants are priced differently discounts them all at the same rate anyway,
+ * so the badge is true of every one of them.
+ */
+function cardPricing(row) {
+  const from = offerPrice(row.price_from, row);
+  const to = offerPrice(row.price_to, row);
+  if (!from.onSale && !to.onSale) {
+    return {
+      price_from: money(row.price_from),
+      price_to: money(row.price_to),
+      on_sale: false,
+      discount_percent: 0,
+    };
+  }
+  return {
+    price_from: money(from.price),
+    price_to: money(to.price),
+    list_price_from: money(from.listPrice),
+    list_price_to: money(to.listPrice),
+    on_sale: true,
+    discount_percent: from.percent || to.percent,
+  };
+}
+
+/**
+ * Is this product's offer running today, in SQL?
+ *
+ * The same four conditions as `offerRunning` in shared/pricing.js, in the one
+ * place a filter, a facet count and a sort need them — everything a shopper
+ * SEES is still priced by the JavaScript rule, so there is exactly one
+ * implementation of the arithmetic; this is only for the questions a database
+ * has to answer for itself: which rows are on sale, and in what order.
+ *
+ * `date('now')` is UTC, and so is the `today()` the JavaScript side uses. That
+ * they agree is the point; that Cairo is two or three hours ahead of both means
+ * an offer set to end "on the 30th" stops at 2 or 3 a.m. on the 31st local
+ * time, which is a shop's quiet hour and the safe direction to be wrong in.
+ */
+const OFFER_RUNNING = `
+  p.discount_type <> 'none'
+  AND p.discount_value > 0
+  AND (p.discount_starts_on IS NULL OR date(p.discount_starts_on) <= date('now'))
+  AND (p.discount_ends_on   IS NULL OR date(p.discount_ends_on)   >= date('now'))
+`;
+
+/**
+ * A price with the offer applied, in SQL. `price` is any expression in pounds.
+ *
+ * Mirrors `offerPrice()` clause for clause: a percent is clamped to 0–100, an
+ * amount is clamped to the price itself, the floor is zero and the result is
+ * rounded to two decimals. A price filter that disagreed with the price on the
+ * card by one piastre would put a product outside a range the shopper can see
+ * it inside, which is the kind of bug that gets reported as "your filter is
+ * broken" and is impossible to reproduce by hand.
+ */
+const offerPriceSql = (price) => `
+  CASE WHEN ${OFFER_RUNNING} THEN
+    CASE WHEN p.discount_type = 'percent'
+      THEN ROUND(MAX(${price} - ROUND(${price} * (MIN(MAX(p.discount_value, 0), 100) / 100.0), 2), 0), 2)
+      ELSE ROUND(MAX(${price} - MIN(MAX(p.discount_value, 0), ${price}), 0), 2)
+    END
+  ELSE ${price} END
+`;
+
+/** The lowest price a shopper would actually pay for this product today. */
+const EFFECTIVE_PRICE_FROM = offerPriceSql(`(SELECT MIN(vp.selling_price) FROM product_variants vp
+    WHERE vp.product_id = p.id AND vp.is_active = 1)`);
 
 /**
  * The product card. Prices are the min/max across ACTIVE variants only, so a
@@ -195,6 +315,15 @@ const CARD_COLUMNS = `
     WHERE vp.product_id = p.id AND vp.is_active = 1) AS price_from,
   (SELECT MAX(vp.selling_price) FROM product_variants vp
     WHERE vp.product_id = p.id AND vp.is_active = 1) AS price_to,
+  -- Who it is for, and the offer on it. The card sends both what is charged
+  -- and what it was; the arithmetic that turns these four columns into those
+  -- two numbers is offerPrice() in shared/pricing.js, applied once, in
+  -- withAvailability below.
+  p.gender            AS gender,
+  p.discount_type     AS discount_type,
+  p.discount_value    AS discount_value,
+  p.discount_starts_on AS discount_starts_on,
+  p.discount_ends_on  AS discount_ends_on,
   COALESCE(
     (SELECT ip.id FROM product_images ip
       WHERE ip.id = p.primary_image_id AND ip.product_id = p.id),
@@ -211,9 +340,20 @@ const CARD_FROM = `
 /** Whitelist — the sort key arrives from a query string and is never interpolated. */
 const SORTS = {
   newest: 'COALESCE(p.published_at, p.created_at) DESC, p.id DESC',
-  price_asc: 'price_from ASC, p.id DESC',
-  price_desc: 'price_from DESC, p.id DESC',
+  /*
+   * Sorted by what the shopper would PAY, not by the ticket price — a piece
+   * marked 3,200 and selling at 800 belongs at the cheap end of "price: low to
+   * high", which is the only reading of that control that is not a lie.
+   */
+  price_asc: 'effective_price ASC, p.id DESC',
+  price_desc: 'effective_price DESC, p.id DESC',
   name: 'p.name_en COLLATE NOCASE ASC, p.id DESC',
+  // Biggest saving first. Only meaningful next to the "on sale" filter, and
+  // ordered by the RATE rather than the money so a 50%-off 200 beats a
+  // 5%-off 3,000 — which is how a shopper reads a sale rail.
+  discount: `CASE WHEN ${OFFER_RUNNING} THEN 0 ELSE 1 END ASC,
+             CASE WHEN p.discount_type = 'percent' THEN p.discount_value ELSE 0 END DESC,
+             p.id DESC`,
 };
 
 /** 'in_stock' beats 'low' beats 'out' when rolling variants up to their product. */
@@ -500,6 +640,9 @@ export class StorefrontService {
       FROM categories c
       WHERE c.is_active = 1
         AND c.is_published = 1
+        AND NOT EXISTS (SELECT 1 FROM trash_items tc
+                         WHERE tc.entity_type = 'category' AND tc.entity_id = c.id
+                           AND tc.status = 'in_bin')
         AND EXISTS (SELECT 1 FROM products p
                      WHERE p.category_id = c.id AND ${PUBLISHED_PRODUCT})
       ORDER BY c.display_order, c.name_en COLLATE NOCASE
@@ -527,6 +670,9 @@ export class StorefrontService {
       FROM brands b
       WHERE b.is_active = 1
         AND b.is_published = 1
+        AND NOT EXISTS (SELECT 1 FROM trash_items tb2
+                         WHERE tb2.entity_type = 'brand' AND tb2.entity_id = b.id
+                           AND tb2.status = 'in_bin')
         AND EXISTS (SELECT 1 FROM products p
                      WHERE p.brand_id = b.id AND ${PUBLISHED_PRODUCT})
       ORDER BY b.name_en COLLATE NOCASE
@@ -535,27 +681,252 @@ export class StorefrontService {
 
   // ---------------------------------------------------------------- browsing
 
+
+  /**
+   * The checkbox half of the filter panel, turned into SQL.
+   *
+   * One method rather than five inline blocks, because the LISTING and the
+   * FACET COUNTS have to agree exactly: a panel that says "على الخصم (7)" and
+   * then shows six products is a panel nobody trusts a second time.
+   *
+   * Every value is bound, never interpolated — these arrive from a query string
+   * a stranger controls. The attribute ids are the only list, and they are
+   * mapped through `Number` and filtered to real integers before a single one
+   * reaches a placeholder.
+   */
+  async #facetClauses({ gender, onSale, minPrice, maxPrice, attr, inStock } = {}) {
+    const where = [];
+    const params = [];
+
+    const genders = asList(gender).filter((value) => GENDERS.includes(value));
+    if (genders.length) {
+      where.push(`p.gender IN (${genders.map(() => '?').join(', ')})`);
+      params.push(...genders);
+    }
+
+    if (isTrue(onSale)) where.push(`(${OFFER_RUNNING})`);
+
+    // Against the price she would pay, offer included. See the doc above.
+    const min = Number(minPrice);
+    if (Number.isFinite(min) && min > 0) {
+      where.push(`${EFFECTIVE_PRICE_FROM} >= ?`);
+      params.push(min);
+    }
+    const max = Number(maxPrice);
+    if (Number.isFinite(max) && max > 0) {
+      where.push(`${EFFECTIVE_PRICE_FROM} <= ?`);
+      params.push(max);
+    }
+
+    /*
+     * Attribute values: OR inside one attribute, AND across attributes.
+     * The grouping is done by reading each value's own attribute out of the
+     * database rather than trusting the shape of the query string, so
+     * `attr=3,4` behaves identically whether 3 and 4 are two sizes or a size
+     * and a colour.
+     */
+    const values = asList(attr).map((value) => Number(value))
+      .filter((value) => Number.isInteger(value) && value > 0);
+    if (values.length) {
+      const groups = await this.#groupAttributeValues(values);
+      for (const group of groups) {
+        where.push(`EXISTS (
+          SELECT 1 FROM variant_attribute_values vav
+            JOIN product_variants vv ON vv.id = vav.variant_id
+           WHERE vv.product_id = p.id AND vv.is_active = 1
+             AND vav.attribute_value_id IN (${group.map(() => '?').join(', ')})
+        )`);
+        params.push(...group);
+      }
+    }
+
+    if (isTrue(inStock)) {
+      /*
+       * "On the shelf" means unreserved. A piece already promised to an order
+       * that has not gone out yet is not available to the next shopper, and a
+       * filter that counted it would send her to a product page that says
+       * غير متوفر — worse than not showing it at all.
+       */
+      where.push(`EXISTS (
+        SELECT 1 FROM product_variants vs
+          JOIN stock_levels sls ON sls.variant_id = vs.id
+         WHERE vs.product_id = p.id AND vs.is_active = 1
+           AND (sls.quantity - sls.reserved_quantity) > 0
+      )`);
+    }
+
+    return { where, params };
+  }
+
+  /**
+   * Attribute value ids, split into one list per attribute they belong to.
+   *
+   * An id the shop does not have is dropped rather than refused: these come out
+   * of a URL somebody may have bookmarked before the shop tidied its
+   * attributes, and a stale link should show a wider result, never an error
+   * page.
+   */
+  async #groupAttributeValues(ids) {
+    const rows = await this.db.prepare(`
+      SELECT id, attribute_id FROM attribute_values
+       WHERE id IN (${ids.map(() => '?').join(', ')})
+    `).all(...ids);
+    const byAttribute = new Map();
+    for (const row of rows) {
+      const list = byAttribute.get(row.attribute_id);
+      if (list) list.push(row.id);
+      else byAttribute.set(row.attribute_id, [row.id]);
+    }
+    return [...byAttribute.values()];
+  }
+
+
+  /**
+   * What the filter panel is built from: every option a shopper can tick, with
+   * how many products are behind each one.
+   *
+   * ── The counting rule, stated because it is a choice ────────────────────
+   * Counts are measured against the SCOPE the shopper is in — this category,
+   * this brand, this search — but NOT against the boxes she has already
+   * ticked. Tick «حريمي» and the price range still says how many pieces the
+   * shop has in each band overall.
+   *
+   * The alternative, recounting every facet against every other filter, is what
+   * the big shops do and it costs one query per dimension per keystroke. For a
+   * shop this size it would buy a subtlety nobody has asked for, at the price
+   * of a filter panel that flickers. What it must never do is claim a count
+   * the listing then contradicts, and it cannot: both are built from
+   * `#facetClauses`, over the same scope, in the same file.
+   *
+   * The price band comes back as the real minimum and maximum a shopper would
+   * PAY, so the two ends of a slider are always reachable.
+   */
+  async filters({ category, brand, q } = {}) {
+    const where = [PUBLISHED_PRODUCT];
+    const params = [];
+
+    const categoryId = toInt(category, null);
+    if (categoryId) { where.push('p.category_id = ?'); params.push(categoryId); }
+    const brandId = toInt(brand, null);
+    if (brandId) { where.push('p.brand_id = ?'); params.push(brandId); }
+    const term = String(q ?? '').trim();
+    if (term) {
+      where.push(`(p.name_en LIKE ? ESCAPE '\\'
+               OR p.name_ar LIKE ? ESCAPE '\\'
+               OR p.tags    LIKE ? ESCAPE '\\')`);
+      const like = likeTerm(term);
+      params.push(like, like, like);
+    }
+    const whereSql = `WHERE ${where.join(' AND ')}`;
+
+    const [genders, sale, band, attributes] = await Promise.all([
+      this.db.prepare(`
+        SELECT p.gender AS gender, COUNT(*) AS product_count
+        ${CARD_FROM} ${whereSql}
+        GROUP BY p.gender
+      `).all(...params),
+
+      this.db.prepare(`
+        SELECT COUNT(*) AS product_count
+        ${CARD_FROM} ${whereSql} AND ${OFFER_RUNNING}
+      `).get(...params),
+
+      this.db.prepare(`
+        SELECT MIN(${EFFECTIVE_PRICE_FROM}) AS min_price,
+               MAX(${EFFECTIVE_PRICE_FROM}) AS max_price
+        ${CARD_FROM} ${whereSql}
+      `).get(...params),
+
+      /*
+       * Only attributes the shop actually uses on products a shopper can see —
+       * a colour nobody has stocked is a dead checkbox, and a filter panel full
+       * of them is how a small catalogue looks empty.
+       */
+      this.db.prepare(`
+        SELECT a.id        AS attribute_id,
+               a.code      AS attribute_code,
+               a.name_en   AS attribute_name_en,
+               a.name_ar   AS attribute_name_ar,
+               a.input_type AS input_type,
+               av.id       AS value_id,
+               av.value_en AS value_en,
+               av.value_ar AS value_ar,
+               av.color_hex AS color_hex,
+               COUNT(DISTINCT p.id) AS product_count
+        FROM attribute_values av
+        JOIN attributes a ON a.id = av.attribute_id AND a.is_active = 1
+        JOIN variant_attribute_values vav ON vav.attribute_value_id = av.id
+        JOIN product_variants pv ON pv.id = vav.variant_id AND pv.is_active = 1
+        JOIN products p ON p.id = pv.product_id
+        LEFT JOIN brands b ON b.id = p.brand_id
+        ${whereSql.replace('WHERE', 'WHERE av.is_active = 1 AND')}
+        GROUP BY av.id
+        HAVING product_count > 0
+        ORDER BY a.display_order, a.id, av.display_order, av.id
+      `).all(...params),
+    ]);
+
+    const byAttribute = new Map();
+    for (const row of attributes) {
+      const key = row.attribute_id;
+      if (!byAttribute.has(key)) {
+        byAttribute.set(key, {
+          id: key,
+          code: row.attribute_code,
+          name_en: row.attribute_name_en,
+          name_ar: row.attribute_name_ar,
+          input_type: row.input_type,
+          values: [],
+        });
+      }
+      byAttribute.get(key).values.push({
+        id: row.value_id,
+        value_en: row.value_en,
+        value_ar: row.value_ar,
+        color_hex: row.color_hex,
+        product_count: Number(row.product_count || 0),
+      });
+    }
+
+    const counts = new Map(genders.map((row) => [row.gender, Number(row.product_count || 0)]));
+    return {
+      genders: GENDERS
+        .map((value) => ({ value, product_count: counts.get(value) || 0 }))
+        .filter((row) => row.product_count > 0),
+      onSale: Number(sale?.product_count || 0),
+      price: {
+        min: Math.floor(Number(band?.min_price || 0)),
+        max: Math.ceil(Number(band?.max_price || 0)),
+      },
+      attributes: [...byAttribute.values()],
+    };
+  }
+
   /**
    * The catalogue listing: filter, sort, paginate.
    *
-   * Three queries, whatever the page size: a count, the page itself, and one
-   * variant query for the whole page. The obvious version — loop the products
-   * and ask for each one's stock — is N+1, and on a networked database that is
-   * N round trips of latency on the shop's busiest public page. So the page's
-   * ids go into a single `WHERE product_id IN (...)` and the rows are stitched
-   * together here.
-   *
-   * `ids` is the favourites page's lookup and it OUTRANKS everything else. When
-   * it is present, `category`, `brand`, `q`, `sort`, `page` and `pageSize` are
-   * all ignored — the caller named the exact products it wants, so there is
-   * nothing left to filter, nothing left to sort (the customer's own order IS
-   * the sort) and nothing left to page through (`MAX_IDS` is the whole answer).
-   * Silently ignoring them beats honouring them: `?ids=…&category=3` returning
-   * two of a customer's twelve favourites, with no way to tell that from a shop
-   * that unpublished ten, is the kind of half-answer a page would render as
-   * fact. One meaning per request.
+   * ── The filters, and what each one means ────────────────────────────────
+   *   gender    'women' | 'men' | 'unisex', or several at once. Several means
+   *             OR, because a shopper ticking two boxes is widening her search,
+   *             never narrowing it to products that are somehow both.
+   *   onSale    only what is discounted TODAY.
+   *   minPrice  measured against what she would PAY, offer included. A filter
+   *   maxPrice  that measured the ticket price would hide a 3,200 bottle
+   *             selling at 800 from somebody shopping under 1,000 — the exact
+   *             shopper the offer exists to catch.
+   *   attr      attribute value ids (size, colour, concentration...). Values of
+   *             the SAME attribute are OR — 30ml or 50ml — and different
+   *             attributes are AND — 30ml AND black. That is what every shop
+   *             online does, and doing anything else makes a filter panel feel
+   *             broken without the shopper being able to say why.
+   *   inStock   something on the shelf right now. Uses the same reservation
+   *             maths the product page shows, so it cannot promise a piece the
+   *             checkout would then refuse.
    */
-  async products({ category, brand, q, sort, page, pageSize, ids } = {}) {
+  async products({
+    category, brand, q, sort, page, pageSize, ids,
+    gender, onSale, minPrice, maxPrice, attr, inStock,
+  } = {}) {
     const wanted = parseIds(ids);
     if (wanted) {
       // The publish gate lives inside `#cardsByIds`, so a product the shop has
@@ -589,6 +960,12 @@ export class StorefrontService {
       params.push(like, like, like);
     }
 
+    const facet = await this.#facetClauses({
+      gender, onSale, minPrice, maxPrice, attr, inStock,
+    });
+    where.push(...facet.where);
+    params.push(...facet.params);
+
     const whereSql = `WHERE ${where.join(' AND ')}`;
     const orderSql = SORTS[sort] || SORTS.newest;
     const size = Math.min(Math.max(toInt(pageSize, DEFAULT_PAGE_SIZE), 1), MAX_PAGE_SIZE);
@@ -600,7 +977,8 @@ export class StorefrontService {
     const total = Number(counted?.n || 0);
 
     const rows = await this.db.prepare(`
-      SELECT ${CARD_COLUMNS}
+      SELECT ${CARD_COLUMNS},
+             ${EFFECTIVE_PRICE_FROM} AS effective_price
       ${CARD_FROM}
       ${whereSql}
       ORDER BY ${orderSql}
@@ -659,18 +1037,27 @@ export class StorefrontService {
       brand_name_en: row.brand_name_en,
       brand_name_ar: row.brand_name_ar,
       category_id: row.category_id,
-      price_from: money(row.price_from),
-      price_to: money(row.price_to),
+      ...cardPricing(row),
+      gender: row.gender || 'unisex',
       image_id: row.image_id,
       availability: rollUp(variants),
       description_en: row.description_en,
       description_ar: row.description_ar,
       tax_rate: Number(row.tax_rate || 0),
       images,
-      variants: variants.map((v) => ({
+      variants: variants
+        .map((v) => ({ ...v, offer: offerPrice(v.price, row) }))
+        .map((v) => ({
         id: v.id,
         label: v.label,
-        price: money(v.price),
+        /*
+         * Every variant is priced by the same rule as the card above it, so
+         * choosing 50ml on a product that is 20% off shows the 50ml offer
+         * price — not the ticket price, and not the 30ml one. `list_price` is
+         * present only while an offer runs, for the struck-through number.
+         */
+        price: money(v.offer.price),
+        list_price: v.offer.onSale ? money(v.offer.listPrice) : null,
         availability: v.availability,
         image_id: v.image_id,
         /**
@@ -794,8 +1181,8 @@ export class StorefrontService {
       brand_name_en: row.brand_name_en,
       brand_name_ar: row.brand_name_ar,
       category_id: row.category_id,
-      price_from: money(row.price_from),
-      price_to: money(row.price_to),
+      ...cardPricing(row),
+      gender: row.gender || 'unisex',
       image_id: row.image_id,
       availability: rollUp(byProduct.get(row.id) || []),
     }));

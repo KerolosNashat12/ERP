@@ -334,6 +334,30 @@ async function newReturnView(root) {
           state.invoice.outsideWindow
             ? tag(`${t('outsideWindow')} (${state.invoice.ageDays} ${t('days')})`, 'danger')
             : tag(`${state.invoice.ageDays} ${t('daysOld')}`, 'ok'),
+          /*
+           * "Return the whole invoice" — one press, every returnable line at
+           * its full remaining quantity.
+           *
+           * It fills the form rather than submitting it: the cashier still
+           * chooses the refund method, still marks anything damaged, and still
+           * sees the total before committing. A button that both decided and
+           * submitted would be the only irreversible action on this screen
+           * reachable without reading anything.
+           *
+           * "Returnable" and not "sold": on an invoice that is already half
+           * returned this takes the half that is left, which is what the words
+           * mean to the person pressing it.
+           */
+          state.lines.length
+            ? h('button', {
+              class: 'btn sm',
+              onclick: () => {
+                for (const line of state.lines) line.quantity = line.returnable_quantity;
+                render();
+                toast(t('wholeInvoiceFilled'));
+              },
+            }, t('returnWholeInvoice'))
+            : null,
           h('button', {
             class: 'btn sm ghost',
             onclick: () => { state.invoice = null; state.lines = []; render(); },

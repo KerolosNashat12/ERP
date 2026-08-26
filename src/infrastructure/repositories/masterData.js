@@ -4,6 +4,7 @@
  */
 import { BaseRepository } from './BaseRepository.js';
 import { getDb } from '../database/connection.js';
+import { notInBin } from '../../shared/trashFilter.js';
 
 export class SupplierRepository extends BaseRepository {
   constructor() {
@@ -50,6 +51,7 @@ export class BrandRepository extends BaseRepository {
              (SELECT COUNT(*) FROM products p WHERE p.brand_id = b.id) AS product_count
       FROM brands b
       LEFT JOIN suppliers s ON s.id = b.supplier_id
+      WHERE ${notInBin('brand', 'b.id')}
       ORDER BY b.name_en
     `).all();
   }
@@ -72,6 +74,7 @@ export class CategoryRepository extends BaseRepository {
              (SELECT COUNT(*) FROM products pr WHERE pr.category_id = c.id) AS product_count
       FROM categories c
       LEFT JOIN categories p ON p.id = c.parent_id
+      WHERE ${notInBin('category', 'c.id')}
       ORDER BY COALESCE(c.parent_id, c.id), c.name_en
     `).all();
     return rows;

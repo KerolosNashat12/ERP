@@ -2,6 +2,21 @@
 import { z } from 'zod';
 
 const optionalString = z.string().trim().max(500).optional().nullable();
+
+/**
+ * A plain calendar day on a form, or nothing at all.
+ *
+ * `YYYY-MM-DD` and never a timestamp: an offer that runs "until the 30th" means
+ * the whole of the 30th in the shop's own city, and the moment a time zone
+ * enters the question that sentence stops being true for somebody. An empty
+ * string is normalised to null, because a date field a person cleared means
+ * "no end" and not "the epoch". (`isoDay` further down is the same shape for
+ * payments, minus the empty-string handling a form needs.)
+ */
+const optionalDay = z.preprocess(
+  (value) => (value === '' || value === undefined ? null : value),
+  z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use a date like 2026-08-30').nullable(),
+).default(null);
 const money = z.coerce.number().min(0).default(0);
 const id = z.coerce.number().int().positive();
 
@@ -116,6 +131,23 @@ export const productSchema = z.object({
   is_published: z.coerce.boolean().default(false),
   web_description_en: optionalString,
   web_description_ar: optionalString,
+  /*
+   * Who the piece is for, and what it costs this week.
+   *
+   * Both default to the values every existing product already has, so a caller
+   * written before this release — an offline till replaying a queued save, the
+   * bulk price tool, a script — keeps working and changes nothing by omitting
+   * them. The list of words and the arithmetic behind them live in
+   * shared/pricing.js; this only decides what the API will accept.
+   */
+  gender: z.enum(['women', 'men', 'unisex']).default('unisex'),
+  discount_type: z.enum(['none', 'percent', 'amount']).default('none'),
+  // A percent is a rate and a rate over 100 is always a typo; an amount is
+  // money, and how much of it is too much depends on the variant's own price,
+  // so that one is settled where the price is known (shared/pricing.js).
+  discount_value: z.coerce.number().min(0).default(0),
+  discount_starts_on: optionalDay,
+  discount_ends_on: optionalDay,
   attribute_ids: z.array(id).default([]),
   // May be empty: a product with no attributes gets one default variant made
   // for it, because stock, sales and labels are always keyed to a variant.
@@ -135,6 +167,89 @@ export const productSchema = z.object({
       attribute_value_id: id,
     })).default([]),
   })).default([]),
+})
+  /*
+   * A percentage over 100 is always a typo — an offer that pays the customer to
+   * take the stock away. It is caught HERE rather than in the service because
+   * the answer depends on the OTHER field, which is exactly what a schema-level
+   * refinement is for; the service still clamps when it applies the rate, since
+   * a value can also arrive from an older client that predates this rule.
+   */
+  .refine((value) => value.discount_type !== 'percent' || value.discount_value <= 100, {
+    message: 'A discount cannot be more than 100%',
+    path: ['discount_value'],
+  })
+  /*
+   * And a window that closes before it opens. Refused rather than silently
+   * ignored: a shop that typed the dates backwards meant to run an offer, and
+   * quietly storing one that can never run is worse than saying so.
+   */
+  .refine((value) => !value.discount_starts_on || !value.discount_ends_on
+    || value.discount_ends_on >= value.discount_starts_on, {
+    message: 'The offer ends before it starts',
+    path: ['discount_ends_on'],
+  });
+
+/**
+ * A bulk change: which products, and what about them.
+ *
+ * `changes` is deliberately a partial object rather than a `field` + `value`
+ * pair — the service knows which fields are bulk-editable and how to check
+ * each, and a second field arriving later needs nothing here. `nullable` on the
+ * three ids because clearing a brand is a real thing to want to do to a batch.
+ */
+/**
+ * An exchange: what comes back, what goes out, and how the difference settles.
+ *
+ * Both lists are required and both must have something in them — an "exchange"
+ * with nothing coming back is a sale, and one with nothing going out is a
+ * return, and both of those have their own screens that do them properly.
+ */
+export const exchangeSchema = z.object({
+  sale_id: id.optional().nullable(),
+  invoice_no: optionalString,
+  lines: z.array(z.object({
+    sale_line_id: id,
+    quantity: z.coerce.number().positive('Choose how many are coming back'),
+    condition: z.enum(['resellable', 'damaged']).default('resellable'),
+    notes: optionalString,
+  })).min(1, 'Choose what the customer is bringing back').max(50),
+  replacements: z.array(z.object({
+    variant_id: id,
+    quantity: z.coerce.number().positive('Choose how many are going out'),
+  })).min(1, 'Choose what the customer is taking instead').max(50),
+  // How the DIFFERENCE crosses the counter, in either direction. Not how the
+  // whole replacement is paid for — most of that is the credit.
+  settlement_method: z.enum(['cash', 'card', 'transfer', 'wallet']).default('cash'),
+  reason_code: optionalString,
+  reason_note: optionalString,
+  notes: optionalString,
+}).refine((value) => Boolean(value.sale_id || value.invoice_no), {
+  message: 'Find the original invoice first',
+  path: ['invoice_no'],
+});
+
+export const bulkProductSchema = z.object({
+  ids: z.array(id).min(1, 'Select at least one product').max(500),
+  changes: z.object({
+    gender: z.enum(['women', 'men', 'unisex']).optional(),
+    brand_id: id.nullable().optional(),
+    category_id: id.nullable().optional(),
+    supplier_id: id.nullable().optional(),
+  }).refine((value) => Object.keys(value).length > 0, { message: 'Choose what to change' }),
+});
+
+/**
+ * A page of gender decisions, confirmed at once.
+ *
+ * Capped at 500 so one request cannot be made to rewrite an entire catalogue by
+ * accident; the screen sends a page at a time and the cap is far above it.
+ */
+export const genderAssignSchema = z.object({
+  assignments: z.array(z.object({
+    id,
+    gender: z.enum(['women', 'men', 'unisex']),
+  })).min(1, 'Nothing to classify').max(500),
 });
 
 export const purchaseOrderSchema = z.object({

@@ -161,6 +161,14 @@
   --danger-ink: #8a1c14;
   --info: #1f5fd0;
   --info-soft: #eaf1fe;
+  /* A sale. In the same family and for the same reason: "20% off" means the
+     same thing in every shop, and it has to read as a saving at a glance from
+     across a phone — which is a job for one strong, warm red rather than for
+     whatever hue the shop's accent happens to be. Contrast on white is 4.9:1,
+     and white on the solid version is 4.9:1 the other way, so both the pill and
+     the flash on the photo pass AA at the sizes they are drawn. */
+  --sale-ink: #c0392b;
+  --sale-soft: #fdecea;
 
   /* ====================================================================
      THE RADIUS LADDER. Four rungs and no synonyms.
@@ -2830,3 +2838,221 @@ html[lang="ar"] .foot-col h3 { letter-spacing: .04em; text-transform: none; font
    points towards the end of the line, and in Arabic that is the other way.
    -------------------------------------------------------------------------- */
 [dir="rtl"] .icon-dir { transform: scaleX(-1); }
+
+
+/* =============================================================================
+   OFFERS AND FILTERS  (round 14)
+   ============================================================================= */
+
+/*
+ * A price that is on offer.
+ *
+ * Three parts on one baseline: what it costs now (loud), what it cost before
+ * (quiet, struck), and the saving (a small pill). The order is deliberate — the
+ * new price leads, because that is the number a shopper is deciding on, and the
+ * old one is evidence rather than headline. `flex-wrap` because a range like
+ * "800 – 1,200" beside another range can outgrow a narrow card, and wrapping is
+ * better than shrinking either number.
+ */
+.card-price.is-sale {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--sp-3);
+  line-height: 1.25;
+}
+.price-now { font-weight: 700; color: var(--ink); }
+.price-was {
+  font-size: var(--fs-sm);
+  color: var(--ink-3);
+  text-decoration-thickness: 1px;
+}
+.price-off {
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  color: var(--sale-ink);
+  background: var(--sale-soft);
+  border-radius: var(--radius-pill);
+  padding: 2px var(--sp-3);
+  white-space: nowrap;
+}
+
+/*
+ * The flash on the photo.
+ *
+ * `inset-inline-end`, which is the corner the STOCK badge uses — not the
+ * opposite one, which is where the heart lives. The first cut put it opposite
+ * the stock badge and it landed underneath the favourite button, half hidden,
+ * on every card in the shop. When a card carries both a sale flash and a stock
+ * badge the second one drops below the first, which is what the sibling rule
+ * under this one does.
+ */
+.card-sale {
+  position: absolute;
+  inset-block-start: var(--sp-3);
+  inset-inline-end: var(--sp-3);
+  z-index: 2;
+  background: var(--sale-ink);
+  color: #fff;
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  border-radius: var(--radius-pill);
+  padding: 3px var(--sp-4);
+  letter-spacing: .02em;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .18);
+}
+/* Both at once — "20% off" AND "only a few left" — stack rather than overlap. */
+.card-sale + .card-badge { inset-block-start: calc(var(--sp-3) + 30px); }
+
+/* --------------------------------------------------------------- the panel */
+
+/*
+ * Two columns on a wide screen, one on a phone.
+ *
+ * `minmax(0, 1fr)` on the grid rather than `1fr`: an automatic minimum is the
+ * content's min-content width, which a long product name would push the whole
+ * grid out to — the same trap the dashboard fell into at 390px.
+ */
+.listing-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--sp-6);
+  align-items: start;
+}
+@media (min-width: 900px) {
+  .listing-layout { grid-template-columns: 244px minmax(0, 1fr); }
+}
+
+.listing-tools { display: flex; align-items: center; gap: var(--sp-4); flex-wrap: wrap; }
+
+.filters-panel {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: var(--sp-5);
+  position: sticky;
+  inset-block-start: var(--sp-5);
+  max-block-size: calc(100dvh - var(--sp-8));
+  overflow-y: auto;
+}
+.filter-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  margin-block-end: var(--sp-4);
+}
+.filter-heading { font-size: var(--fs-md); font-weight: 700; margin: 0; }
+.filter-group + .filter-group { margin-block-start: var(--sp-5); padding-block-start: var(--sp-5); border-block-start: 1px solid var(--line); }
+.filter-title {
+  font-size: var(--fs-xs);
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  margin: 0 0 var(--sp-3);
+}
+html[lang="ar"] .filter-title { letter-spacing: 0; text-transform: none; font-size: var(--fs-sm); }
+.filter-options { display: flex; flex-direction: column; gap: var(--sp-1); }
+
+/*
+ * The whole row is the label, so the tap target is the row — the single most
+ * common complaint about filters on a phone, and it costs nothing to fix.
+ */
+.filter-option {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  min-block-size: var(--tap-sm);
+  padding: var(--sp-2) var(--sp-3);
+  margin-inline: calc(var(--sp-3) * -1);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: var(--fs-sm);
+}
+.filter-option input { inline-size: 17px; block-size: 17px; accent-color: var(--accent); flex: none; }
+.filter-label { flex: 1 1 auto; min-inline-size: 0; }
+.filter-count { color: var(--ink-3); font-size: var(--fs-xs); font-variant-numeric: tabular-nums; }
+.filter-swatch {
+  inline-size: 16px; block-size: 16px; flex: none;
+  border-radius: 50%;
+  background: var(--swatch, var(--bg-2));
+  border: 1px solid var(--line);
+}
+
+.filter-price-row { display: flex; align-items: center; gap: var(--sp-3); }
+.filter-price { inline-size: 100%; min-inline-size: 0; }
+.filter-dash { color: var(--ink-3); flex: none; }
+.filter-note { font-size: var(--fs-xs); color: var(--ink-3); margin: var(--sp-3) 0 0; }
+
+/* The sheet: the same panel, on a phone. */
+.filters-toggle { display: none; }
+.filters-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-inline-size: 20px; block-size: 20px;
+  margin-inline-start: var(--sp-3);
+  border-radius: var(--radius-pill);
+  background: var(--accent); color: #fff;
+  font-size: var(--fs-xs); font-weight: 700;
+}
+.filter-close { display: none; }
+.filters-scrim { display: none; }
+
+@media (max-width: 899px) {
+  .filters-toggle { display: inline-flex; align-items: center; }
+  .filters-panel {
+    position: fixed;
+    inset-inline: 0;
+    inset-block-end: 0;
+    z-index: 60;
+    max-block-size: 82dvh;
+    border-radius: var(--radius) var(--radius) 0 0;
+    border-block-end: 0;
+    transform: translateY(101%);
+    visibility: hidden;
+    padding-block-end: calc(var(--sp-6) + env(safe-area-inset-bottom, 0px));
+  }
+  .filters-panel.is-open { transform: translateY(0); visibility: visible; }
+  .filter-close {
+    display: block;
+    position: absolute;
+    inset-block-start: var(--sp-4);
+    inset-inline-end: var(--sp-4);
+    background: none;
+    border: 0;
+    font-size: 20px;
+    line-height: 1;
+    color: var(--ink-2);
+    min-inline-size: var(--tap-sm);
+    min-block-size: var(--tap-sm);
+    cursor: pointer;
+  }
+  body.filters-open .filters-scrim {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 59;
+    background: rgba(0, 0, 0, .38);
+  }
+  /* The page behind a sheet must not scroll under the thumb. */
+  body.filters-open { overflow: hidden; }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .filters-panel { transition: transform var(--dur-base) var(--ease), visibility var(--dur-base); }
+}
+@media (hover: hover) {
+  .filter-option:hover { background: var(--bg); }
+}
+
+/* The product page's own price line, when it is on offer. Same three parts as
+   a card, one size up, and wrapping the same way. */
+.price.is-sale {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--sp-3);
+}
+.price.is-sale .price-off {
+  font-size: var(--fs-sm);
+  padding: 3px var(--sp-4);
+}

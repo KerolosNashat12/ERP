@@ -20,7 +20,14 @@ export const MODULES = {
   // migration 011 for how existing shops are granted them.
   purchases: ['view', 'create', 'update', 'delete', 'receive', 'approve', 'pay', 'reverse_payment'],
   customers: ['view', 'create', 'update', 'delete'],
-  sales: ['view', 'create', 'void', 'return', 'return_no_receipt', 'discount'],
+  /*
+   * `exchange` is its own right rather than a corner of `return`: it hands
+   * goods OUT as well as taking them back, and a shop that lets a junior take
+   * returns may not want them choosing what leaves the shelf in exchange.
+   * Migration 023 grants it to whoever already holds `return`, so no existing
+   * role loses anything the day it appears.
+   */
+  sales: ['view', 'create', 'void', 'return', 'return_no_receipt', 'exchange', 'discount'],
   promotions: ['view', 'create', 'update', 'delete'],
   reports: ['view', 'export'],
   // What the shop spends that is not stock — electricity, rent, taxes, wages.

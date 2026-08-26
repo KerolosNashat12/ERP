@@ -11,6 +11,22 @@ import { navigate } from '../core/router.js';
 import { showReceiptDialog, buildReceipt } from './pos.js';
 import { confirmDelete } from './trash.js';
 
+
+/**
+ * Whether this invoice has had anything back.
+ *
+ * Drawn from `return_state`, which the server derives from the lines
+ * themselves — there is no stored "returned" status to fall out of step with
+ * them. Nothing at all is drawn for an untouched invoice: a badge saying "not
+ * returned" on every row is noise on a screen that is mostly untouched
+ * invoices.
+ */
+const returnTag = (state) => {
+  if (state === 'full') return tag(t('returnedFully'), 'danger');
+  if (state === 'partial') return tag(t('returnedPartly'), 'warn');
+  return null;
+};
+
 export async function salesView(root, route) {
   if (route.segments[1]) return saleDetailView(root, Number(route.segments[1]));
 
@@ -46,7 +62,16 @@ export async function salesView(root, route) {
         { key: 'discount_amount', label: t('discount'), type: 'money', render: (r) => money(r.discount_amount) },
         { key: 'payment_method', label: t('paymentMethod'), render: (r) => tag(t(r.payment_method, r.payment_method)) },
         { key: 'payment_status', label: t('paymentStatus'), render: (r) => statusTag(r.payment_status) },
-        { key: 'status', label: t('status'), render: (r) => statusTag(r.status) },
+        {
+          key: 'status',
+          label: t('status'),
+          // Two facts in one cell: what the invoice is, and whether any of it
+          // came back. The second is the question the counter actually asks
+          // when a customer turns up with a bag and a receipt.
+          render: (r) => h('div', { class: 'row nowrap', style: { gap: '4px' } },
+            statusTag(r.status),
+            returnTag(r.return_state)),
+        },
         { key: 'cashier_name', label: t('cashier'), render: (r) => h('span', { class: 'small muted' }, r.cashier_name || '—') },
       ],
       rows: data.rows,
@@ -105,7 +130,8 @@ async function saleDetailView(root, id) {
     h('div', { class: 'page-head' },
       h('div', {},
         h('h2', {}, `${t('invoice')} ${sale.invoice_no}`),
-        h('p', {}, statusTag(sale.status), ' ', statusTag(sale.payment_status), ' · ',
+        h('p', {}, statusTag(sale.status), ' ', statusTag(sale.payment_status), ' ',
+          returnTag(sale.return_state), ' · ',
           dateTime(sale.sale_date), ' · ', sale.cashier_name || '')),
       h('span', { class: 'spacer' }),
       h('button', { class: 'btn', onclick: () => navigate('sales') }, '‹ ' + t('back')),
@@ -159,7 +185,20 @@ async function saleDetailView(root, id) {
           { key: 'description', label: t('product') },
           { key: 'quantity', label: t('qty'), type: 'number', render: (r) => number(r.quantity) },
           { key: 'returned_quantity', label: t('returns'), type: 'number', render: (r) => (r.returned_quantity ? number(r.returned_quantity) : '—') },
-          { key: 'unit_price', label: t('price'), type: 'money', render: (r) => money(r.unit_price) },
+          {
+            key: 'unit_price',
+            label: t('price'),
+            type: 'money',
+            // What was charged, with what it was marked at above it when the
+            // line was sold on offer. Answers "why is this 800 when the ticket
+            // says 1,000" without anybody having to remember last month.
+            render: (r) => h('div', {},
+              Number(r.list_price) > Number(r.unit_price)
+                ? h('div', { class: 'muted small', style: { textDecoration: 'line-through' } },
+                  money(r.list_price))
+                : null,
+              h('div', {}, money(r.unit_price))),
+          },
           { key: 'discount_amount', label: t('discount'), type: 'money', render: (r) => money(r.discount_amount) },
           { key: 'tax_amount', label: t('tax'), type: 'money', render: (r) => money(r.tax_amount) },
           { key: 'line_total', label: t('total'), type: 'money', render: (r) => h('span', { class: 'strong' }, money(r.line_total)) },

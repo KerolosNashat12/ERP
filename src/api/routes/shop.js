@@ -83,6 +83,34 @@ router.get('/products', asyncHandler(async (req, res) => {
     sort: req.query.sort,
     page: req.query.page,
     pageSize: req.query.pageSize,
+    /*
+     * The filter panel. Every one of these is read, bounded and bound as a
+     * parameter by the service — nothing here is interpolated into SQL, and a
+     * value the shop does not recognise is dropped rather than refused, because
+     * these arrive from a URL somebody may have bookmarked a season ago.
+     */
+    gender: req.query.gender,
+    onSale: req.query.onSale ?? req.query.sale,
+    minPrice: req.query.minPrice,
+    maxPrice: req.query.maxPrice,
+    attr: req.query.attr,
+    inStock: req.query.inStock,
+  }));
+}));
+
+/**
+ * What the filter panel is built from — the options and their counts.
+ *
+ * Its own request rather than a block on `/products`, because it changes at the
+ * speed of the catalogue and the listing changes at the speed of a click: the
+ * panel is fetched once when a shopper opens a listing and then never again
+ * while she narrows it down.
+ */
+router.get('/filters', asyncHandler(async (req, res) => {
+  res.json(await storefront.filters({
+    category: req.query.category,
+    brand: req.query.brand,
+    q: req.query.q,
   }));
 }));
 

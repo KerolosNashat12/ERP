@@ -150,6 +150,14 @@ export const api = {
   brands: () => request('/api/shop/brands'),
   products: (query) => request('/api/shop/products', { query }),
   /**
+   * The options behind the filter panel, with counts.
+   *
+   * Fetched once per listing rather than on every change: the options are a
+   * fact about the shop's catalogue, and only the SCOPE — this category, this
+   * brand, this search — changes what is in them.
+   */
+  filters: (query) => request('/api/shop/filters', { query }),
+  /**
    * The favourites page: exactly these products, in exactly this order.
    *
    * The empty list is answered here rather than on the wire. `request` drops
