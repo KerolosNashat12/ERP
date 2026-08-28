@@ -976,3 +976,32 @@ table.data td select { min-inline-size: 118px; }
 .summary-cards .kpi.is-clickable:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(15, 23, 42, .08); }
 .summary-cards .kpi.is-clickable:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
 .summary-cards .kpi.is-on { border-color: var(--gold); background: var(--gold-soft); }
+
+/* ------------------------------------------------- the phone's side drawer ---
+ * The dimmed area beside an open sidebar.
+ *
+ * It exists at every width but is only visible and only catches a tap under
+ * the phone breakpoint, where the sidebar is a drawer floating over the page.
+ * On a desktop the sidebar is part of the layout and there is nothing to dim.
+ *
+ * `pointer-events` follows visibility exactly. A scrim that is transparent but
+ * still catching clicks is the worst version of this: the page looks fine and
+ * nothing on it works.
+ */
+.sidebar-scrim { display: none; }
+
+@media (max-width: 900px) {
+  .sidebar-scrim {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 55;             /* under the drawer (60), over everything else */
+    background: rgba(15, 23, 42, .45);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .2s ease;
+  }
+  body.sidebar-open .sidebar-scrim { opacity: 1; pointer-events: auto; }
+  /* The page behind a drawer should not scroll under your finger. */
+  body.sidebar-open { overflow: hidden; }
+}

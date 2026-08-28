@@ -239,8 +239,60 @@ function buildShell() {
       },
     }));
 
+  /**
+   * The phone's sidebar: open it with the button, close it with ANYTHING.
+   *
+   * It used to close only when a navigation link was tapped, which meant a
+   * cashier who opened the menu and then decided against it had no way out
+   * except finding the ☰ again behind the panel - and the till was underneath,
+   * visible and untappable. A drawer on a phone is modal: everything outside it
+   * dismisses it. So a tap on the page, a tap on the dimmed area beside the
+   * panel, or the Escape key all close it.
+   *
+   * `document.body` carries the state as well as the panel, because the scrim
+   * and the locked background are the body's business. Both classes are set and
+   * cleared in ONE place - a scrim that outlives its drawer leaves a dark sheet
+   * over a page that cannot be touched, which is exactly the bug the storefront
+   * filter panel had.
+   */
+  const setSidebar = (open) => {
+    sidebar.classList.toggle('open', open);
+    document.body.classList.toggle('sidebar-open', open);
+  };
+  const menuToggle = h('button', {
+    class: 'btn ghost menu-toggle',
+    'aria-label': t('menu'),
+    onclick: () => setSidebar(!sidebar.classList.contains('open')),
+  }, '☰');
+
+  /*
+   * The dimmed area beside the panel. It is a real element rather than a
+   * ::before so it can be tapped on every browser, and it only exists as
+   * something you can see and touch under the phone breakpoint.
+   */
+  const scrim = h('div', { class: 'sidebar-scrim', onclick: () => setSidebar(false) });
+
+  document.addEventListener('click', (event) => {
+    if (!sidebar.classList.contains('open')) return;
+    // The panel itself and the button that opened it are not "outside".
+    if (sidebar.contains(event.target) || menuToggle.contains(event.target)) return;
+    setSidebar(false);
+  });
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') setSidebar(false);
+  });
+  /*
+   * And a phone rotated into a desktop-width layout must not keep the state:
+   * the panel becomes part of the page again and a leftover scrim would sit
+   * over it invisibly, swallowing every click on the shop's own screen.
+   */
+  const wide = window.matchMedia('(min-width: 901px)');
+  const clearOnWide = () => { if (wide.matches) setSidebar(false); };
+  if (wide.addEventListener) wide.addEventListener('change', clearOnWide);
+  else if (wide.addListener) wide.addListener(clearOnWide);
+
   const topbar = h('header', { class: 'topbar' },
-    h('button', { class: 'btn ghost menu-toggle', onclick: () => sidebar.classList.toggle('open') }, '☰'),
+    menuToggle,
     h('h1', { id: 'page-title' }, t('dashboard')),
     h('span', { class: 'spacer' }),
     scanBox,
@@ -256,7 +308,7 @@ function buildShell() {
     }, getLanguage() === 'en' ? 'ع' : 'EN'),
     userChip());
 
-  mount(appRoot, h('div', { class: 'shell' }, sidebar, h('main', { class: 'main' }, topbar, content)));
+  mount(appRoot, h('div', { class: 'shell' }, sidebar, scrim, h('main', { class: 'main' }, topbar, content)));
   appRoot.classList.remove('app-loading');
   renderNav();
   return content;
@@ -316,7 +368,12 @@ function renderNav() {
         return h('a', {
           href: `#/${item.path}`,
           class: current === item.path ? 'active' : '',
-          onclick: () => document.getElementById('sidebar')?.classList.remove('open'),
+          onclick: () => {
+            // Following a link closes the drawer too — through the same pair of
+            // classes, so the scrim goes with it.
+            document.getElementById('sidebar')?.classList.remove('open');
+            document.body.classList.remove('sidebar-open');
+          },
         },
         h('span', { class: 'ico' }, item.icon),
         t(item.label),
