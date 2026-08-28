@@ -112,22 +112,47 @@ async function erpBranding() {
   }
 }
 
-const cookieOptions = {
-  httpOnly: true,
-  sameSite: 'lax',
-  secure: false, // offline LAN/localhost deployment
-  maxAge: 12 * 60 * 60 * 1000,
-};
+/**
+ * The session cookie, scoped to the shop it belongs to.
+ *
+ * Three things here, and each one is load-bearing:
+ *
+ *   · `path` is the tenant's own base, so the BROWSER does not send one shop's
+ *     cookie to another shop on the same domain. The server refuses such a
+ *     token anyway (see the tenant claim in middleware/index.js), but a cookie
+ *     that is never sent cannot be replayed, logged by a proxy, or picked up by
+ *     a mistake in some future route. Two shops open in two tabs also stop
+ *     fighting over one cookie, which they did.
+ *   · `secure` follows the connection rather than being hard-coded off. The
+ *     deployment is HTTPS and the shop PC is plain HTTP on a LAN; a fixed
+ *     `false` meant the live shop's session cookie was allowed onto an
+ *     unencrypted connection, and a fixed `true` would lock the shop PC out.
+ *     `req.secure` answers it per request (the app sets `trust proxy`, so a
+ *     load balancer's X-Forwarded-Proto is honoured).
+ *   · `sameSite: 'lax'` stays: it blocks the cross-site POST shape of CSRF
+ *     while leaving ordinary navigation to the shop working.
+ */
+function cookieOptionsFor(req) {
+  const slug = req.tenant?.slug || null;
+  return {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: Boolean(req.secure),
+    path: slug ? `/t/${slug}` : '/',
+    maxAge: 12 * 60 * 60 * 1000,
+  };
+}
 
 router.post('/auth/login', validate(v.loginSchema), asyncHandler(async (req, res) => {
   const result = await authService.login(req.body, req.context.request);
-  res.cookie(config.auth.cookieName, result.token, cookieOptions);
+  res.cookie(config.auth.cookieName, result.token, cookieOptionsFor(req));
   res.json({ user: result.user, token: result.token });
 }));
 
 router.post('/auth/logout', authenticate, asyncHandler(async (req, res) => {
   await authService.logout(req.context.actor, req.context.request);
-  res.clearCookie(config.auth.cookieName);
+  // Cleared with the same scope it was set with, or the browser keeps it.
+  res.clearCookie(config.auth.cookieName, cookieOptionsFor(req));
   res.json({ ok: true });
 }));
 

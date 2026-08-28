@@ -84,6 +84,9 @@ const NAV = [
     group: 'navPurchasing',
     items: [
       { path: 'purchases', label: 'purchases', icon: '⇩', permission: 'purchases.view' },
+      // Beside the orders, because that is what they are about: what came in on
+      // one and went back out again.
+      { path: 'supplier-returns', label: 'supplierReturns', icon: '↩', permission: 'purchases.view' },
       { path: 'suppliers', label: 'suppliers', icon: '⌂', permission: 'suppliers.view' },
       /*
        * فواتيرك — the invoices the shop already had ON PAPER. Beside الموردون
@@ -182,7 +185,8 @@ const ROUTE_PERMISSIONS = {
   products: 'products.view', brands: 'brands.view', categories: 'categories.view',
   attributes: 'attributes.view', labels: 'labels.view', inventory: 'inventory.view',
   movements: 'inventory.view', adjustments: 'inventory.view', wastage: 'wastage.view',
-  purchases: 'purchases.view', suppliers: 'suppliers.view', customers: 'customers.view',
+  purchases: 'purchases.view', 'supplier-returns': 'purchases.view',
+  suppliers: 'suppliers.view', customers: 'customers.view',
   costs: 'costs.view', 'cost-categories': 'costs.view', employees: 'employees.view',
   'legacy-invoices': 'legacy_invoices.view',
   promotions: 'promotions.view', reports: 'reports.view', users: 'users.view',
@@ -349,6 +353,7 @@ async function startApp() {
     adjustments: screen(() => import('./views/inventory.js'), 'adjustmentsView'),
     wastage: screen(() => import('./views/inventory.js'), 'wastageView'),
     purchases: screen(() => import('./views/purchasing.js'), 'purchasesView'),
+    'supplier-returns': screen(() => import('./views/purchasing.js'), 'supplierReturnsView'),
     suppliers: screen(() => import('./views/masterData.js'), 'suppliersView'),
     customers: screen(() => import('./views/masterData.js'), 'customersView'),
     costs: screen(() => import('./views/costs.js'), 'costsView'),

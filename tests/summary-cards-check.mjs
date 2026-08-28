@@ -60,7 +60,20 @@ console.log(`products: ${total} total = ${genders.join(' + ')} by gender`);
 
 // --- tapping one narrows the list, lights the card and moves the dropdown
 const rowsBefore = await page.$$eval('tbody tr', (n) => n.length);
-await page.click('.summary-cards .kpi.is-clickable:nth-child(2)');
+/*
+ * The card is found by what it SAYS, not by where it sits. This check used to
+ * click the second card, which was the women card until a piece count was added
+ * in front of it - and then the check failed for a reason that had nothing to
+ * do with the behaviour it exists to defend.
+ */
+const clickCardNamed = async (pattern) => page.evaluate((source) => {
+  const card = [...document.querySelectorAll('.summary-cards .kpi.is-clickable')]
+    .find((n) => new RegExp(source, 'i').test(n.querySelector('.label')?.textContent || ''));
+  if (!card) return false;
+  card.click();
+  return true;
+}, pattern);
+if (!await clickCardNamed('^(Women|حريمي)$')) fail('no clickable "for women" card to tap');
 await page.waitForTimeout(1200);
 const rowsAfter = await page.$$eval('tbody tr', (n) => n.length);
 const after = await cards();
@@ -74,7 +87,7 @@ if (rowsAfter >= rowsBefore) fail(`the card did not narrow the list (${rowsBefor
 if (!dropdown.includes('women')) fail(`the matching dropdown was not moved: ${JSON.stringify(dropdown)}`);
 
 // Tapping it again puts everything back — a filter with no way off is a trap.
-await page.click('.summary-cards .kpi.is-clickable:nth-child(2)');
+await clickCardNamed('^(Women|حريمي)$');
 await page.waitForTimeout(1200);
 const restored = await page.$$eval('tbody tr', (n) => n.length);
 if (restored !== rowsBefore) fail(`tapping the card again did not restore the list (${restored} vs ${rowsBefore})`);

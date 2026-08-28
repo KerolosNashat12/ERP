@@ -36,12 +36,22 @@ import { deploymentInfo } from '../../shared/deploymentInfo.js';
 
 const router = Router();
 
-const cookieOptions = {
+/*
+ * The console's own cookie. Same reasoning as the shop's (see routes/index.js):
+ * `secure` follows the connection rather than being hard-coded off, so the
+ * owner's session on the live console is never allowed onto an unencrypted
+ * one, while a console opened on the shop PC over plain HTTP still works.
+ *
+ * No path scoping needed: there is exactly one control plane, its cookie has
+ * its own name, and its token is signed with a different secret and carries an
+ * audience the shop's verifier will not accept.
+ */
+const cookieOptionsFor = (req) => ({
   httpOnly: true,
   sameSite: 'lax',
-  secure: false, // offline LAN/localhost deployment, same as the ERP cookie
+  secure: Boolean(req.secure),
   maxAge: 12 * 60 * 60 * 1000,
-};
+});
 
 const validateBody = (schema) => (req, _res, next) => {
   const result = schema.safeParse(req.body);
@@ -80,18 +90,18 @@ router.get('/auth/state', asyncHandler(async (_req, res) => {
 /** Open exactly once, on a console that has no owner yet. */
 router.post('/auth/setup', validateBody(setupSchema), asyncHandler(async (req, res) => {
   const result = await platformAuth.setup(req.body);
-  res.cookie(platformAuth.COOKIE_NAME, result.token, cookieOptions);
+  res.cookie(platformAuth.COOKIE_NAME, result.token, cookieOptionsFor(req));
   res.status(201).json(result);
 }));
 
 router.post('/auth/login', validateBody(loginSchema), asyncHandler(async (req, res) => {
   const result = await platformAuth.login(req.body);
-  res.cookie(platformAuth.COOKIE_NAME, result.token, cookieOptions);
+  res.cookie(platformAuth.COOKIE_NAME, result.token, cookieOptionsFor(req));
   res.json(result);
 }));
 
 router.post('/auth/logout', platformAuth.authenticate, asyncHandler(async (_req, res) => {
-  res.clearCookie(platformAuth.COOKIE_NAME);
+  res.clearCookie(platformAuth.COOKIE_NAME, cookieOptionsFor(req));
   res.json({ ok: true });
 }));
 

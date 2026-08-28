@@ -4,6 +4,7 @@
  * httpOnly cookie so the SPA works after a page refresh with no server state.
  */
 import bcrypt from 'bcryptjs';
+import { currentTenantSlug } from '../infrastructure/database/connection.js';
 import jwt from 'jsonwebtoken';
 import config from '../config/index.js';
 import repositories from '../infrastructure/repositories/index.js';
@@ -24,9 +25,31 @@ export class AuthService {
     return bcrypt.hashSync(String(plain), config.auth.bcryptRounds);
   }
 
+  /**
+   * The session token, and WHOSE SHOP it is for.
+   *
+   * The tenant claim is not decoration. Every shop on this platform is a
+   * separate database behind one deployment, one domain and one signing secret,
+   * and user ids restart at 1 in each of them - every shop has a user 1, and
+   * almost every shop has a user 2 and a 3. A token that says only "user 3"
+   * is therefore a valid token for user 3 of EVERY shop: sign in to your own
+   * shop, change /t/yours to /t/theirs in the address bar, and the server
+   * authenticates you as whoever happens to be their user 3, with that person's
+   * permissions. Nothing in the request would look wrong.
+   *
+   * So the token says which shop it was issued for, `authenticate` refuses it
+   * anywhere else, and there is a test for exactly that attack.
+   */
   issueToken(user) {
     return jwt.sign(
-      { sub: user.id, username: user.username, role: user.role_code || null },
+      {
+        sub: user.id,
+        username: user.username,
+        role: user.role_code || null,
+        // null on a single-shop deployment, which is a value and not an absence
+        // - see the check in the middleware.
+        tenant: currentTenantSlug(),
+      },
       config.auth.secret,
       { expiresIn: config.auth.tokenTtl },
     );

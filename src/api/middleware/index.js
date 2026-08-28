@@ -3,7 +3,7 @@ import config from '../../config/index.js';
 import { readIdentity, rememberIdentity } from './identity.js';
 import authService from '../../services/AuthService.js';
 import repositories from '../../infrastructure/repositories/index.js';
-import { currentTenant } from '../../infrastructure/database/connection.js';
+import { currentTenant, currentTenantSlug } from '../../infrastructure/database/connection.js';
 import { AppError, ForbiddenError, UnauthorizedError, ValidationError } from '../../shared/errors.js';
 
 /** Extracts the JWT from the httpOnly cookie or an Authorization header. */
@@ -30,6 +30,27 @@ export async function authenticate(req, _res, next) {
     const token = readToken(req);
     if (!token) throw new UnauthorizedError();
     const payload = authService.verifyToken(token);
+
+    /*
+     * The token has to belong to the shop being asked about.
+     *
+     * One deployment, one domain, one signing secret, and a separate database
+     * per shop whose user ids all start at 1. Without this check a token issued
+     * for user 3 of one shop is a perfectly valid token for user 3 of every
+     * other shop on the platform - and the only step in the attack is editing
+     * the slug in the address bar.
+     *
+     * `undefined` is not the same as `null` here. A token issued before this
+     * claim existed has no `tenant` at all, and it is refused on a tenant route
+     * rather than trusted: signing everybody in once is the cheap half of this
+     * trade. `null` is the honest value a single-shop deployment issues, and it
+     * matches a request with no tenant.
+     */
+    const forShop = currentTenantSlug();
+    const tokenShop = Object.hasOwn(payload, 'tenant') ? (payload.tenant || null) : undefined;
+    if (tokenShop !== forShop) {
+      throw new UnauthorizedError('This session belongs to a different shop');
+    }
 
     /*
      * Two round trips per request, on every request, unless the same caller was

@@ -5,7 +5,7 @@ import {
   numberInput, field, modal, debounce, statusTag, buildForm, printNode, tag,
   matchNote,
 } from '../core/ui.js';
-import { t, pick } from '../core/i18n.js';
+import { t, pick, tError } from '../core/i18n.js';
 import { money, number, date, isoDate } from '../core/format.js';
 import { session, can, lookup } from '../core/store.js';
 import { navigate } from '../core/router.js';
@@ -68,6 +68,94 @@ function actionButton({ label, title, refusal, danger = false, onclick }) {
     title: title || label,
     onclick: (event) => { event.stopPropagation(); onclick(); },
   }, label);
+}
+
+/**
+ * Every batch of goods that has gone back to a supplier.
+ *
+ * A list rather than a screen for making one: a return is made from the ORDER
+ * it came in on, where the person has the order in front of them. This is the
+ * record - what went back, on which order, worth how much, and whether anybody
+ * has since undone it.
+ */
+export async function supplierReturnsView(root, route) {
+  const listHost = h('div', { class: 'card-body tight' }, spinner());
+
+  async function load() {
+    mount(listHost, spinner());
+    const data = await api.get('/api/purchase-returns', {});
+    mount(listHost, dataTable({
+      columns: [
+        { key: 'return_no', label: t('returnNo'), class: 'mono small' },
+        { key: 'return_date', label: t('date'), render: (r) => date(r.return_date) },
+        { key: 'po_number', label: t('poNumber'), class: 'mono small' },
+        { key: 'supplier', label: t('supplier'), render: (r) => pick(r, 'supplier_name') },
+        {
+          key: 'settlement',
+          label: t('settlement'),
+          render: (r) => tag(t({
+            credit: 'settlementCredit', refund: 'settlementRefund', replace: 'settlementReplace',
+          }[r.settlement] || 'settlementCredit')),
+        },
+        { key: 'line_count', label: t('products'), type: 'number' },
+        { key: 'total_amount', label: t('total'), type: 'money', render: (r) => money(r.total_amount) },
+        {
+          key: 'status',
+          label: t('status'),
+          render: (r) => (r.status === 'reversed'
+            ? tag(t('reverseReturn'), 'warn')
+            : statusTag('completed')),
+        },
+        {
+          key: '__actions',
+          label: t('actions'),
+          class: 'nowrap',
+          render: (r) => (r.status === 'completed' && can('purchases.return')
+            ? h('button', {
+              class: 'btn sm ghost',
+              onclick: () => undoReturn(r, load),
+            }, t('reverseReturn'))
+            : null),
+        },
+      ],
+      rows: data.rows,
+      onRowClick: (row) => navigate(`purchases/${row.purchase_order_id}`),
+      emptyMessage: t('noResults'),
+    }));
+  }
+
+  mount(root,
+    h('div', { class: 'page-head' },
+      h('div', {}, h('h2', {}, t('supplierReturns')), h('p', {}, t('navPurchasing')))),
+    h('div', { class: 'card' }, listHost));
+
+  await load();
+  return undefined;
+}
+
+/**
+ * Undoing one. Asks for a reason and says it will put the stock back, because
+ * that is what it does and a person pressing it should know before, not after.
+ */
+async function undoReturn(record, refresh) {
+  const reason = textInput({ placeholder: t('reverseReturnReason') });
+  const dialog = modal({
+    title: `${t('reverseReturn')} — ${record.return_no}`,
+    body: h('div', { class: 'stack' },
+      h('p', {}, t('reverseReturnReason')),
+      reason),
+    footer: h('button', {
+      class: 'btn primary',
+      onclick: async () => {
+        try {
+          await api.post(`/api/purchase-returns/${record.id}/reverse`, { reason: reason.value || null });
+          toast(t('saved'));
+          dialog.close();
+          await refresh();
+        } catch (error) { toastError(error); }
+      },
+    }, t('reverseReturn')),
+  });
 }
 
 export async function purchasesView(root, route) {
@@ -319,6 +407,35 @@ async function purchaseFormView(root, route) {
 
   const linesHost = h('div');
   const totalsHost = h('div', { class: 'card-body' });
+  const balanceHost = h('div');
+
+  /**
+   * What this order still owes, after payments AND after anything sent back.
+   *
+   * Drawn only when there is something to say - an untouched order does not
+   * need a strip telling it so. The one case this exists for is the one the
+   * owner asked about by name: an order paid in full and then partly returned,
+   * where the supplier is the debtor. That reads as "المورد ليه عندنا" in
+   * words, not as a total with a minus sign in front of it.
+   */
+  async function renderBalance() {
+    if (!existing) return;
+    try {
+      const balance = await api.get(`/api/purchases/${existing.id}/balance`);
+      if (!balance.returned_amount && !balance.owed_by_supplier) { mount(balanceHost); return; }
+      const cell = (label, value, cls = '') => h('div', { class: `kpi ${cls}` },
+        h('div', { class: 'label' }, label),
+        h('div', { class: 'value' }, value));
+      mount(balanceHost, h('div', { class: 'kpis summary-cards' },
+        cell(t('total'), money(balance.total_amount)),
+        cell(t('returnedToSupplier'), money(balance.returned_amount)),
+        cell(t('orderTotalNet'), money(balance.net_amount)),
+        cell(t('paid'), money(balance.paid_amount)),
+        balance.owed_by_supplier
+          ? cell(t('supplierOwesUs'), money(balance.owed_by_supplier), 'accent')
+          : cell(t('weOweSupplier'), money(Math.max(balance.outstanding, 0)), 'accent')));
+    } catch { mount(balanceHost); }
+  }
 
   const picker = variantPicker({
     onPick: (variant) => {
@@ -497,6 +614,15 @@ async function purchaseFormView(root, route) {
         ? h('button', { class: 'btn gold', onclick: () => openReceive(existing) }, t('receiveGoods')) : null,
       existing && can('purchases.pay') && existing.status !== 'cancelled'
         ? h('button', { class: 'btn', onclick: () => openPayment(existing) }, t('registerPayment')) : null,
+      /*
+       * Sending goods back lives HERE, on the order they came in on, because
+       * that is the only place a person has the two facts the screen needs: the
+       * order, and the faulty bottle in their hand.
+       */
+      existing && can('purchases.return')
+        && ['partially_received', 'received'].includes(existing.status)
+        ? h('button', { class: 'btn', onclick: () => openSupplierReturn(existing) }, '↩ ' + t('returnToSupplier'))
+        : null,
       // Present whatever the status is, and saying why when it cannot act —
       // a delete button that is simply absent is what sent the owner looking.
       existing && can('purchases.delete') ? actionButton({
@@ -505,6 +631,7 @@ async function purchaseFormView(root, route) {
         refusal: deleteRefusal(existing),
         onclick: () => removeOrder(existing, async () => navigate('purchases')),
       }) : null),
+    existing ? balanceHost : null,
     h('div', { class: 'card' }, h('div', { class: 'card-body' }, header.node)),
     h('div', { class: 'card', style: { marginTop: '14px' } },
       h('div', { class: 'card-head' }, h('h3', {}, t('products'))),
@@ -516,7 +643,162 @@ async function purchaseFormView(root, route) {
     existing ? paymentsCard(existing) : null);
 
   renderAll();
+  renderBalance();
   return () => picker.destroy();
+}
+
+/**
+ * Goods going back to the supplier, from the order they arrived on.
+ *
+ * Three things a person has to see per line before they can honestly type a
+ * number: how many came in, how many have already gone back, and how many are
+ * ACTUALLY on the shelf. The third is the one that stops the mistake - a line
+ * can be returnable on paper and impossible in fact, because the pieces were
+ * sold last week - so the box is capped at it and the row says so.
+ */
+function openSupplierReturn(order) {
+  const state = { settlement: 'credit', reason: '', lines: [] };
+  const host = h('div');
+  const totalHost = h('div', { class: 'muted small' });
+
+  const cap = (line) => Math.min(line.returnable_quantity, line.on_hand);
+
+  function renderTotal() {
+    const total = state.lines.reduce((sum, line) => sum + line.quantity * line.unit_credit, 0);
+    const back = state.lines.reduce((sum, line) => sum + line.replacement * line.unit_credit, 0);
+    mount(totalHost,
+      `${t('total')}: ${money(total)}`,
+      state.settlement === 'replace' ? ` · ${t('replacementQty')}: ${money(back)}` : '');
+  }
+
+  function render() {
+    mount(host, dataTable({
+      columns: [
+        { key: 'sku', label: t('sku'), class: 'mono small' },
+        { key: 'name', label: t('product'), render: (r) => `${r.product_name_en || ''} ${r.variant_label || ''}` },
+        { key: 'quantity_received', label: t('received'), type: 'number', render: (r) => number(r.quantity_received) },
+        { key: 'returned_quantity', label: t('alreadyReturned'), type: 'number', render: (r) => number(r.returned_quantity) },
+        // The fact that stops the mistake.
+        {
+          key: 'on_hand',
+          label: t('onShelf'),
+          type: 'number',
+          render: (r) => h('span', { class: r.on_hand < r.returnable_quantity ? 'strong' : 'muted' }, number(r.on_hand)),
+        },
+        {
+          key: 'quantity',
+          label: t('sendBack'),
+          align: 'end',
+          render: (r) => numberInput({
+            value: r.quantity,
+            min: 0,
+            max: cap(r),
+            step: 'any',
+            style: { width: '86px' },
+            onchange: (event) => {
+              const asked = Number(event.target.value) || 0;
+              r.quantity = Math.max(0, Math.min(asked, cap(r)));
+              if (r.replacement > r.quantity) r.replacement = r.quantity;
+              event.target.value = r.quantity;
+              render();
+            },
+          }),
+        },
+        ...(state.settlement === 'replace' ? [{
+          key: 'replacement',
+          label: t('replacementQty'),
+          align: 'end',
+          render: (r) => numberInput({
+            value: r.replacement,
+            min: 0,
+            max: r.quantity,
+            step: 'any',
+            style: { width: '86px' },
+            onchange: (event) => {
+              r.replacement = Math.max(0, Math.min(Number(event.target.value) || 0, r.quantity));
+              event.target.value = r.replacement;
+              renderTotal();
+            },
+          }),
+        }] : []),
+        {
+          key: 'value',
+          label: t('value'),
+          type: 'money',
+          render: (r) => money(r.quantity * r.unit_credit),
+        },
+      ],
+      rows: state.lines,
+      emptyMessage: t('nothingReturnable'),
+    }));
+    renderTotal();
+  }
+
+  const settlement = selectInput({
+    value: state.settlement,
+    options: [
+      { value: 'credit', label: t('settlementCredit') },
+      { value: 'refund', label: t('settlementRefund') },
+      { value: 'replace', label: t('settlementReplace') },
+    ],
+    onchange: (event) => {
+      state.settlement = event.target.value;
+      // Leaving a replacement quantity behind on a credit is a refusal from the
+      // server; clearing it here means the screen never sets that trap.
+      if (state.settlement !== 'replace') for (const line of state.lines) line.replacement = 0;
+      render();
+    },
+  });
+  const reason = textInput({
+    placeholder: t('reason'),
+    oninput: (event) => { state.reason = event.target.value; },
+  });
+
+  const dialog = modal({
+    title: `${t('returnToSupplier')} — ${order.po_number}`,
+    size: 'wide',
+    body: h('div', { class: 'stack' },
+      h('div', { class: 'filters' },
+        h('div', { class: 'field' }, field({ label: t('settlement'), input: settlement })),
+        h('div', { class: 'field grow' }, field({ label: t('reason'), input: reason }))),
+      host,
+      totalHost),
+    footer: h('button', {
+      class: 'btn primary',
+      onclick: async () => {
+        const picked = state.lines
+          .filter((line) => line.quantity > 0)
+          .map((line) => ({
+            po_line_id: line.id,
+            quantity: line.quantity,
+            replacement_quantity: state.settlement === 'replace' ? line.replacement : 0,
+          }));
+        if (!picked.length) { toast(t('errPrNothingPicked'), 'warn'); return; }
+        try {
+          await api.post('/api/purchase-returns', {
+            purchase_order_id: order.id,
+            settlement: state.settlement,
+            reason: state.reason || null,
+            lines: picked,
+          });
+          toast(t('saved'));
+          dialog.close();
+          window.location.reload();
+        } catch (error) { toastError(error); }
+      },
+    }, t('sendBack')),
+  });
+
+  mount(host, spinner());
+  api.get(`/api/purchases/${order.id}/returnable`).then((data) => {
+    state.lines = data.lines
+      .filter((line) => line.returnable_quantity > 0)
+      .map((line) => ({ ...line, quantity: 0, replacement: 0 }));
+    render();
+  }).catch((error) => {
+    toastError(error);
+    mount(host, h('div', { class: 'empty' }, tError(error)));
+  });
 }
 
 function openReceive(order) {

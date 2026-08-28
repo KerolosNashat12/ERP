@@ -190,6 +190,22 @@ export function runWithTenant(tenant, connection, fn) {
 /** The tenant serving this request, or null in single-tenant mode. */
 export const currentTenant = () => tenantStore.getStore()?.tenant || null;
 
+/**
+ * WHICH shop this request is for, as a plain string - or null on a single-shop
+ * deployment.
+ *
+ * `currentTenant()` hands back the whole tenant context (name, modules, limits),
+ * which is what the middleware needs and exactly the wrong thing to put in a
+ * token or compare with ===. Both halves of the session check use this instead,
+ * so the value that goes into a token and the value it is checked against are
+ * produced by the same line of code.
+ */
+export const currentTenantSlug = () => {
+  const tenant = tenantStore.getStore()?.tenant;
+  if (!tenant) return null;
+  return typeof tenant === 'string' ? tenant : (tenant.slug || null);
+};
+
 /** Synchronous accessor — deliberately, so call sites stay `getDb().prepare(…)`. */
 export function getDb() {
   return current().facade;
