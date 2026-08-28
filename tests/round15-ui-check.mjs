@@ -104,13 +104,27 @@ await page.waitForTimeout(600);
 const steps = await page.evaluate(() => [...document.querySelectorAll('.card-head h3')].map((n) => n.textContent.trim()));
 if (steps.length < 4) fail(`the exchange screen should have four steps, found ${steps.length}: ${steps}`);
 
-await page.fill('.card-body input.input', 'INV-2026-00001');
+/*
+ * The newest invoice that still has something on it, rather than a hard-coded
+ * number. This check used to ask for INV-2026-00001 every time, which worked
+ * until the exchange check ran twice against the same fixture and returned
+ * everything on it - after which this failed for reasons that had nothing to do
+ * with the screen it is testing.
+ */
+const invoiceNo = await page.evaluate(async () => {
+  const res = await fetch('/api/sales?page=1&pageSize=25', { headers: { accept: 'application/json' } });
+  const data = await res.json();
+  const open = (data.rows || []).find((row) => row.status === 'completed' && row.return_state !== 'full');
+  return open ? open.invoice_no : null;
+});
+if (!invoiceNo) fail('the fixture has no invoice with anything left on it to exchange');
+await page.fill('.card-body input.input', invoiceNo || '');
 await page.press('.card-body input.input', 'Enter');
 await page.waitForTimeout(1200);
-const found = await page.evaluate(() => ({
-  invoice: document.body.textContent.includes('INV-2026-00001'),
+const found = await page.evaluate((no) => ({
+  invoice: document.body.textContent.includes(no),
   lines: document.querySelectorAll('tbody tr').length,
-}));
+}), invoiceNo || '');
 if (!found.invoice) fail('the invoice was not found on the exchange screen');
 if (!found.lines) fail('no returnable lines listed');
 await page.screenshot({ path: '/tmp/shots/erp-exchange.png' });
@@ -129,7 +143,7 @@ if (!list.rows && !list.empty) fail('the exchanges list shows neither rows nor a
 // ---------------------------------------------------------- full invoice
 await page.goto(`${BASE}/app.html#/returns/new`);
 await page.waitForTimeout(1500);
-await page.fill('input.input', 'INV-2026-00001');
+await page.fill('input.input', invoiceNo || '');
 await page.press('input.input', 'Enter');
 await page.waitForTimeout(1200);
 const wholeButton = await page.evaluate(() => [...document.querySelectorAll('button')]

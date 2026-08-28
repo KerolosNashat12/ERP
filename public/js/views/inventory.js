@@ -2,7 +2,7 @@
 import api from '../core/api.js';
 import {
   h, mount, dataTable, pager, spinner, toast, toastError, textInput, selectInput,
-  checkboxInput, field, modal, debounce, tag, statusTag, buildForm, matchNote,
+  checkboxInput, field, modal, debounce, tag, statusTag, buildForm, matchNote, summaryCards,
 } from '../core/ui.js';
 import { t, pick } from '../core/i18n.js';
 import { money, number, dateTime } from '../core/format.js';
@@ -28,10 +28,35 @@ export async function inventoryView(root, route) {
     const data = await api.get('/api/inventory/stock', {
       ...state, lowStockOnly: state.lowStockOnly ? '1' : '',
     });
-    mount(summaryHost,
-      kpi(t('results'), number(data.total)),
-      kpi(t('onHand'), number(data.totals.total_qty)),
-      kpi(t('stockValue'), money(data.totals.total_value)));
+    /*
+     * The counters come from the SAME query the home screen's stock tile and
+     * the valuation report use, so the three screens cannot print three
+     * different totals for one shelf again. The grid above them still lists
+     * what is being sold; the cards say what is actually owned, and name the
+     * difference when there is one.
+     */
+    const owned = await api.get('/api/inventory/summary', {
+      warehouseId: state.warehouseId || '', brandId: state.brandId || '', categoryId: state.categoryId || '',
+    }).catch(() => null);
+
+    mount(summaryHost, summaryCards([
+      { label: t('stockCostValue'), value: money(owned ? owned.stock_value : data.totals.total_value), accent: true,
+        sub: `${number(owned ? owned.quantity : data.totals.total_qty)} ${t('qty')}` },
+      { label: t('stockRetailValue'), value: owned ? money(owned.retail_value) : null },
+      { label: t('potentialMargin'), value: owned ? money(owned.retail_value - owned.stock_value) : null },
+      { label: t('results'), value: number(data.total), sub: t('linesCounted') },
+      { label: t('lowStockItems'), value: owned ? number(owned.low_stock) : null,
+        onClick: () => { state.lowStockOnly = !state.lowStockOnly; state.page = 1; load(); },
+        active: state.lowStockOnly },
+      { label: t('outOfStock'), value: owned ? number(owned.out_of_stock) : null,
+        onClick: () => { state.zeroStock = state.zeroStock === 'only' ? 'all' : 'only'; state.page = 1; load(); },
+        active: state.zeroStock === 'only' },
+      // Only drawn when there IS stock on stopped variants — otherwise it is a
+      // zero taking up room next to figures that matter.
+      owned && owned.stopped_quantity
+        ? { label: t('stoppedQuantity'), value: number(owned.stopped_quantity), sub: money(owned.stopped_value) }
+        : null,
+    ]));
 
     mount(listHost, dataTable({
       columns: [
@@ -121,10 +146,6 @@ export async function inventoryView(root, route) {
       listHost, pagerHost));
 
   await load();
-}
-
-function kpi(label, value) {
-  return h('div', { class: 'kpi' }, h('div', { class: 'label' }, label), h('div', { class: 'value' }, value));
 }
 
 function openQuickAdjust(row, refresh) {

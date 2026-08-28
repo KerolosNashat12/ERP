@@ -41,10 +41,17 @@ export class ProductRepository extends BaseRepository {
    * variant's SKU finds the product that owns it, and it does so through an
    * `EXISTS` in SQL rather than by pulling rows into JavaScript to sift them.
    */
-  async search({
+  /**
+   * The WHERE behind both the products grid and the counters above it.
+   *
+   * They have to be one function. A summary that counts something the list
+   * below it is not showing is worse than no summary at all - the owner filters
+   * to one brand, the cards go on describing the whole shop, and the two
+   * numbers on the same screen quietly contradict each other.
+   */
+  #scope({
     search = '', brandId, categoryId, supplierId, isActive, gender, onOffer,
-    page = 1, pageSize = 25,
-  }) {
+  } = {}) {
     const where = [];
     const params = [];
     const term = normaliseTerm(search);
@@ -59,7 +66,7 @@ export class ProductRepository extends BaseRepository {
     if (isActive !== undefined && isActive !== '') { where.push('p.is_active = ?'); params.push(Number(isActive)); }
     if (gender) { where.push('p.gender = ?'); params.push(String(gender)); }
     /*
-     * "Show me what is on offer" — running TODAY, not merely configured. The
+     * "Show me what is on offer" - running TODAY, not merely configured. The
      * same four conditions the storefront asks, because a shopkeeper checking
      * his own offers and a shopper browsing them must be looking at one list.
      */
@@ -68,17 +75,71 @@ export class ProductRepository extends BaseRepository {
         AND (p.discount_starts_on IS NULL OR date(p.discount_starts_on) <= date('now'))
         AND (p.discount_ends_on   IS NULL OR date(p.discount_ends_on)   >= date('now'))`);
     }
-
     /*
-     * The catalogue screen has its own SELECT — brand, category, supplier,
-     * variant count, stock, price range — so it does NOT go through
+     * The catalogue screen has its own SELECT - brand, category, supplier,
+     * variant count, stock, price range - so it does NOT go through
      * `BaseRepository.list` and does not inherit its `trashType` filter. It has
      * to say so itself, or a product deleted this morning is still on the
      * products page this afternoon. (It was, and the shop's owner found it.)
      */
     where.push(notInBin('product', 'p.id'));
+    return { whereSql: `WHERE ${where.join(' AND ')}`, params, term };
+  }
 
-    const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+  /**
+   * The counters above the products grid: how many, of what, for whom.
+   *
+   * Written as one pass over the same rows the grid lists rather than eight
+   * separate counts - on the hosted database each count is a network round trip,
+   * and eight of them to draw a header is how a fast screen becomes a slow one.
+   */
+  async summary(filters = {}) {
+    const { whereSql, params } = this.#scope(filters);
+    const row = await getDb().prepare(`
+      SELECT
+        COUNT(*)                                                        AS products,
+        COALESCE(SUM(CASE WHEN p.is_active = 1 THEN 1 END), 0)          AS active,
+        COALESCE(SUM(CASE WHEN p.is_active = 0 THEN 1 END), 0)          AS stopped,
+        COALESCE(SUM(CASE WHEN p.is_published = 1 THEN 1 END), 0)       AS published,
+        COALESCE(SUM(CASE WHEN p.gender = 'women'  THEN 1 END), 0)      AS women,
+        COALESCE(SUM(CASE WHEN p.gender = 'men'    THEN 1 END), 0)      AS men,
+        COALESCE(SUM(CASE WHEN p.gender IS NULL
+                            OR p.gender NOT IN ('women','men') THEN 1 END), 0) AS unisex,
+        COALESCE(SUM(CASE WHEN p.discount_type <> 'none' AND p.discount_value > 0
+                           AND (p.discount_starts_on IS NULL OR date(p.discount_starts_on) <= date('now'))
+                           AND (p.discount_ends_on   IS NULL OR date(p.discount_ends_on)   >= date('now'))
+                          THEN 1 END), 0)                               AS on_offer,
+        COALESCE(SUM((SELECT COUNT(*) FROM product_variants v
+                       WHERE v.product_id = p.id AND v.is_active = 1)), 0) AS variants,
+        /*
+         * Nothing left on the shelf under this product - the ones that cannot
+         * be sold today however good they look on the website.
+         *
+         * Counted across ALL its variants, not just the ones still switched on,
+         * for the same reason the stock valuation is: a piece that exists is a
+         * piece the shop has. Counting only active variants would report a
+         * product with nine boxes in the back as "out of stock" because
+         * somebody unticked a box.
+         */
+        COALESCE(SUM(CASE WHEN COALESCE((
+          SELECT SUM(sl.quantity) FROM stock_levels sl
+            JOIN product_variants v ON v.id = sl.variant_id
+           WHERE v.product_id = p.id), 0) <= 0 THEN 1 END), 0) AS out_of_stock,
+        COALESCE(SUM(CASE WHEN NOT EXISTS (
+          SELECT 1 FROM product_images pi WHERE pi.product_id = p.id) THEN 1 END), 0) AS without_photo
+      FROM products p
+      ${whereSql}
+    `).get(...params);
+    return row;
+  }
+
+  async search({
+    search = '', brandId, categoryId, supplierId, isActive, gender, onOffer,
+    page = 1, pageSize = 25,
+  }) {
+    const { whereSql, params, term } = this.#scope({
+      search, brandId, categoryId, supplierId, isActive, gender, onOffer,
+    });
     const db = getDb();
     const total = (await db.prepare(`SELECT COUNT(*) AS n FROM products p ${whereSql}`).get(...params)).n;
     const size = Math.min(Math.max(Number(pageSize) || 25, 1), 500);

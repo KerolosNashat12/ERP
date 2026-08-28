@@ -185,11 +185,79 @@ export class InventoryRepository {
     return { rows, total, page: current, pageSize: size, pages: Math.ceil(total / size) || 1 };
   }
 
+  /**
+   * What the shop is holding, in one place, so no two screens can disagree
+   * about it.
+   *
+   * They did. The home screen summed the whole stock view; the valuation report
+   * and the stock grid both added `variant_active = 1` to their own copy of the
+   * question. A shop with nine pieces on a variant somebody had switched off
+   * read 682 units and EGP 108,005 on the home screen and 673 units and EGP
+   * 107,195 on the report - the same shelf, two answers, and no way to tell
+   * from either screen which was wrong.
+   *
+   * The rule is now one rule, and it is the one that matches the shelf: stock
+   * that EXISTS is counted, whether or not the variant is still being sold. A
+   * variant is switched off to stop selling it, not to stop owning it, and
+   * money that stops being counted when a checkbox is unticked is money that
+   * goes missing quietly. What was hidden is now named instead: `stopped` says
+   * how much of the total is sitting on switched-off variants, so the number
+   * can be explained rather than just reconciled.
+   */
+  async valuation({
+    warehouseId = null, brandId = null, categoryId = null, hideZero = false, onlyStopped = false,
+  } = {}) {
+    const where = ['1 = 1'];
+    const params = [];
+    if (warehouseId) { where.push('warehouse_id = ?'); params.push(warehouseId); }
+    if (brandId) { where.push('brand_id = ?'); params.push(brandId); }
+    if (categoryId) { where.push('category_id = ?'); params.push(categoryId); }
+    if (hideZero) where.push('quantity <> 0');
+    if (onlyStopped) where.push('variant_active = 0');
+
+    return this.db.prepare(`
+      SELECT
+        COUNT(*)                                    AS items,
+        COALESCE(SUM(quantity), 0)                  AS quantity,
+        COALESCE(SUM(stock_value), 0)               AS stock_value,
+        COALESCE(SUM(ROUND(quantity * selling_price, 2)), 0) AS retail_value,
+        COALESCE(SUM(CASE WHEN variant_active = 0 THEN quantity END), 0)    AS stopped_quantity,
+        COALESCE(SUM(CASE WHEN variant_active = 0 THEN stock_value END), 0) AS stopped_value,
+        COALESCE(SUM(CASE WHEN quantity <= 0 THEN 1 END), 0)                AS out_of_stock,
+        COALESCE(SUM(CASE WHEN reorder_level > 0 AND quantity > 0
+                           AND quantity <= reorder_level THEN 1 END), 0)    AS low_stock
+      FROM v_stock_on_hand
+      WHERE ${where.join(' AND ')}
+    `).get(...params);
+  }
+
+  /** The home screen's tile. Kept as a name because half the code says it. */
   async totalStockValue(warehouseId = null) {
-    const sql = warehouseId
-      ? 'SELECT COALESCE(SUM(stock_value),0) AS v, COALESCE(SUM(quantity),0) AS q FROM v_stock_on_hand WHERE warehouse_id = ?'
-      : 'SELECT COALESCE(SUM(stock_value),0) AS v, COALESCE(SUM(quantity),0) AS q FROM v_stock_on_hand';
-    return warehouseId ? this.db.prepare(sql).get(warehouseId) : this.db.prepare(sql).get();
+    const row = await this.valuation({ warehouseId });
+    return { v: row.stock_value, q: row.quantity, stopped: row.stopped_value, stoppedQuantity: row.stopped_quantity };
+  }
+
+  /** Every line behind that figure, for the valuation report and its CSV. */
+  async valuationRows({
+    warehouseId = null, brandId = null, categoryId = null, hideZero = true, onlyStopped = false,
+  } = {}) {
+    const where = ['1 = 1'];
+    const params = [];
+    if (warehouseId) { where.push('warehouse_id = ?'); params.push(warehouseId); }
+    if (brandId) { where.push('brand_id = ?'); params.push(brandId); }
+    if (categoryId) { where.push('category_id = ?'); params.push(categoryId); }
+    if (hideZero) where.push('quantity <> 0');
+    if (onlyStopped) where.push('variant_active = 0');
+    return this.db.prepare(`
+      SELECT *,
+             ROUND(quantity * selling_price, 2) AS retail_value,
+             -- A code, not a sentence: the browser knows which language to
+             -- print it in and the server does not.
+             CASE WHEN variant_active = 1 THEN 'active_variant' ELSE 'stopped_variant' END AS variant_state
+      FROM v_stock_on_hand
+      WHERE ${where.join(' AND ')}
+      ORDER BY stock_value DESC
+    `).all(...params);
   }
 }
 

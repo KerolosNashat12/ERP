@@ -1,5 +1,6 @@
 /** Cross-cutting HTTP concerns: auth, RBAC, request context, error mapping. */
 import config from '../../config/index.js';
+import { readIdentity, rememberIdentity } from './identity.js';
 import authService from '../../services/AuthService.js';
 import repositories from '../../infrastructure/repositories/index.js';
 import { currentTenant } from '../../infrastructure/database/connection.js';
@@ -29,10 +30,25 @@ export async function authenticate(req, _res, next) {
     const token = readToken(req);
     if (!token) throw new UnauthorizedError();
     const payload = authService.verifyToken(token);
-    const user = await repositories.users.findById(payload.sub);
+
+    /*
+     * Two round trips per request, on every request, unless the same caller was
+     * here a moment ago - see identity.js for why that is safe and how briefly
+     * it is remembered.
+     */
+    const known = readIdentity(payload.sub);
+    let user = known?.user;
+    let permissions = known?.permissions;
+    if (!known) {
+      user = await repositories.users.findById(payload.sub);
+      if (user && user.is_active) {
+        permissions = await repositories.users.permissionsFor(user.id);
+        rememberIdentity(user.id, user, permissions);
+      }
+    }
     if (!user || !user.is_active) throw new UnauthorizedError('Account is no longer active');
     req.user = user;
-    req.permissions = await repositories.users.permissionsFor(user.id);
+    req.permissions = permissions;
     req.context.actor = {
       id: user.id,
       username: user.username,

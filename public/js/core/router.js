@@ -26,8 +26,12 @@ export function navigate(path, replace = false) {
   else window.location.hash = target;
 }
 
+/** The address the last render was for - see startRouter. */
+let lastRendered = null;
+
 export async function render() {
   if (!container) return;
+  lastRendered = window.location.hash;
   const route = parseHash();
   if (beforeEach && (await beforeEach(route)) === false) return;
 
@@ -56,6 +60,17 @@ export async function render() {
 
 export function startRouter(target) {
   container = target;
-  window.addEventListener('hashchange', render);
+  /*
+   * The first render is triggered here, but the shell has usually just called
+   * navigate() to pick a starting screen - and the hashchange from THAT arrives
+   * a tick later, for the address we are already drawing. Left alone it renders
+   * the same screen twice, which on the dashboard meant fifty-two database
+   * statements and two full repaints on every sign-in. A hashchange for the
+   * address last rendered is not a navigation; it is an echo, and is ignored.
+   */
+  window.addEventListener('hashchange', () => {
+    if (window.location.hash === lastRendered) return;
+    render();
+  });
   return render();
 }

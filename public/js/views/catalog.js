@@ -2,7 +2,7 @@
 import api from '../core/api.js';
 import {
   h, mount, dataTable, pager, spinner, toast, toastError, confirmDialog, debounce,
-  textInput, selectInput, numberInput, field, tag, modal, buildForm,
+  textInput, selectInput, numberInput, field, tag, modal, buildForm, summaryCards,
 } from '../core/ui.js';
 import { t, pick } from '../core/i18n.js';
 import { money, number, fileSize } from '../core/format.js';
@@ -71,15 +71,85 @@ export async function productsView(root, route) {
 
   const listHost = h('div', { class: 'card-body tight' }, spinner());
   const pagerHost = h('div');
+  const cardsHost = h('div');
 
   /** The last page fetched, kept so a tick can redraw without a round trip. */
   let current = { rows: [], total: 0, page: 1, pages: 1 };
 
   async function load() {
     mount(listHost, spinner());
-    current = await api.get('/api/products', state);
+    /*
+     * The counters are fetched alongside the page, from the same filters, so
+     * they describe the list underneath rather than the whole shop. Both at
+     * once: on the hosted database they are two round trips either way, and in
+     * series the second one waits for the first for no reason.
+     */
+    const [page, counts] = await Promise.all([
+      api.get('/api/products', state),
+      api.get('/api/products/summary', state).catch(() => null),
+    ]);
+    current = page;
+    renderCards(counts, page.total);
     renderTable(current);
     renderBulkBar();
+  }
+
+  /**
+   * What is in the catalogue, and how much of it is ready to sell.
+   *
+   * Every card that names a subset is a way into it: tapping «حريمي» filters to
+   * those products rather than merely counting them, and the card stays lit
+   * while its filter is on, so a screen showing forty products can always
+   * explain why.
+   */
+  function renderCards(counts, total) {
+    if (!counts) { mount(cardsHost); return; }
+    const toggle = (key, value) => () => {
+      state[key] = state[key] === value ? '' : value;
+      state.page = 1;
+      syncFilterInputs();
+      load();
+    };
+    const share = (n) => (total ? `${Math.round((n / total) * 100)}%` : '');
+    mount(cardsHost, summaryCards([
+      { label: t('products'), value: number(counts.products), sub: `${number(counts.variants)} ${t('variants')}`, accent: true },
+      {
+        label: t('genderWomen'),
+        value: number(counts.women),
+        sub: share(counts.women),
+        onClick: toggle('gender', 'women'),
+        active: state.gender === 'women',
+      },
+      {
+        label: t('genderMen'),
+        value: number(counts.men),
+        sub: share(counts.men),
+        onClick: toggle('gender', 'men'),
+        active: state.gender === 'men',
+      },
+      {
+        label: t('genderUnisex'),
+        value: number(counts.unisex),
+        sub: share(counts.unisex),
+        onClick: toggle('gender', 'unisex'),
+        active: state.gender === 'unisex',
+      },
+      {
+        label: t('offerRunning'),
+        value: number(counts.on_offer),
+        onClick: toggle('onOffer', '1'),
+        active: state.onOffer === '1',
+      },
+      { label: t('publishedOnSite'), value: number(counts.published), sub: share(counts.published) },
+      { label: t('outOfStockProducts'), value: number(counts.out_of_stock) },
+      {
+        label: t('inactive'),
+        value: number(counts.stopped),
+        onClick: toggle('isActive', '0'),
+        active: state.isActive === '0',
+      },
+      { label: t('withoutPhoto'), value: number(counts.without_photo) },
+    ]));
   }
 
   function renderTable(data) {
@@ -362,10 +432,24 @@ export async function productsView(root, route) {
     oninput: debounce((e) => { state.search = e.target.value; state.page = 1; load(); }, 280),
   });
 
-  const filterSelect = (key, placeholder, options) => selectInput({
-    placeholder, options,
-    onchange: (e) => { state[key] = e.target.value; state.page = 1; load(); },
-  });
+  /*
+   * The dropdowns, kept by key so a card can move one. A card that changes the
+   * filter without moving the select leaves the screen contradicting itself -
+   * the list narrowed, the dropdown still says «الكل», and there is no way to
+   * put it back.
+   */
+  const filterInputs = new Map();
+  const filterSelect = (key, placeholder, options) => {
+    const input = selectInput({
+      placeholder, options, value: state[key] || '',
+      onchange: (e) => { state[key] = e.target.value; state.page = 1; load(); },
+    });
+    filterInputs.set(key, input);
+    return input;
+  };
+  const syncFilterInputs = () => {
+    for (const [key, input] of filterInputs) input.value = state[key] || '';
+  };
 
   mount(root,
     h('div', { class: 'page-head' },
@@ -389,7 +473,7 @@ export async function productsView(root, route) {
           { value: '1', label: t('offerRunning') },
         ])),
         h('div', { class: 'field' }, filterSelect('isActive', t('status'), [{ value: '1', label: t('active') }, { value: '0', label: t('inactive') }]))),
-      bulkBar, listHost, pagerHost));
+      bulkBar, cardsHost, listHost, pagerHost));
 
   await load();
   return undefined;

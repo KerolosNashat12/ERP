@@ -126,6 +126,15 @@ export class CatalogService {
   }
 
   /**
+   * The counters above the products screen: how many, in what state, for whom.
+   * Filters flow straight through, so the cards always describe the list under
+   * them rather than the whole shop.
+   */
+  async summary(query = {}) {
+    return this.products.summary(query);
+  }
+
+  /**
    * The products screen.
    *
    * The offer is resolved HERE rather than on the screen: whether one is

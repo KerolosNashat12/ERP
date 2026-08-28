@@ -19,6 +19,7 @@
  *  - Keep it small enough to read in one screen.
  */
 import { getDb, transaction, driverName } from '../connection.js';
+import { forgetAllIdentities } from '../../../api/middleware/identity.js';
 import migration001 from './001-web-storefront.js';
 import migration002 from './002-web-orders.js';
 import migration003 from './003-web-order-sequence.js';
@@ -171,6 +172,13 @@ export async function runMigrations() {
     });
     ran.push(migration.name);
   }
+  /*
+   * A migration can hand a role a permission it did not have a second ago -
+   * that is exactly what 017 and 023 do, and on the fleet they run lazily, on a
+   * tenant's first request after a deploy. Anything remembered about who may do
+   * what is therefore out of date the moment one runs.
+   */
+  if (ran.length) forgetAllIdentities();
   return ran;
 }
 

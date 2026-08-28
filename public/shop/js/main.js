@@ -23,15 +23,29 @@ import * as cart from './core/cart.js';
 import { buildHeader, buildFooter, refreshCartCount, syncSearchInput, syncNav } from './ui/layout.js';
 import { errorState, closedState, emptyState } from './ui/states.js';
 
-import homeView from './views/home.js';
-import { listingView } from './views/listing.js';
-import productView from './views/product.js';
-import cartView from './views/cart.js';
-import checkoutView from './views/checkout.js';
-import successView from './views/success.js';
-import trackView from './views/track.js';
-import contactView from './views/contact.js';
-import favoritesView from './views/favorites.js';
+/*
+ * The pages are fetched when they are opened, not when the shop opens.
+ *
+ * Importing all nine at the top meant a customer landing on one product page
+ * downloaded the basket, the checkout, the order tracker, the favourites list
+ * and the contact form first - a third of a megabyte of JavaScript before the
+ * bottle they clicked on could be drawn, on a phone, on mobile data. Now the
+ * landing page pulls its own view and nothing else; the rest arrive as they are
+ * needed and the browser keeps them from then on.
+ *
+ * `pick` exists because the listing is a factory - one module serves the
+ * all-products page, a category, a brand and a search - so the module is
+ * imported first and the view built from it afterwards.
+ */
+const page = (load, pick = (module) => module.default) => {
+  let ready = null;
+  return (root, route) => {
+    if (!ready) ready = load().then(pick);
+    return ready.then((view) => view(root, route));
+  };
+};
+
+const listingPage = (kind) => page(() => import('./views/listing.js'), (m) => m.listingView(kind));
 
 const showDeployment = (deployment) => applyDeploymentBanner(deployment, {
   label: t('stagingTag'),
@@ -160,25 +174,25 @@ async function boot() {
   document.body.classList.remove('is-booting');
 
   defineRoutes({
-    '': guard(homeView),
-    products: guard(listingView('all')),
+    '': guard(page(() => import('./views/home.js'))),
+    products: guard(listingPage('all')),
     // The slug is optional on all three: a link that arrived without it — an
     // old `#/product/12`, a URL somebody trimmed — is the same page, and the
     // canonical in the head says which spelling is the real one.
-    'category/:id/:slug?': guard(listingView('category')),
-    'brand/:id/:slug?': guard(listingView('brand')),
-    search: guard(listingView('search')),
-    'product/:id/:slug?': guard(productView),
+    'category/:id/:slug?': guard(listingPage('category')),
+    'brand/:id/:slug?': guard(listingPage('brand')),
+    search: guard(listingPage('search')),
+    'product/:id/:slug?': guard(page(() => import('./views/product.js'))),
     // The header has linked here since the hearts landed; this is the page.
     // Guarded like every other catalogue route — the list is a list of this
     // shop's products, and a shop switched off in the ERP serves none of them.
-    favorites: guard(favoritesView),
-    cart: guard(cartView),
-    checkout: guard(checkoutView),
-    'order/:orderNo': guard(successView),
-    track: guard(trackView),
+    favorites: guard(page(() => import('./views/favorites.js'))),
+    cart: guard(page(() => import('./views/cart.js'))),
+    checkout: guard(page(() => import('./views/checkout.js'))),
+    'order/:orderNo': guard(page(() => import('./views/success.js'))),
+    track: guard(page(() => import('./views/track.js'))),
     // Not `guard()`-wrapped: a closed shop still needs a way to be reached.
-    contact: contactView,
+    contact: page(() => import('./views/contact.js')),
   }, {
     notFound: guard(notFoundRoute),
     onRendered: () => {

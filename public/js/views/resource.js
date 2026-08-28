@@ -7,7 +7,7 @@
 import api from '../core/api.js';
 import {
   h, mount, dataTable, pager, spinner, buildForm, modal, toast, toastError,
-  confirmDialog, debounce, textInput,
+  confirmDialog, debounce, textInput, summaryCards,
 } from '../core/ui.js';
 import { t } from '../core/i18n.js';
 import { can, invalidate } from '../core/store.js';
@@ -25,13 +25,31 @@ export function resourceView(config) {
 
     const listHost = h('div', { class: 'card-body tight' }, spinner());
     const pagerHost = h('div');
+    const cardsHost = h('div');
+
+    /*
+     * Optional counters above the list. A screen that wants them declares
+     * `summary(counts, state, reload)` and returns cards; a screen that does not
+     * is unchanged, and one whose endpoint is missing or refuses simply draws
+     * the list as before rather than failing on a header.
+     */
+    async function loadSummary() {
+      if (!config.summary || !config.summaryEndpoint) return;
+      try {
+        const counts = await api.get(config.summaryEndpoint, {});
+        mount(cardsHost, summaryCards(config.summary(counts, state, load)));
+      } catch { mount(cardsHost); }
+    }
 
     async function load() {
       mount(listHost, spinner());
       try {
-        const data = await api.get(config.endpoint, {
-          search: state.search, page: state.page, pageSize: state.pageSize, ...state.extra,
-        });
+        const [data] = await Promise.all([
+          api.get(config.endpoint, {
+            search: state.search, page: state.page, pageSize: state.pageSize, ...state.extra,
+          }),
+          loadSummary(),
+        ]);
         state.data = data;
         renderTable(data);
       } catch (error) {
@@ -165,6 +183,7 @@ export function resourceView(config) {
         can(`${config.module}.create`)
           ? h('button', { class: 'btn primary', onclick: () => openForm(null) }, '＋ ' + (config.createLabel || t('create')))
           : null),
+      cardsHost,
       h('div', { class: 'card' }, filterBar, listHost, pagerHost));
 
     await load();

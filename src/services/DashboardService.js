@@ -166,6 +166,12 @@ export class DashboardService {
         averageBasket: round2(monthTotals.average_basket),
         stockValue: round2(stock.v),
         stockUnits: round2(stock.q),
+        // How much of that total is sitting on variants nobody sells any more.
+        // It IS counted - it is the shop's money - and the tile says so, because
+        // the alternative was this screen and the valuation report printing two
+        // different totals for the same shelf with no way to tell why.
+        stockStoppedValue: round2(stock.stopped || 0),
+        stockStoppedUnits: round2(stock.stoppedQuantity || 0),
         lowStockCount: lowStockAll.length,
         openPurchaseOrders: pendingPurchases.n,
         openPurchaseValue: round2(pendingPurchases.value),

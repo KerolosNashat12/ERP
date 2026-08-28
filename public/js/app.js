@@ -9,26 +9,26 @@ import { shopMark, applyShopIdentity } from './core/brand.js';
 import { applyDeploymentBanner } from '../shared/deploymentBanner.js';
 
 import { renderLogin, promptPasswordChange } from './views/auth.js';
-import { dashboardView } from './views/dashboard.js';
-import { posView } from './views/pos.js';
-import { productsView } from './views/catalog.js';
-import { suppliersView, brandsView, categoriesView, customersView, attributesView } from './views/masterData.js';
-import {
-  inventoryView, movementsView, adjustmentsView, wastageView,
-} from './views/inventory.js';
-import trashView from './views/trash.js';
-import { purchasesView } from './views/purchasing.js';
-import { salesView } from './views/sales.js';
-import { webOrdersView } from './views/webOrders.js';
-import { returnsView } from './views/returns.js';
-import exchangesRouter from './views/exchange.js';
-import { promotionsView } from './views/promotions.js';
-import { reportsView } from './views/reports.js';
-import { costsView, costCategoriesView } from './views/costs.js';
-import { legacyInvoicesView } from './views/legacyInvoices.js';
-import { employeesView } from './views/employees.js';
-import { usersView, auditView, settingsView } from './views/admin.js';
-import { labelsView } from './views/labels.js';
+
+/*
+ * Every other screen is fetched the first time it is opened, not at sign-in.
+ *
+ * Statically importing all thirty of them meant a cashier signing in on a
+ * phone downloaded reports, payroll, labels, the audit log and the legacy
+ * invoice importer before the till could draw - about forty files that most
+ * users never open in a day. `screen()` returns a route handler that imports
+ * the module on first use and remembers it, so opening a screen twice fetches
+ * once, and the browser caches it after that anyway.
+ *
+ * The router already awaits its handler, so nothing else had to change.
+ */
+const screen = (load, name = 'default') => {
+  let ready = null;
+  return (host, route) => {
+    if (!ready) ready = load().then((module) => module[name]);
+    return ready.then((view) => view(host, route));
+  };
+};
 
 const appRoot = document.getElementById('app');
 
@@ -333,34 +333,34 @@ async function startApp() {
   const content = buildShell();
 
   defineRoutes({
-    dashboard: dashboardView,
-    pos: posView,
-    sales: salesView,
-    returns: returnsView,
-    exchanges: exchangesRouter,
-    'web-orders': webOrdersView,
-    products: productsView,
-    brands: brandsView,
-    categories: categoriesView,
-    attributes: attributesView,
-    labels: labelsView,
-    inventory: inventoryView,
-    movements: movementsView,
-    adjustments: adjustmentsView,
-    wastage: wastageView,
-    purchases: purchasesView,
-    suppliers: suppliersView,
-    customers: customersView,
-    costs: costsView,
-    'cost-categories': costCategoriesView,
-    'legacy-invoices': legacyInvoicesView,
-    employees: employeesView,
-    promotions: promotionsView,
-    reports: reportsView,
-    users: usersView,
-    audit: auditView,
-    trash: trashView,
-    settings: settingsView,
+    dashboard: screen(() => import('./views/dashboard.js'), 'dashboardView'),
+    pos: screen(() => import('./views/pos.js'), 'posView'),
+    sales: screen(() => import('./views/sales.js'), 'salesView'),
+    returns: screen(() => import('./views/returns.js'), 'returnsView'),
+    exchanges: screen(() => import('./views/exchange.js')),
+    'web-orders': screen(() => import('./views/webOrders.js'), 'webOrdersView'),
+    products: screen(() => import('./views/catalog.js'), 'productsView'),
+    brands: screen(() => import('./views/masterData.js'), 'brandsView'),
+    categories: screen(() => import('./views/masterData.js'), 'categoriesView'),
+    attributes: screen(() => import('./views/masterData.js'), 'attributesView'),
+    labels: screen(() => import('./views/labels.js'), 'labelsView'),
+    inventory: screen(() => import('./views/inventory.js'), 'inventoryView'),
+    movements: screen(() => import('./views/inventory.js'), 'movementsView'),
+    adjustments: screen(() => import('./views/inventory.js'), 'adjustmentsView'),
+    wastage: screen(() => import('./views/inventory.js'), 'wastageView'),
+    purchases: screen(() => import('./views/purchasing.js'), 'purchasesView'),
+    suppliers: screen(() => import('./views/masterData.js'), 'suppliersView'),
+    customers: screen(() => import('./views/masterData.js'), 'customersView'),
+    costs: screen(() => import('./views/costs.js'), 'costsView'),
+    'cost-categories': screen(() => import('./views/costs.js'), 'costCategoriesView'),
+    'legacy-invoices': screen(() => import('./views/legacyInvoices.js'), 'legacyInvoicesView'),
+    employees: screen(() => import('./views/employees.js'), 'employeesView'),
+    promotions: screen(() => import('./views/promotions.js'), 'promotionsView'),
+    reports: screen(() => import('./views/reports.js'), 'reportsView'),
+    users: screen(() => import('./views/admin.js'), 'usersView'),
+    audit: screen(() => import('./views/admin.js'), 'auditView'),
+    trash: screen(() => import('./views/trash.js')),
+    settings: screen(() => import('./views/admin.js'), 'settingsView'),
   }, {
     notFound: (host) => mount(host, h('div', { class: 'empty' }, t('noResults'))),
     beforeEach: (route) => {

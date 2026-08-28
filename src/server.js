@@ -11,6 +11,7 @@ import {
 } from './infrastructure/database/connection.js';
 import { seedBaseline, hardenDefaultCredentials, syncPermissionCatalogue } from './infrastructure/database/seed.js';
 import { runMigrations } from './infrastructure/database/migrations/index.js';
+import compress from './api/middleware/compress.js';
 import apiRouter from './api/routes/index.js';
 import shopRouter from './api/routes/shop.js';
 import { pageHandler, seoRoutes } from './api/routes/storefrontPages.js';
@@ -37,6 +38,12 @@ export function createApp() {
   const app = express();
   app.disable('x-powered-by');
   app.set('trust proxy', true);
+
+  /*
+   * Compression goes on FIRST, so it wraps every response below it - the
+   * storefront's CSS and JavaScript, the ERP's, and every API answer.
+   */
+  app.use(compress());
 
   app.use(express.json({ limit: '5mb' }));
   app.use(express.urlencoded({ extended: true }));
@@ -75,6 +82,31 @@ export function createApp() {
   });
 
   app.use(attachRequestContext);
+
+  /*
+   * MM_SQL_COUNT=1 prints how many statements each request ran, and which it
+   * repeated. On the shop PC a statement is microseconds and the count is
+   * curiosity; on the hosted database every statement is a network round trip,
+   * so this is the number that decides whether a screen feels instant or slow.
+   * It is how the double dashboard fetch and the two identity reads on every
+   * request were found. Off unless asked for, and meant for probing one request
+   * at a time - concurrent requests share the counter and will confuse it.
+   */
+  if (process.env.MM_SQL_COUNT === '1') {
+    app.use((req, res, next) => {
+      const started = Date.now();
+      globalThis.__mmSqlCount = { n: 0, list: [] };
+      const box = globalThis.__mmSqlCount;
+      res.on('finish', () => {
+        const counts = new Map();
+        for (const sql of box.list) counts.set(sql, (counts.get(sql) || 0) + 1);
+        const worst = [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4);
+        console.log(`SQL ${String(box.n).padStart(4)}  ${Date.now() - started}ms  ${req.method} ${req.originalUrl}`);
+        for (const [sql, n] of worst) if (n > 1) console.log(`        x${n} ${sql}`);
+      });
+      next();
+    });
+  }
 
   /**
    * One save, one document.

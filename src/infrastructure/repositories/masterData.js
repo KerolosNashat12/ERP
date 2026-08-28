@@ -20,6 +20,41 @@ export class SupplierRepository extends BaseRepository {
     });
   }
 
+  /**
+   * The counters above the suppliers list.
+   *
+   * The question a shop owner actually has about this screen is not "how many
+   * suppliers do I have" - it is "how much do I owe, and to how many of them".
+   * So the money comes first and the count is the small print.
+   */
+  async summary() {
+    const db = getDb();
+    const [people, orders] = await Promise.all([
+      db.prepare(`
+        SELECT COUNT(*) AS suppliers,
+               COALESCE(SUM(CASE WHEN is_active = 1 THEN 1 END), 0) AS active
+        FROM suppliers
+        WHERE ${notInBin('supplier', 'suppliers.id')}
+      `).get(),
+      db.prepare(`
+        SELECT
+          COUNT(*)                                                            AS orders,
+          COUNT(DISTINCT supplier_id)                                         AS suppliers_used,
+          COALESCE(SUM(total_amount), 0)                                      AS purchased,
+          COALESCE(SUM(total_amount - paid_amount), 0)                        AS outstanding,
+          COUNT(DISTINCT CASE WHEN total_amount - paid_amount > 0.01
+                              THEN supplier_id END)                           AS suppliers_owed,
+          COALESCE(SUM(CASE WHEN status IN ('ordered','partially_received')
+                            THEN 1 END), 0)                                   AS open_orders,
+          COALESCE(SUM(CASE WHEN status IN ('ordered','partially_received')
+                            THEN total_amount END), 0)                        AS open_value
+        FROM purchase_orders
+        WHERE status <> 'cancelled'
+      `).get(),
+    ]);
+    return { ...people, ...orders };
+  }
+
   /** Purchase totals per supplier — used by the supplier report and detail page. */
   async statistics(supplierId) {
     return getDb().prepare(`

@@ -61,6 +61,11 @@ const { zipFromBuffer } = await import('../src/shared/zipReader.js');
 const { MODULES } = await import('../src/shared/permissions.js');
 const { CREDENTIAL_COLUMNS } = await import('../src/platform/snapshot.js');
 const { runMigrations } = await import('../src/infrastructure/database/migrations/index.js');
+/*
+ * Imported down here with the rest: everything above the env vars at the top of
+ * this file must NOT reach config/index.js, which reads them once at import.
+ */
+const { forgetAllIdentities } = await import('../src/api/middleware/identity.js');
 
 let base = '';
 let server = null;
@@ -507,6 +512,14 @@ test('a shop created before this release gains the permission from migration 017
     await db.prepare("DELETE FROM permissions WHERE code = 'settings.export_data'").run();
     await db.prepare("DELETE FROM schema_migrations WHERE name = '017-shop-data-export'").run();
   });
+  /*
+   * That was a hand-edit straight into the database, behind the application's
+   * back. The request path keeps a few seconds of what each caller may do (see
+   * api/middleware/identity.js) and has no way to know a permission row was
+   * deleted underneath it, so the cache is dropped here - exactly as a real
+   * deploy would, by restarting the process.
+   */
+  forgetAllIdentities();
 
   const before = await exportFor(slug, cookie);
   assert.equal(before.status, 403,

@@ -4,6 +4,7 @@ import { getDb } from '../database/connection.js';
 import { likeParam } from '../database/productSearch.js';
 import { ALL_PERMISSIONS } from '../../shared/permissions.js';
 import { ValidationError } from '../../shared/errors.js';
+import { forgetIdentity, forgetAllIdentities } from '../../api/middleware/identity.js';
 
 export class UserRepository extends BaseRepository {
   constructor() {
@@ -16,6 +17,32 @@ export class UserRepository extends BaseRepository {
       ],
       searchable: ['username', 'full_name', 'email', 'phone'],
     });
+  }
+
+  /*
+   * Every write to a user row drops that user from the identity cache the
+   * authenticate middleware reads, so "I disabled his account" or "I moved her
+   * to another role" is true on the very next request rather than a few seconds
+   * later. Overriding the three base writes covers every caller - the admin
+   * screen, a password change, a reset, the recycle bin restoring a user - so
+   * no future call site has to remember.
+   */
+  async create(data) {
+    const created = await super.create(data);
+    forgetIdentity(created?.id ?? null);
+    return created;
+  }
+
+  async update(id, data) {
+    const updated = await super.update(id, data);
+    forgetIdentity(Number(id));
+    return updated;
+  }
+
+  async remove(id) {
+    const removed = await super.remove(id);
+    forgetIdentity(Number(id));
+    return removed;
   }
 
   async findByUsername(username) {
@@ -119,6 +146,9 @@ export class RoleRepository extends BaseRepository {
    * dropped, and a code nobody recognises is an error the caller sees.
    */
   async setPermissions(roleId, permissionCodes) {
+    // Everyone holding this role is affected and the caller does not know who,
+    // so the whole identity cache goes. It refills in one request each.
+    forgetAllIdentities();
     const db = getDb();
     const known = new Map(ALL_PERMISSIONS.map((p) => [p.code, p]));
     const unknown = [];

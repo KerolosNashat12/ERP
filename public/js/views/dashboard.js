@@ -59,7 +59,10 @@ export async function dashboardView(root) {
         k.monthWastage ? `${number(k.monthWastageUnits)} ${t('qty')} · ${t('thisMonth')}` : t('thisMonth')),
       kpi(t('netProfit'), money(k.monthNetProfit), t('netProfitHint'), true),
       kpi(t('averageBasket'), money(k.averageBasket), t('thisMonth')),
-      kpi(t('stockValue'), money(k.stockValue), `${number(k.stockUnits)} ${t('qty')}`),
+      kpi(t('stockValue'), money(k.stockValue),
+        k.stockStoppedUnits
+          ? `${number(k.stockUnits)} ${t('qty')} · ${number(k.stockStoppedUnits)} ${t('stoppedQuantity')}`
+          : `${number(k.stockUnits)} ${t('qty')}`),
       kpi(t('lowStockItems'), number(k.lowStockCount), t('inventory')),
       kpi(t('receivables'), money(k.receivables), `${k.receivableInvoices} ${t('invoice')}`),
       kpi(t('openPurchaseOrders'), number(k.openPurchaseOrders), money(k.openPurchaseValue)),

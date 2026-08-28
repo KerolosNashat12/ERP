@@ -956,3 +956,23 @@ table.data tbody tr.is-idle td { opacity: .55; }
 table.data tbody tr.is-idle:hover td { opacity: 1; }
 /* The condition picker was clipping its own longest word ("Resellable"). */
 table.data td select { min-inline-size: 118px; }
+
+/* ---------------------------------------------- summary cards above a list */
+/*
+ * The same `.kpi` box the home screen uses, but these are a way IN to the rows
+ * underneath: a clickable card says so by lifting slightly, and the one whose
+ * filter is currently on stays lit so the screen can always be read backwards —
+ * "why am I only seeing forty products" has an answer on the page.
+ */
+/*
+ * A little wider than the home screen's tiles: these hold money with thousands
+ * separators and a currency, and "EGP 134,250.00" broken across two lines is
+ * not a figure anybody can read at a glance.
+ */
+.summary-cards { margin-bottom: 14px; grid-template-columns: repeat(auto-fit, minmax(196px, 1fr)); }
+.summary-cards .kpi .value { white-space: nowrap; }
+.summary-cards .kpi .label { min-height: 2.1em; }
+.summary-cards .kpi.is-clickable { cursor: pointer; transition: transform .12s ease, box-shadow .12s ease, border-color .12s ease; }
+.summary-cards .kpi.is-clickable:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(15, 23, 42, .08); }
+.summary-cards .kpi.is-clickable:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+.summary-cards .kpi.is-on { border-color: var(--gold); background: var(--gold-soft); }

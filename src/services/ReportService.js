@@ -129,31 +129,46 @@ export const REPORTS = {
       col('variant_label', 'Variant', 'المتغير'),
       col('brand_name_en', 'Brand', 'العلامة'),
       col('quantity', 'On hand', 'الكمية', 'number'),
+      // Whether this line is still being sold. Stock on a stopped variant is
+      // still the shop's money and is still counted here; this column is how it
+      // can be told apart rather than hidden.
+      col('variant_state', 'Status', 'الحالة', 'code'),
       col('average_cost', 'Avg cost', 'متوسط التكلفة', 'money'),
       col('selling_price', 'Sell price', 'سعر البيع', 'money'),
       col('stock_value', 'Stock value', 'قيمة المخزون', 'money'),
       col('retail_value', 'Retail value', 'قيمة البيع', 'money'),
     ],
     run: async (filters) => {
-      const where = ['variant_active = 1'];
-      const params = [];
-      if (filters.warehouseId) { where.push('warehouse_id = ?'); params.push(filters.warehouseId); }
-      if (filters.brandId) { where.push('brand_id = ?'); params.push(filters.brandId); }
-      if (filters.categoryId) { where.push('category_id = ?'); params.push(filters.categoryId); }
-      if (filters.hideZero !== 'false') where.push('quantity <> 0');
-      const rows = await getDb().prepare(`
-        SELECT *, ROUND(quantity * selling_price, 2) AS retail_value
-        FROM v_stock_on_hand WHERE ${where.join(' AND ')}
-        ORDER BY stock_value DESC
-      `).all(...params);
+      /*
+       * The same query the home screen's stock tile uses - see
+       * InventoryRepository.valuation for why that matters. This report and
+       * that tile used to ask two different questions and print two different
+       * totals for the same shelf.
+       */
+      const scope = {
+        warehouseId: filters.warehouseId || null,
+        brandId: filters.brandId || null,
+        categoryId: filters.categoryId || null,
+        hideZero: filters.hideZero !== 'false',
+        onlyStopped: filters.stopped === 'only',
+      };
+      const [rows, totals] = await Promise.all([
+        repositories.inventory.valuationRows(scope),
+        repositories.inventory.valuation(scope),
+      ]);
       return {
         rows,
         summary: {
           items: rows.length,
-          total_quantity: round2(rows.reduce((s, r) => s + r.quantity, 0)),
-          total_cost_value: round2(rows.reduce((s, r) => s + r.stock_value, 0)),
-          total_retail_value: round2(rows.reduce((s, r) => s + r.retail_value, 0)),
-          potential_margin: round2(rows.reduce((s, r) => s + r.retail_value - r.stock_value, 0)),
+          total_quantity: round2(totals.quantity),
+          total_cost_value: round2(totals.stock_value),
+          total_retail_value: round2(totals.retail_value),
+          potential_margin: round2(totals.retail_value - totals.stock_value),
+          // Named rather than hidden: this is the part of the total that sits on
+          // variants nobody is selling any more, and the reason the two screens
+          // used to disagree.
+          stopped_quantity: round2(totals.stopped_quantity),
+          stopped_value: round2(totals.stopped_value),
         },
       };
     },

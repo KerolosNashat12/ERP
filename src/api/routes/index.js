@@ -169,6 +169,11 @@ router.get('/dashboard/alerts', requirePermission('dashboard.view'), asyncHandle
 }));
 
 // ------------------------------------------------------------- master data
+// Registered before the CRUD router, which would otherwise read "summary" as an id.
+router.get('/suppliers/summary', requirePermission('suppliers.view'), asyncHandler(async (_req, res) => {
+  res.json(await repositories.suppliers.summary());
+}));
+
 router.use('/suppliers', crudRouter({
   service: supplierService, module: 'suppliers', schema: v.supplierSchema,
 }));
@@ -280,6 +285,14 @@ router.use('/attributes', crudRouter({
 // ---------------------------------------------------------------- products
 router.get('/products', requirePermission('products.view'), asyncHandler(async (req, res) => {
   res.json(await catalogService.list(req.query));
+}));
+
+/*
+ * The counters above the products grid. Same filters as the list below them, on
+ * purpose - see ProductRepository#scope.
+ */
+router.get('/products/summary', requirePermission('products.view'), asyncHandler(async (req, res) => {
+  res.json(await catalogService.summary(req.query));
 }));
 
 router.get('/products/lookup', requirePermission('products.view'), asyncHandler(async (req, res) => {
@@ -488,6 +501,18 @@ router.get('/inventory/stock', requirePermission('inventory.view'), asyncHandler
   res.json(await inventoryService.stockOnHand({
     ...req.query,
     lowStockOnly: req.query.lowStockOnly === '1' || req.query.lowStockOnly === 'true',
+  }));
+}));
+
+/*
+ * The counters above the stock grid, from the SAME query the home screen's stock
+ * tile and the valuation report use - one shelf, one set of numbers.
+ */
+router.get('/inventory/summary', requirePermission('inventory.view'), asyncHandler(async (req, res) => {
+  res.json(await repositories.inventory.valuation({
+    warehouseId: req.query.warehouseId || null,
+    brandId: req.query.brandId || null,
+    categoryId: req.query.categoryId || null,
   }));
 }));
 

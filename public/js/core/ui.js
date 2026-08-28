@@ -277,6 +277,38 @@ export function buildForm(fields, initial = {}, { columns = 2 } = {}) {
 /**
  * columns: [{ key, label, type, render(row), align, width, class }]
  */
+/**
+ * The counters above a list: how many, of what, worth how much.
+ *
+ * One helper rather than three copies, because the products, stock and supplier
+ * screens all want the same thing and would otherwise drift apart in spacing,
+ * wording and behaviour. Each card takes a label, a value, an optional line of
+ * small print, and - where it makes sense - an `onClick`, which is what turns a
+ * number into a way of getting to the rows behind it: tapping «حريمي 40» should
+ * show those forty, not just say that they exist.
+ *
+ * A card whose value is null is dropped, so a caller can write the whole strip
+ * and let the data decide which parts of it are worth drawing.
+ */
+export function summaryCards(cards = []) {
+  const drawn = cards.filter((card) => card && card.value !== null && card.value !== undefined);
+  if (!drawn.length) return h('div', { style: { display: 'none' } });
+  return h('div', { class: 'kpis summary-cards' }, ...drawn.map((card) => h('div', {
+    class: `kpi${card.accent ? ' accent' : ''}${card.onClick ? ' is-clickable' : ''}${card.active ? ' is-on' : ''}`,
+    ...(card.onClick ? {
+      role: 'button',
+      tabindex: '0',
+      onclick: card.onClick,
+      onkeydown: (event) => {
+        if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); card.onClick(event); }
+      },
+    } : {}),
+  },
+  h('div', { class: 'label' }, card.label),
+  h('div', { class: 'value' }, String(card.value)),
+  card.sub ? h('div', { class: 'sub' }, card.sub) : null)));
+}
+
 export function dataTable({ columns, rows, onRowClick, footer, emptyMessage, rowClass }) {
   if (!rows?.length) {
     return h('div', { class: 'empty' },

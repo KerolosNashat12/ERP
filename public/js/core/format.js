@@ -1,5 +1,5 @@
 /** Locale-aware formatting for money, numbers and dates. */
-import { getLanguage } from './i18n.js';
+import { getLanguage, tCode } from './i18n.js';
 import { session } from './store.js';
 
 /**
@@ -69,6 +69,13 @@ export const startOfMonthIso = () => `${isoDate().slice(0, 8)}01`;
 export function byType(value, type) {
   if (value === null || value === undefined || value === '') return '—';
   switch (type) {
+    /*
+     * A word the server chose from a fixed list, translated here. The server
+     * must never send a sentence for a person to read: it does not know which
+     * language this browser is in, and a report exported in Arabic with English
+     * words down one column is how that mistake looks.
+     */
+    case 'code': return tCode(String(value), String(value));
     case 'money': return money(value);
     case 'number': return number(value, 0);
     case 'percent': return percent(value);

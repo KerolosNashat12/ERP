@@ -53,6 +53,11 @@ function createConnection(driver) {
   const facade = {
     /** Mirrors the `prepare(sql).get(...)` shape the repositories already use. */
     prepare(sql) {
+      // The counter behind MM_SQL_COUNT (see server.js). Absent unless asked for.
+      if (globalThis.__mmSqlCount) {
+        globalThis.__mmSqlCount.n += 1;
+        globalThis.__mmSqlCount.list.push(sql.replace(/\s+/g, ' ').trim().slice(0, 110));
+      }
       return {
         get: (...params) => activeExecutor().get(sql, params),
         all: (...params) => activeExecutor().all(sql, params),

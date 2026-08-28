@@ -20,6 +20,20 @@ export const suppliersView = resourceView({
   trashType: 'supplier',
   createLabel: t('suppliers'),
   formSize: 'wide',
+  /*
+   * The question a shop owner has about this screen is not "how many suppliers
+   * do I have" - it is "how much do I owe, and to whom". So the money is the
+   * first card and the head count is its small print.
+   */
+  summaryEndpoint: '/api/suppliers/summary',
+  summary: (counts) => [
+    { label: t('outstanding'), value: money(counts.outstanding), accent: true,
+      sub: `${number(counts.suppliers_owed)} ${t('suppliersOwed')}` },
+    { label: t('openOrdersValue'), value: number(counts.open_orders), sub: money(counts.open_value) },
+    { label: t('purchasedTotal'), value: money(counts.purchased), sub: `${number(counts.orders)} ${t('purchases')}` },
+    { label: t('suppliers'), value: number(counts.suppliers),
+      sub: `${number(counts.suppliers_used)} ${t('suppliersUsed')}` },
+  ],
   label: (row) => row.name_en,
   columns: () => [
     { key: 'code', label: t('code'), class: 'mono small' },
