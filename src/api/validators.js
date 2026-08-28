@@ -265,6 +265,11 @@ export const purchaseOrderSchema = z.object({
    */
   discount_percent: z.coerce.number().min(0).max(100).optional(),
   discount_amount: money,
+  /*
+   * Which of the two above the person actually typed. Absent means percent,
+   * which is what every order written before this change is.
+   */
+  discount_type: z.enum(['percent', 'amount']).optional(),
   shipping_amount: money,
   notes: optionalString,
   status: z.enum(['draft', 'ordered']).optional(),
@@ -276,6 +281,29 @@ export const purchaseOrderSchema = z.object({
     tax_rate: z.coerce.number().min(0).max(100).default(0),
     notes: optionalString,
   })).min(1, 'Add at least one line'),
+});
+
+/**
+ * Goods going back to the supplier.
+ *
+ * `replacement_quantity` is how many of the same came back in - it may be fewer
+ * than went out, because a supplier who is short sends what he has. It is only
+ * meaningful on a replacement, and the service refuses one that exceeds what
+ * was sent back rather than silently capping it: a shop typing 5 when it sent 3
+ * has made a mistake somebody needs to see.
+ */
+export const purchaseReturnSchema = z.object({
+  purchase_order_id: id,
+  return_date: optionalString,
+  settlement: z.enum(['credit', 'refund', 'replace']).default('credit'),
+  reason: optionalString,
+  notes: optionalString,
+  lines: z.array(z.object({
+    po_line_id: id,
+    quantity: z.coerce.number().positive(),
+    replacement_quantity: z.coerce.number().min(0).default(0),
+    reason: optionalString,
+  })).min(1, 'Select at least one item to send back'),
 });
 
 export const receiveSchema = z.object({

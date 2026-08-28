@@ -174,6 +174,37 @@ test('stock figures agree, and the counters describe what is under them', async 
     assert.equal(all.out_of_stock, 0);
   });
 
+  await t.test('the products screen and the valuation report count the same pieces', async () => {
+    /*
+     * The owner read 247 on one screen and 746 on another and asked which was
+     * right. Both were: one counts PRODUCTS and the other counts PIECES. The
+     * products screen now says both, and this is the test that keeps the piece
+     * count identical to the report's - the two are computed by different
+     * queries in different files, which is exactly how they drift.
+     */
+    const [cards, report] = await Promise.all([
+      ok('/api/products/summary'),
+      ok('/api/reports/inventory_valuation'),
+    ]);
+    assert.equal(cards.units, report.summary.total_quantity,
+      'pieces on the products screen must equal pieces on the valuation report');
+
+    // And the report's line count is variants WITH stock, which is a third
+    // question again - the one that made 313 and 307 look like a discrepancy.
+    assert.equal(cards.stocked_lines, report.summary.items,
+      'and the line counts must agree too');
+    /*
+     * The card counts variants the shop still SELLS, so a stopped variant with
+     * stock on it appears in the report's lines and not in that count. That is
+     * the right pair of answers, and this is the arithmetic that connects them -
+     * any excess is stopped stock and nothing else.
+     */
+    const stoppedLines = report.rows.filter((row) => row.variant_state === 'stopped_variant').length;
+    assert.ok(cards.stocked_lines <= cards.variants + stoppedLines,
+      `${cards.stocked_lines} lines hold stock, but the shop sells ${cards.variants} variants `
+      + `and only ${stoppedLines} stopped ones hold anything`);
+  });
+
   await t.test('the counters follow the filter, and never describe a different list', async () => {
     const [cards, list] = await Promise.all([
       ok('/api/products/summary?gender=women'),

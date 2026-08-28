@@ -112,6 +112,28 @@ export class ProductRepository extends BaseRepository {
         COALESCE(SUM((SELECT COUNT(*) FROM product_variants v
                        WHERE v.product_id = p.id AND v.is_active = 1)), 0) AS variants,
         /*
+         * PIECES, not products and not variants - "how many things are actually
+         * in my shop". The owner asked for this after reading 247 on one screen
+         * and 746 on another and having no way to see that they answer
+         * different questions.
+         *
+         * It has to tie to the valuation report exactly, so it is counted the
+         * way that report counts: every variant under the product, switched on
+         * or off, but only in warehouses that are switched on - which is the
+         * one filter the stock view applies. Miss it and a deactivated
+         * stockroom makes the two screens disagree by whatever is left in it.
+         */
+        COALESCE(SUM((SELECT COALESCE(SUM(sl.quantity), 0)
+                        FROM stock_levels sl
+                        JOIN product_variants v ON v.id = sl.variant_id
+                        JOIN warehouses w ON w.id = sl.warehouse_id AND w.is_active = 1
+                       WHERE v.product_id = p.id)), 0) AS units,
+        COALESCE(SUM((SELECT COUNT(*)
+                        FROM stock_levels sl
+                        JOIN product_variants v ON v.id = sl.variant_id
+                        JOIN warehouses w ON w.id = sl.warehouse_id AND w.is_active = 1
+                       WHERE v.product_id = p.id AND sl.quantity <> 0)), 0) AS stocked_lines,
+        /*
          * Nothing left on the shelf under this product - the ones that cannot
          * be sold today however good they look on the website.
          *

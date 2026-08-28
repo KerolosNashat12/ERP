@@ -731,6 +731,18 @@ body:not(.is-booting) .boot-screen { display: none; }
   /* The mark holds its size; the words beside it are what give way. */
   flex: none;
   object-fit: contain;
+  /*
+   * Softened corners, and softened rather than rounded: the radius is a small
+   * fixed number, not a percentage. A percentage would scale with whatever the
+   * shop uploaded - eating the corners of a square badge and turning a wide
+   * wordmark into a lozenge - and the whole point of the two maxima above is
+   * that this element's SIZE is the image's business. `overflow: hidden` so the
+   * clip applies to the bitmap itself, and no background: a PNG with
+   * transparency must go on sitting on the header and on the footer's dark band
+   * without a white rectangle appearing around it.
+   */
+  border-radius: 10px;
+  overflow: hidden;
 }
 /*
  * `max-width` on the text, not on the header.
@@ -1583,19 +1595,27 @@ html[lang="ar"] .card-brand { letter-spacing: 0; text-transform: none; font-size
 }
 
 /*
- * In a GRID CARD the picture is fitted, not cropped: the design frames a
- * product on paper with air around it, which is what tells the eye the frame
- * is a backdrop and not the product's own background.
+ * In a GRID CARD the picture FILLS its frame.
  *
- * The box is still ratio-locked, so this changes nothing about the grid's
- * evenness — that is the frame's job, not the picture's. `padding` on the
- * image works because `object-fit` fits to the CONTENT box; the element still
- * fills its frame, so the absolute positioning above is untouched.
+ * The frames were always the same shape - every one of them is locked to
+ * `--photo-ratio` - but the pictures inside them were fitted, so a tall bottle
+ * drew a narrow column of image with grey either side, a wide box drew a strip
+ * with grey above and below, and a shelf of six products looked like six
+ * different sizes of thing. The owner said it plainly: everything on the
+ * website should be the same shape. A frame being the same shape is not enough
+ * if the picture inside it is not.
  *
- * The product page's gallery is deliberately left cropping: there the photo
- * IS the subject and filling the frame is what a shopper wants.
+ * So: cover. Every card presents an identical square of photograph, centred,
+ * and the shelf reads as one shelf. The cost is that an extreme photograph gets
+ * cropped, which is the right trade for a catalogue of bottles shot on white -
+ * and the product page still shows the whole thing, uncropped, because there
+ * the photograph IS the subject rather than one card among forty.
+ *
+ * The drawn placeholder keeps its own rule (`.photo-default`, fitted with a
+ * margin): a line drawing cropped to the edges reads as a mistake.
  */
-.card-photo .photo > img { object-fit: contain; padding: var(--sp-4); }
+.card-photo .photo > img { object-fit: cover; object-position: center; padding: 0; }
+.card-photo .photo > img.photo-default { object-fit: contain; padding: var(--sp-5); }
 
 /* ------------------------------------------------------------- badges ---- */
 .badge {
@@ -3275,3 +3295,21 @@ html[dir="rtl"] .switch-input:checked ~ .switch-track .switch-knob { transform: 
   font-size: var(--fs-sm);
   padding: 3px var(--sp-4);
 }
+
+
+/* ------------------------------------------------- when there is no picture */
+/*
+ * The drawn fallbacks (js/ui/placeholders.js) sit in the same frames as real
+ * photographs and are fitted the same way, so a shelf where half the products
+ * have pictures still reads as one shelf. Slightly inset, because a line
+ * drawing touching the edge of its frame reads as a diagram rather than as a
+ * product.
+ */
+.photo-default {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: contain;
+  padding: var(--sp-5);
+  opacity: .9;
+}
+.brand-logo-default { padding: var(--sp-3); }

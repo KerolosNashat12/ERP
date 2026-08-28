@@ -3,6 +3,7 @@ import { el, icon, chevron, ICONS } from '../core/dom.js';
 import { imageUrl, brandLogoUrl } from '../core/api.js';
 import { t, pick, isRtl } from '../core/i18n.js';
 import { monogramText } from '../core/branding.js';
+import { defaultProductImage, defaultBrandImage } from './placeholders.js';
 import { priceRange } from '../core/format.js';
 import { href } from '../core/router.js';
 import { routePath, slugFor } from '../../../shared/shopUrls.js';
@@ -24,13 +25,16 @@ export function availabilityBadge(availability) {
 }
 
 /**
- * What fills a card with no photograph in it: this shop's own monogram, never
- * a set of letters belonging to whoever this platform hosted first. The
- * monogram rather than the logo even for a shop that has uploaded one — a
- * wordmark stretched into a square photo frame is a worse placeholder than two
- * quiet letters.
+ * What fills a card with no photograph in it.
+ *
+ * It used to be two quiet letters, which on a shelf beside real photographs
+ * reads as a page that has not finished loading. Now it is a drawn bottle in
+ * the shop's own accent - the same square frame, the same fitting rules as a
+ * photograph, so the grid stays even - with the shop's monogram inside it.
+ * Drawn rather than a stock photograph on purpose: a picture of somebody else's
+ * perfume on this card would be a small lie about what is in the box.
  */
-const placeholderMark = () => el('span.photo-mark', monogramText());
+const placeholderMark = (label = '') => defaultProductImage(label || monogramText());
 
 /**
  * A photo that reserves its space before it loads, so a grid of cards does not
@@ -41,7 +45,7 @@ export function productPhoto(imageId, alt, { eager = false } = {}) {
   const frame = el('div.photo');
   if (!imageId) {
     frame.classList.add('photo-empty');
-    frame.append(placeholderMark());
+    frame.append(placeholderMark(alt));
     return frame;
   }
   const img = el('img', {
@@ -55,7 +59,7 @@ export function productPhoto(imageId, alt, { eager = false } = {}) {
   img.addEventListener('error', () => {
     frame.classList.add('photo-empty');
     img.remove();
-    frame.append(placeholderMark());
+    frame.append(placeholderMark(alt));
   });
   frame.append(img);
   return frame;
@@ -263,7 +267,14 @@ export function taxonomyTile(row, kind) {
  */
 export function brandCard(row) {
   const name = pick(row, 'name');
-  const mark = el('span.brand-mark-badge', { 'aria-hidden': 'true' }, categoryLetter(name));
+  /*
+   * The fallback is drawn now rather than typeset: the brand's initials inside
+   * a ring, in the shop's accent, filling the same circle a real logo fills.
+   * A bare letter next to five real marks looks like a brand that failed to
+   * load; a drawn mark looks like a brand whose logo has not been added yet,
+   * which is the truth.
+   */
+  const mark = defaultBrandImage(name);
   /*
    * Three sources, in order of how much the shop meant it:
    *   1. a picture uploaded against the brand in the ERP — `has_logo`;

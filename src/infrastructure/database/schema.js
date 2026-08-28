@@ -411,6 +411,14 @@ CREATE TABLE IF NOT EXISTS purchase_orders (
   subtotal        REAL    NOT NULL DEFAULT 0,
   -- The rate the supplier gave, and the money it comes to. The percent is what
   -- somebody typed; the amount is what everything downstream reads.
+  --
+  -- discount_type says WHICH of the two the person actually entered. A supplier
+  -- who takes 5% off and a supplier who knocks 500 off a 12,000 order are doing
+  -- different things, and storing only the percent turned the second into
+  -- 4.1666...%, which then rounded its way back to 499.99 on the next screen.
+  -- Both are still written on every order so nothing downstream has to branch.
+  discount_type   TEXT    NOT NULL DEFAULT 'percent'
+                  CHECK (discount_type IN ('percent','amount')),
   discount_percent REAL   NOT NULL DEFAULT 0,
   discount_amount REAL    NOT NULL DEFAULT 0,
   tax_amount      REAL    NOT NULL DEFAULT 0,
@@ -441,6 +449,77 @@ CREATE TABLE IF NOT EXISTS purchase_order_lines (
   notes              TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_po_lines ON purchase_order_lines(purchase_order_id);
+-- ------------------------------------------------ goods going back to the supplier
+/*
+ * A purchase return: stock the shop received, paid for perhaps, and is sending
+ * back - faulty, wrong item, short-dated, over-delivered.
+ *
+ * It is NOT a cancelled purchase order and it is not an edit of one. The order
+ * says what was agreed and what arrived, and it must go on saying that however
+ * many boxes go back later; a shop that reconciles a supplier statement in
+ * December needs the September order to still read the way it read in
+ * September. So the return is its own document, and everything about what the
+ * shop still owes is worked out from the two together.
+ *
+ * settlement says what the supplier is doing about it:
+ *   credit  - it comes off what the shop owes (or the supplier now owes the shop)
+ *   refund  - the supplier is sending the money back
+ *   replace - the same goods again; a replacement receipt brings them back in
+ *
+ * status carries 'reversed' for a return recorded in error, because deleting it
+ * would take the stock movement's explanation with it.
+ */
+CREATE TABLE IF NOT EXISTS purchase_returns (
+  id                INTEGER PRIMARY KEY AUTOINCREMENT,
+  return_no         TEXT    NOT NULL UNIQUE,
+  purchase_order_id INTEGER NOT NULL REFERENCES purchase_orders(id),
+  po_number         TEXT,
+  supplier_id       INTEGER NOT NULL REFERENCES suppliers(id),
+  warehouse_id      INTEGER NOT NULL REFERENCES warehouses(id),
+  return_date       TEXT    NOT NULL,
+  settlement        TEXT    NOT NULL DEFAULT 'credit'
+                    CHECK (settlement IN ('credit','refund','replace')),
+  status            TEXT    NOT NULL DEFAULT 'completed'
+                    CHECK (status IN ('completed','reversed')),
+  reason            TEXT,
+  subtotal          REAL    NOT NULL DEFAULT 0,
+  tax_amount        REAL    NOT NULL DEFAULT 0,
+  total_amount      REAL    NOT NULL DEFAULT 0,
+  -- What came back IN under a replacement, valued the same way. Zero on a
+  -- credit or a refund, and the reason a replacement can be worth nothing net
+  -- while still moving stock twice.
+  replacement_amount REAL   NOT NULL DEFAULT 0,
+  notes             TEXT,
+  reversed_at       TEXT,
+  reversed_by       INTEGER REFERENCES users(id),
+  reversal_reason   TEXT,
+  created_by        INTEGER REFERENCES users(id),
+  created_at        TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+CREATE INDEX IF NOT EXISTS idx_purchase_returns_order ON purchase_returns(purchase_order_id);
+CREATE INDEX IF NOT EXISTS idx_purchase_returns_supplier ON purchase_returns(supplier_id);
+CREATE INDEX IF NOT EXISTS idx_purchase_returns_date ON purchase_returns(return_date DESC);
+
+CREATE TABLE IF NOT EXISTS purchase_return_lines (
+  id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+  return_id          INTEGER NOT NULL REFERENCES purchase_returns(id) ON DELETE CASCADE,
+  po_line_id         INTEGER NOT NULL REFERENCES purchase_order_lines(id),
+  variant_id         INTEGER NOT NULL REFERENCES product_variants(id),
+  sku                TEXT,
+  description        TEXT,
+  quantity           REAL    NOT NULL CHECK (quantity > 0),
+  -- What the shop paid for this piece on that order, not today's cost. A return
+  -- credits what was actually charged.
+  unit_cost          REAL    NOT NULL DEFAULT 0,
+  line_total         REAL    NOT NULL DEFAULT 0,
+  -- On a replacement: how many came back in, which can be fewer than went out
+  -- if the supplier was short.
+  replacement_quantity REAL  NOT NULL DEFAULT 0,
+  reason             TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_purchase_return_lines ON purchase_return_lines(return_id);
+CREATE INDEX IF NOT EXISTS idx_purchase_return_lines_po_line ON purchase_return_lines(po_line_id);
+
 CREATE INDEX IF NOT EXISTS idx_po_lines_variant ON purchase_order_lines(variant_id);
 
 -- ------------------------------------------------------- money out, with proof

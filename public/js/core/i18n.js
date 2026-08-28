@@ -91,6 +91,8 @@ const dictionary = {
     // Stock sitting on a variant nobody sells any more. It is still the shop's
     // money, so it is counted and named rather than quietly left out.
     stoppedVariant: 'Stopped', activeVariant: 'On sale',
+    unitsInStock: 'Pieces in stock', stockedLines: 'items with stock',
+    discountKind: 'Discount as', discountValue: 'Amount off',
     publishedOnSite: 'On the website', outOfStockProducts: 'Out of stock',
     withoutPhoto: 'No photo yet', stockCostValue: 'Stock at cost',
     stockRetailValue: 'Stock at retail', potentialMargin: 'Expected profit',
@@ -980,6 +982,8 @@ const dictionary = {
     code: 'الكود', status: 'الحالة', date: 'التاريخ', notes: 'ملاحظات', active: 'مفعّل',
     inactive: 'غير مفعّل', loading: 'جارٍ التحميل…', noResults: 'لا توجد بيانات بعد',
     stoppedVariant: 'موقوف', activeVariant: 'للبيع',
+    unitsInStock: 'القطع في المخزن', stockedLines: 'صنف بيه رصيد',
+    discountKind: 'الخصم بـ', discountValue: 'قيمة الخصم',
     publishedOnSite: 'على الموقع', outOfStockProducts: 'خلص من المخزن',
     withoutPhoto: 'من غير صورة', stockCostValue: 'قيمة المخزون بالتكلفة',
     stockRetailValue: 'قيمته بسعر البيع', potentialMargin: 'الربح المتوقع',

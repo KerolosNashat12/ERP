@@ -9,8 +9,9 @@ import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { createApp } from '../src/server.js';
 import {
-  initDb, closeDb, supportsFileBackup, getDb,
+  initDb, applySchema, closeDb, supportsFileBackup, getDb,
 } from '../src/infrastructure/database/connection.js';
+import { runMigrations } from '../src/infrastructure/database/migrations/index.js';
 
 
 
@@ -25,8 +26,20 @@ let cookie = '';
 
 before(async () => {
   if (base) return;
-  // The database must be open before the first request, exactly as in start().
+  /*
+   * Open, shaped and migrated before the first request - exactly as in start().
+   *
+   * This used to be `initDb()` alone, which was true of the boot sequence when
+   * it was written and stopped being true the moment a migration added a
+   * column. The suite runs against the shared development database, so a
+   * database created before that migration stayed created before it: every
+   * purchase test failed with "no column named discount_type" against code that
+   * was perfectly correct. A test bootstrap that does less than the real one is
+   * a test bootstrap that fails for reasons the product does not have.
+   */
   await initDb();
+  await applySchema();
+  await runMigrations();
   const app = createApp();
   server = await new Promise((resolve) => {
     const listening = app.listen(0, '127.0.0.1', () => resolve(listening));

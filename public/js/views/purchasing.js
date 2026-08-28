@@ -258,17 +258,64 @@ async function purchaseFormView(root, route) {
     { name: 'order_date', label: t('orderDate'), type: 'date', required: true, disabled: !editable },
     { name: 'expected_date', label: t('expectedDate'), type: 'date', disabled: !editable },
     /*
-     * A rate, not an amount. A supplier says "five percent"; typing what that
-     * comes to meant doing his arithmetic by hand, and doing it again the moment
-     * a line changed. `discount_amount` is still what gets stored and read
-     * everywhere else — the server works it out from this and the subtotal.
+     * A rate OR a sum of money, because suppliers give both and the difference
+     * is not cosmetic. "Five percent" typed as an amount has to be recomputed by
+     * hand the moment a line changes; "five hundred off" typed as a rate became
+     * 4.1666…% and came back as 499.99, which is how an order stopped matching
+     * the supplier's own invoice. The picker says which one was meant, and the
+     * server stores both so nothing downstream has to care.
      */
+    {
+      name: 'discount_type',
+      label: t('discountKind'),
+      type: 'select',
+      options: [
+        { value: 'percent', label: t('discountPercent') },
+        { value: 'amount', label: t('discountValue') },
+      ],
+      disabled: !editable,
+    },
     { name: 'discount_percent', label: t('discountPercent'), type: 'number', min: 0, max: 100, step: '0.01', disabled: !editable },
+    { name: 'discount_amount', label: t('discountValue'), type: 'number', min: 0, step: '0.01', disabled: !editable },
     { name: 'shipping_amount', label: t('shipping'), type: 'number', disabled: !editable },
     { name: 'notes', label: t('notes'), type: 'textarea', span: 3, disabled: !editable },
-  ], existing ? { ...existing, discount_percent: openingDiscountPercent(existing) } : {
-    order_date: isoDate(), discount_percent: 0, shipping_amount: 0, supplier_id: queuedSupplierId,
+  ], existing ? {
+    ...existing,
+    discount_type: existing.discount_type || 'percent',
+    discount_percent: openingDiscountPercent(existing),
+    discount_amount: Number(existing.discount_amount || 0),
+  } : {
+    order_date: isoDate(),
+    discount_type: 'percent',
+    discount_percent: 0,
+    discount_amount: 0,
+    shipping_amount: 0,
+    supplier_id: queuedSupplierId,
   }, { columns: 3 });
+
+  /*
+   * Only the field that is being used is shown. Two discount boxes on screen at
+   * once is an invitation to fill in both, and then only one of them counts -
+   * which is the kind of thing a shop discovers a month later, from a supplier.
+   */
+  function syncDiscountFields() {
+    const kind = header.values().discount_type || 'percent';
+    const show = (name, on) => {
+      const entry = header.inputs.get(name);
+      if (entry?.holder) entry.holder.style.display = on ? '' : 'none';
+    };
+    show('discount_percent', kind !== 'amount');
+    show('discount_amount', kind === 'amount');
+  }
+  header.inputs.get('discount_type')?.input.addEventListener('change', () => {
+    syncDiscountFields();
+    renderTotals();
+  });
+  // The other two move the totals too, and neither did before this round.
+  for (const name of ['discount_percent', 'discount_amount', 'shipping_amount']) {
+    header.inputs.get(name)?.input.addEventListener('change', () => renderTotals());
+  }
+  syncDiscountFields();
 
   const linesHost = h('div');
   const totalsHost = h('div', { class: 'card-body' });
@@ -307,14 +354,30 @@ async function purchaseFormView(root, route) {
       tax += net * (Number(line.tax_rate || 0) / 100);
     }
     const values = header.values();
+    const kind = values.discount_type || 'percent';
     const percent = Number(values.discount_percent || 0);
     // The same sum the server will do when this is saved, so the total on the
     // screen is the total that gets written and never a preview of a different
     // arithmetic.
-    const discount = subtotal * (percent / 100);
+    /*
+     * The same arithmetic the server will do when this is saved - see
+     * PurchaseService#computeTotals - so the total on the screen is the total
+     * that gets written, whichever kind of discount was entered.
+     */
+    const discount = kind === 'amount'
+      ? Math.min(Math.max(Number(values.discount_amount || 0), 0), subtotal)
+      : subtotal * (percent / 100);
     const shipping = Number(values.shipping_amount || 0);
     return {
-      subtotal, tax, discount, percent, shipping, total: subtotal + tax + shipping - discount,
+      subtotal,
+      tax,
+      discount,
+      kind,
+      percent: kind === 'amount' && subtotal > 0
+        ? Math.round((discount / subtotal) * 10000) / 100
+        : percent,
+      shipping,
+      total: subtotal + tax + shipping - discount,
       /*
        * How many PIECES this order is for, not how many rows it has. An order
        * is checked against what the supplier actually delivered by counting

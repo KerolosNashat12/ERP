@@ -18,7 +18,7 @@ export const MODULES = {
   // raise and amend a purchase order has no business recording what was paid
   // for it, and undoing a recorded payment is rarer still. See
   // migration 011 for how existing shops are granted them.
-  purchases: ['view', 'create', 'update', 'delete', 'receive', 'approve', 'pay', 'reverse_payment'],
+  purchases: ['view', 'create', 'update', 'delete', 'receive', 'approve', 'pay', 'reverse_payment', 'return'],
   customers: ['view', 'create', 'update', 'delete'],
   /*
    * `exchange` is its own right rather than a corner of `return`: it hands
@@ -155,6 +155,7 @@ export const ROLE_DEFINITIONS = [
       'products.view', 'products.create', 'products.update',
       ...forModules('inventory', 'labels'),
       'purchases.view', 'purchases.create', 'purchases.update', 'purchases.receive',
+      'purchases.return',
       'reports.view', 'reports.export',
     ],
   },

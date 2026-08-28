@@ -77,7 +77,9 @@ export class PurchaseService {
    * before this existed carries. Those are left exactly as they were: their
    * total must not move because the shop updated.
    */
-  #computeTotals(lines, { discountAmount = 0, discountPercent = null, shippingAmount = 0 }) {
+  #computeTotals(lines, {
+    discountAmount = 0, discountPercent = null, discountType = null, shippingAmount = 0,
+  }) {
     let subtotal = 0;
     let taxTotal = 0;
     const computed = lines.map((line) => {
@@ -98,13 +100,34 @@ export class PurchaseService {
       throw new ValidationError('A purchase order discount must be between 0% and 100%');
     }
 
+    const net = round2(subtotal);
+    /*
+     * WHICH of the two the person actually entered.
+     *
+     * A supplier who takes 5% off and one who knocks 500 off a 12,000 order are
+     * doing different things, and the system could only store the first: the
+     * 500 became 4.1666...% and came back as 499.99 the next time the order was
+     * opened. Now the kind is stored with it and the OTHER figure is derived
+     * from it, so both are on the row and nothing downstream has to branch —
+     * `discount_amount` is still the money, exactly as before.
+     *
+     * A caller that says nothing about the kind is an older client, and older
+     * clients only ever meant a percentage: absent means percent, and an order
+     * saved by one behaves exactly as it did.
+     */
+    const kind = discountType === 'amount' ? 'amount' : 'percent';
+    const money = kind === 'amount'
+      ? Math.min(Math.max(round2(discountAmount || 0), 0), net)
+      : (percent === null ? round2(discountAmount) : round2(net * (percent / 100)));
+
     const header = {
-      subtotal: round2(subtotal),
+      subtotal: net,
       tax_amount: round2(taxTotal),
-      discount_percent: percent === null ? 0 : round2(percent),
-      discount_amount: percent === null
-        ? round2(discountAmount)
-        : round2(round2(subtotal) * (percent / 100)),
+      discount_type: kind,
+      discount_percent: kind === 'amount'
+        ? (net > 0 ? round2((money / net) * 100) : 0)
+        : (percent === null ? 0 : round2(percent)),
+      discount_amount: money,
       shipping_amount: round2(shippingAmount),
     };
     header.total_amount = round2(
@@ -129,6 +152,7 @@ export class PurchaseService {
 
       const { lines, header } = this.#computeTotals(rawLines, {
         discountAmount: payload.discount_amount,
+        discountType: payload.discount_type || null,
         // Absent means "this caller does not know about rates" — an older
         // client, a script, a queued order written before the change — and the
         // amount it sent is used unchanged.

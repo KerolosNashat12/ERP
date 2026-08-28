@@ -9,7 +9,7 @@ export class PurchaseOrderRepository extends BaseRepository {
       table: 'purchase_orders',
       columns: [
         'po_number', 'supplier_id', 'warehouse_id', 'status', 'order_date', 'expected_date',
-        'subtotal', 'discount_percent', 'discount_amount', 'tax_amount', 'shipping_amount',
+        'subtotal', 'discount_type', 'discount_percent', 'discount_amount', 'tax_amount', 'shipping_amount',
         'total_amount',
         'paid_amount', 'notes', 'created_by', 'approved_by', 'approved_at',
       ],

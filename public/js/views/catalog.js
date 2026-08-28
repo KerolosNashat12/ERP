@@ -113,6 +113,18 @@ export async function productsView(root, route) {
     const share = (n) => (total ? `${Math.round((n / total) * 100)}%` : '');
     mount(cardsHost, summaryCards([
       { label: t('products'), value: number(counts.products), sub: `${number(counts.variants)} ${t('variants')}`, accent: true },
+      /*
+       * PIECES. Three numbers on this screen answer three different questions -
+       * how many products, how many variants of them, and how many things are
+       * actually on the shelves - and the third was missing, which is why the
+       * products page and the valuation report looked like they disagreed.
+       * They never did; only one of them was answering.
+       */
+      {
+        label: t('unitsInStock'),
+        value: number(counts.units),
+        sub: `${number(counts.stocked_lines)} ${t('stockedLines')}`,
+      },
       {
         label: t('genderWomen'),
         value: number(counts.women),

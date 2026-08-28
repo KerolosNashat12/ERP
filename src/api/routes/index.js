@@ -36,6 +36,7 @@ import {
   customerService, attributeService,
 } from '../../services/masterDataServices.js';
 import repositories from '../../infrastructure/repositories/index.js';
+import purchaseReturnService from '../../services/PurchaseReturnService.js';
 import { currentTenant, supportsFileBackup, driverName } from '../../infrastructure/database/connection.js';
 import { buildBranding, companyNameFrom } from '../../shared/branding.js';
 import { ForbiddenError, NotFoundError } from '../../shared/errors.js';
@@ -508,6 +509,25 @@ router.get('/inventory/stock', requirePermission('inventory.view'), asyncHandler
  * The counters above the stock grid, from the SAME query the home screen's stock
  * tile and the valuation report use - one shelf, one set of numbers.
  */
+/* ------------------------------------------- goods going back to the supplier */
+router.get('/purchase-returns', requirePermission('purchases.view'), asyncHandler(async (req, res) => {
+  res.json(await purchaseReturnService.list(req.query));
+}));
+
+router.get('/purchase-returns/:id', requirePermission('purchases.view'), asyncHandler(async (req, res) => {
+  res.json(await purchaseReturnService.get(Number(req.params.id)));
+}));
+
+router.post('/purchase-returns', requirePermission('purchases.return'), validate(v.purchaseReturnSchema),
+  asyncHandler(async (req, res) => res.status(201).json(
+    await purchaseReturnService.create(req.body, req.context),
+  )));
+
+router.post('/purchase-returns/:id/reverse', requirePermission('purchases.return'),
+  asyncHandler(async (req, res) => res.json(
+    await purchaseReturnService.reverse(Number(req.params.id), req.body?.reason, req.context),
+  )));
+
 router.get('/inventory/summary', requirePermission('inventory.view'), asyncHandler(async (req, res) => {
   res.json(await repositories.inventory.valuation({
     warehouseId: req.query.warehouseId || null,
@@ -664,6 +684,19 @@ router.post('/purchases', requirePermission('purchases.create'), validate(v.purc
   asyncHandler(async (req, res) => res.status(201).json(await purchaseService.save(req.body, req.context))));
 router.put('/purchases/:id', requirePermission('purchases.update'), validate(v.purchaseOrderSchema),
   asyncHandler(async (req, res) => res.json(await purchaseService.save(req.body, req.context, Number(req.params.id)))));
+/*
+ * What is still returnable on this order, and what the shop still owes on it.
+ * Both read-only, both behind `purchases.view`: seeing the state of an order is
+ * not the same right as sending goods back under it.
+ */
+router.get('/purchases/:id/returnable', requirePermission('purchases.view'), asyncHandler(async (req, res) => {
+  res.json(await purchaseReturnService.returnable(Number(req.params.id)));
+}));
+
+router.get('/purchases/:id/balance', requirePermission('purchases.view'), asyncHandler(async (req, res) => {
+  res.json(await purchaseReturnService.balance(Number(req.params.id)));
+}));
+
 router.post('/purchases/:id/approve', requirePermission('purchases.approve'),
   asyncHandler(async (req, res) => res.json(await purchaseService.approve(Number(req.params.id), req.context))));
 router.post('/purchases/:id/receive', requirePermission('purchases.receive'), validate(v.receiveSchema),
