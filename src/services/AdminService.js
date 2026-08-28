@@ -6,11 +6,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import repositories from '../infrastructure/repositories/index.js';
 import {
-  getDb, transaction, backupTo, supportsFileBackup, driverName, currentTenant,
+  getDb, transaction, backupTo, supportsFileBackup, driverName, currentTenant, currentTenantSlug,
 } from '../infrastructure/database/connection.js';
 import config from '../config/index.js';
 import {
-  AppError, BusinessRuleError, ConflictError, NotFoundError, ValidationError,
+  AppError, BusinessRuleError, ConflictError, ForbiddenError, NotFoundError, ValidationError,
 } from '../shared/errors.js';
 import { ALL_PERMISSIONS, UNDELEGATABLE } from '../shared/permissions.js';
 import { normalizeHexColor, booleanOr } from '../shared/branding.js';
@@ -105,6 +105,28 @@ export class UserService {
       // Protect the last administrator from being locked out of the system.
       if (payload.is_active === 0 || (payload.role_id && payload.role_id !== before.role_id)) {
         await this.#assertNotLastAdmin(before);
+      }
+
+      /*
+       * Nobody promotes themselves.
+       *
+       * `UNDELEGATABLE` stops a role being GRANTED certain permissions, and
+       * that guard was walkable in two hops: a user trusted with `users.update`
+       * opened their own record and set their role to Administrator, which
+       * holds everything the list was protecting. The whole point of delegating
+       * user administration is that it does not hand over the shop.
+       *
+       * Changing anything else about yourself - your name, your phone, your
+       * language - is unaffected. So is an administrator moving somebody ELSE
+       * between roles, which is what this right is for.
+       */
+      if (payload.role_id
+          && Number(payload.role_id) !== Number(before.role_id)
+          && Number(context.actor?.id) === Number(id)) {
+        throw new ForbiddenError(
+          'You cannot change your own role — ask another administrator',
+          { rule: 'role_self_change' },
+        );
       }
 
       const after = await this.users.update(id, payload);
@@ -309,12 +331,35 @@ export class BackupService {
     this.audit = deps.audit || auditService;
   }
 
+  /**
+   * WHERE this shop's file backups live — and the answer is never "the same
+   * folder as everybody else's".
+   *
+   * This class knew nothing about tenants. Every shop on a fleet wrote its
+   * `mm-backup-<timestamp>.db` into one shared directory, and `list()` and the
+   * download route then read that whole directory back: shop B's administrator
+   * opened Settings, saw shop A's backup sitting there, and could download it.
+   * That file is the entire other shop - its prices, its costs, its customers,
+   * its payroll.
+   *
+   * A folder per slug fixes it at the only level that actually holds: not by
+   * filtering names, which the next filename format would defeat, but by never
+   * putting two shops' files in one place. A single-shop deployment keeps the
+   * folder it has always used, so nothing on a shop PC moves.
+   */
+  #dir() {
+    const slug = currentTenantSlug();
+    const dir = slug ? path.join(config.paths.backups, slug) : config.paths.backups;
+    return dir;
+  }
+
   list() {
-    if (!fs.existsSync(config.paths.backups)) return [];
-    return fs.readdirSync(config.paths.backups)
+    const dir = this.#dir();
+    if (!fs.existsSync(dir)) return [];
+    return fs.readdirSync(dir)
       .filter((f) => f.endsWith('.db'))
       .map((file) => {
-        const stat = fs.statSync(path.join(config.paths.backups, file));
+        const stat = fs.statSync(path.join(dir, file));
         return { file, size: stat.size, createdAt: stat.mtime.toISOString() };
       })
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
@@ -357,7 +402,9 @@ export class BackupService {
     this.#assertFileBackupSupported('Creating a backup');
     const stamp = new Date().toISOString().replace(/[:.]/g, '-');
     const file = `mm-backup-${stamp}.db`;
-    const target = path.join(config.paths.backups, file);
+    const dir = this.#dir();
+    fs.mkdirSync(dir, { recursive: true });
+    const target = path.join(dir, file);
     await backupTo(target);
     const stat = fs.statSync(target);
     await this.audit.record({
@@ -367,9 +414,14 @@ export class BackupService {
     return { file, size: stat.size, createdAt: stat.mtime.toISOString(), path: target };
   }
 
+  /*
+   * `basename` strips any traversal, and the folder it is joined to is this
+   * shop's own - so a name cannot reach another shop's file even if it is
+   * guessed exactly right.
+   */
   resolve(file) {
     const safe = path.basename(String(file));
-    const target = path.join(config.paths.backups, safe);
+    const target = path.join(this.#dir(), safe);
     if (!fs.existsSync(target)) throw new NotFoundError('Backup file', safe);
     return target;
   }
@@ -390,9 +442,30 @@ export class BackupService {
    */
   async restore(file, context = {}) {
     this.#assertFileBackupSupported('Restoring a backup');
+    /*
+     * Refused on a fleet, deliberately.
+     *
+     * This method copies a file over `config.paths.database` - the PROCESS
+     * default database, which on a platform deployment is not the shop asking.
+     * A tenant administrator pressing restore would have overwritten a
+     * different shop's data with their own backup. Rather than guess at a
+     * tenant's file path here, the operation is refused and pointed at the
+     * console's restore, which is per-tenant, actor-bound and single-use.
+     *
+     * A shop on its own PC has no tenant in scope and is unaffected: this is
+     * the deployment the feature was written for and it still works exactly as
+     * it did.
+     */
+    if (currentTenantSlug()) {
+      throw new AppError(
+        'Restoring a backup is done from the owner console on this deployment, '
+        + 'so it can be aimed at exactly one shop.',
+        { status: 400, code: 'FILE_BACKUP_UNAVAILABLE', details: { reason: 'multi_tenant' } },
+      );
+    }
     const source = this.resolve(file);
     const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const preRestore = path.join(config.paths.backups, `pre-restore-${stamp}.db`);
+    const preRestore = path.join(this.#dir(), `pre-restore-${stamp}.db`);
     fs.copyFileSync(config.paths.database, preRestore);
     await this.audit.record({
       action: 'RESTORE', module: 'settings', entityType: 'backup',

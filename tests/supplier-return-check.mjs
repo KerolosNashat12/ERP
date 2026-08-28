@@ -112,6 +112,73 @@ console.log('balance strip:', strip);
 if (!/300/.test(strip)) fail(`the order does not show the 300 that went back: ${strip}`);
 if (!/owes|ليه عندنا/i.test(strip)) fail(`a fully paid order that was returned must say the supplier owes us: ${strip}`);
 
+/*
+ * And the case the owner asked for by name: not sending it back for a credit,
+ * but swapping it for a DIFFERENT item. The dialog has to let one be chosen,
+ * price it at its own cost, and move both items on the shelf.
+ */
+await page.goto(`${BASE}/app.html#/purchases/${order.id}`);
+await page.waitForTimeout(1800);
+await page.evaluate(() => {
+  const b = [...document.querySelectorAll('.page-head button')]
+    .find((n) => /Send back to supplier|مرتجع للمورد/.test(n.textContent || ''));
+  if (b) b.click();
+});
+await page.waitForSelector('#modal-root tbody tr', { timeout: 15000 });
+await page.evaluate(() => {
+  const select = document.querySelector('#modal-root select');
+  select.value = 'replace';
+  select.dispatchEvent(new Event('change', { bubbles: true }));
+});
+await page.waitForTimeout(600);
+const swapColumns = await page.$$eval('#modal-root thead th', (ns) => ns.map((n) => n.textContent.trim()));
+if (!swapColumns.some((c) => /Coming back|الراجع/.test(c))) fail('choosing replacement did not add the coming-back column');
+if (!swapColumns.some((c) => /instead|بدله/.test(c))) fail('no column for choosing a different item');
+
+const opened = await page.evaluate(() => {
+  const b = [...document.querySelectorAll('#modal-root tbody button')]
+    .find((n) => /A different item|صنف تاني/.test(n.textContent || ''));
+  if (!b) return false;
+  b.click();
+  return true;
+});
+if (!opened) fail('no "a different item" button on the replacement row');
+else {
+  await page.waitForTimeout(900);
+  // The picker is the second dialog; search for anything and take the first hit.
+  const boxes = await page.$$('#modal-root input');
+  await boxes[boxes.length - 1].fill('').catch(() => {});
+  const search = await page.$$('#modal-root input[placeholder]');
+  await search[search.length - 1].fill('D5');
+  await page.waitForTimeout(1200);
+  const picked = await page.evaluate(() => {
+    const hit = document.querySelector('#modal-root .pos-result');
+    if (!hit) return false;
+    hit.click();
+    return true;
+  });
+  if (!picked) fail('the item picker found nothing to choose');
+  else {
+    await page.waitForTimeout(500);
+    const saved = await page.evaluate(() => {
+      const buttons = [...document.querySelectorAll('#modal-root button')];
+      const save = buttons.reverse().find((n) => /^(Save|حفظ)$/.test((n.textContent || '').trim()));
+      if (!save) return false;
+      save.click();
+      return true;
+    });
+    if (!saved) fail('could not confirm the chosen item');
+    await page.waitForTimeout(900);
+    const row = await page.evaluate(() => document.querySelector('#modal-root tbody tr')?.innerText.replace(/\n/g, ' | ') || '');
+    console.log('replacement row:', row);
+    if (!/D5/.test(row)) fail(`the chosen item is not shown on the row: ${row}`);
+  }
+}
+await page.evaluate(() => {
+  const close = [...document.querySelectorAll('#modal-root button')].find((n) => /^(×|✕|Close)$/.test((n.textContent || '').trim()));
+  if (close) close.click();
+});
+
 // And the return is on the list.
 await page.goto(`${BASE}/app.html#/supplier-returns`);
 await page.waitForSelector('tbody tr', { timeout: 15000 });

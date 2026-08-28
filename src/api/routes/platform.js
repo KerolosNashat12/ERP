@@ -100,7 +100,10 @@ router.post('/auth/login', validateBody(loginSchema), asyncHandler(async (req, r
   res.json(result);
 }));
 
-router.post('/auth/logout', platformAuth.authenticate, asyncHandler(async (_req, res) => {
+router.post('/auth/logout', platformAuth.authenticate, asyncHandler(async (req, res) => {
+  // `_req` here threw a ReferenceError on every sign-out, so the console's
+  // cookie was never actually cleared - the owner pressed "sign out", got a
+  // 500, and stayed signed in for the token's full twelve hours.
   res.clearCookie(platformAuth.COOKIE_NAME, cookieOptionsFor(req));
   res.json({ ok: true });
 }));

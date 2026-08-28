@@ -102,10 +102,31 @@ const ORDERABLE_VARIANT = `
   v.is_active = 1
   AND p.is_active = 1
   AND p.is_published = 1
+  /*
+   * Deleted is deleted, at the checkout too.
+   *
+   * The LISTING learned this the day a product the shop had deleted went on
+   * being offered for sale on the website - but the checkout did not, and it
+   * takes a variant id in the request body. So a product could be removed from
+   * every shelf and still be ordered by anyone who had its id from a cached
+   * page, an old link, or simply by counting. It reserved real stock, too.
+   */
+  AND NOT EXISTS (SELECT 1 FROM trash_items tp
+                   WHERE tp.entity_type = 'product' AND tp.entity_id = p.id
+                     AND tp.status = 'in_bin')
+  AND NOT EXISTS (SELECT 1 FROM trash_items tv
+                   WHERE tv.entity_type = 'variant' AND tv.entity_id = v.id
+                     AND tv.status = 'in_bin')
   AND (p.brand_id IS NULL OR EXISTS (
-        SELECT 1 FROM brands bg WHERE bg.id = p.brand_id AND bg.is_published = 1))
+        SELECT 1 FROM brands bg WHERE bg.id = p.brand_id AND bg.is_published = 1
+          AND NOT EXISTS (SELECT 1 FROM trash_items tb
+                           WHERE tb.entity_type = 'brand' AND tb.entity_id = bg.id
+                             AND tb.status = 'in_bin')))
   AND (p.category_id IS NULL OR EXISTS (
-        SELECT 1 FROM categories cg WHERE cg.id = p.category_id AND cg.is_published = 1))
+        SELECT 1 FROM categories cg WHERE cg.id = p.category_id AND cg.is_published = 1
+          AND NOT EXISTS (SELECT 1 FROM trash_items tc
+                           WHERE tc.entity_type = 'category' AND tc.entity_id = cg.id
+                             AND tc.status = 'in_bin')))
 `;
 
 const trim = (value, max) => String(value ?? '').trim().slice(0, max) || null;

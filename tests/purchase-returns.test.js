@@ -338,6 +338,116 @@ test('returning goods to a supplier', async (t) => {
     assert.equal(await onHand(variant.id), 4, '6 − 3 + 1');
   });
 
+  await t.test('a supplier can send a DIFFERENT item against the same credit', async () => {
+    /*
+     * The owner's case, in his words: "لو عاوز ابدل منتج جوه الفاتورة دي مش
+     * ارجعه ابدلة بحاجة تانية". The faulty bottle goes back; something else
+     * comes in against it. Two different products, one document, one
+     * transaction - and the money only balances if the incoming item is valued
+     * at ITS cost rather than the outgoing one's.
+     */
+    const faulty = await product(300);
+    const instead = await product(450);
+    const po = await order([{ variant: faulty, quantity: 6, cost: 300 }]);
+    assert.equal(await onHand(faulty.id), 6);
+    assert.equal(await onHand(instead.id), 0);
+
+    const swap = await ok('/api/purchase-returns', {
+      method: 'POST',
+      body: {
+        purchase_order_id: po.id,
+        settlement: 'replace',
+        reason: 'discontinued — supplier sent the newer one',
+        lines: [{
+          po_line_id: po.lines[0].id,
+          quantity: 2,
+          replacement_quantity: 2,
+          replacement_variant_id: instead.id,
+          replacement_unit_cost: 450,
+        }],
+      },
+    });
+
+    assert.equal(await onHand(faulty.id), 4, 'two of the faulty item left the shelf');
+    assert.equal(await onHand(instead.id), 2, 'and two of the other one arrived');
+    assert.equal(swap.total_amount, 600, 'two at 300 went back');
+    assert.equal(swap.replacement_amount, 900, 'two at 450 came in — the swap is not even');
+
+    // The document says WHAT came back, not just how many.
+    const record = await ok(`/api/purchase-returns/${swap.id}`);
+    assert.equal(record.lines[0].replacement_variant_id, instead.id);
+    assert.equal(record.lines[0].replacement_unit_cost, 450);
+  });
+
+  await t.test('undoing an uneven swap puts both items back where they were', async () => {
+    const faulty = await product(120);
+    const instead = await product(200);
+    const po = await order([{ variant: faulty, quantity: 5, cost: 120 }]);
+
+    const swap = await ok('/api/purchase-returns', {
+      method: 'POST',
+      body: {
+        purchase_order_id: po.id,
+        settlement: 'replace',
+        lines: [{
+          po_line_id: po.lines[0].id,
+          quantity: 3,
+          replacement_quantity: 3,
+          replacement_variant_id: instead.id,
+          replacement_unit_cost: 200,
+        }],
+      },
+    });
+    assert.equal(await onHand(faulty.id), 2);
+    assert.equal(await onHand(instead.id), 3);
+
+    await ok(`/api/purchase-returns/${swap.id}/reverse`, { method: 'POST', body: { reason: 'wrong line' } });
+    assert.equal(await onHand(faulty.id), 5, 'the item that went back is back');
+    assert.equal(await onHand(instead.id), 0,
+      'and the item that came in is gone — otherwise the shop would be holding both');
+  });
+
+  await t.test('a switched-off item cannot be what a supplier sends', async () => {
+    const faulty = await product(100);
+    const dead = await product(100);
+    await ok(`/api/products/${dead.product_id}`, { method: 'GET' }).catch(() => null);
+    await getDb().prepare('UPDATE product_variants SET is_active = 0 WHERE id = ?').run(dead.id);
+
+    const po = await order([{ variant: faulty, quantity: 4, cost: 100 }]);
+    await refused('/api/purchase-returns', {
+      method: 'POST',
+      body: {
+        purchase_order_id: po.id,
+        settlement: 'replace',
+        lines: [{
+          po_line_id: po.lines[0].id,
+          quantity: 1,
+          replacement_quantity: 1,
+          replacement_variant_id: dead.id,
+        }],
+      },
+    }, 'pr_replacement_inactive');
+  });
+
+  await t.test('a different item with no quantity is a mistake, not a no-op', async () => {
+    const faulty = await product(100);
+    const instead = await product(100);
+    const po = await order([{ variant: faulty, quantity: 4, cost: 100 }]);
+    await refused('/api/purchase-returns', {
+      method: 'POST',
+      body: {
+        purchase_order_id: po.id,
+        settlement: 'replace',
+        lines: [{
+          po_line_id: po.lines[0].id,
+          quantity: 2,
+          replacement_quantity: 0,
+          replacement_variant_id: instead.id,
+        }],
+      },
+    }, 'pr_replacement_no_quantity');
+  });
+
   await t.test('a replacement cannot bring back more than went out', async () => {
     const variant = await product(90);
     const po = await order([{ variant, quantity: 5, cost: 90 }]);
@@ -427,6 +537,55 @@ test('returning goods to a supplier', async (t) => {
      */
     assert.ok(Number.isFinite(summary.outstanding));
     assert.ok(summary.orders >= 8);
+  });
+
+  // ═══════════════════════ 8b. what the PUBLIC side may see and sell
+  await t.test('a deleted product cannot be ordered or photographed from the website', async () => {
+    /*
+     * The listing learned that deleted means deleted the day a product the shop
+     * had removed went on being offered for sale. Two doors did not: the
+     * CHECKOUT, which takes a variant id in the request body and never asked
+     * the recycle bin, and the public IMAGE endpoint, whose ids are sequential
+     * and therefore walkable. Both are public and neither needs a session.
+     */
+    const doomed = await product(75, 150);
+    await ok('/api/purchases', { method: 'GET' });
+
+    // Publish it and give it a photograph, so both doors have something to open.
+    const productId = (await ok(`/api/products?search=${doomed.sku.split('-')[0]}`)).rows[0]?.id
+      || doomed.product_id;
+    await ok(`/api/products/${productId}/publish`, { method: 'POST', body: { published: true } })
+      .catch(() => null);
+    await getDb().prepare('UPDATE products SET is_published = 1 WHERE id = ?').run(productId);
+    const image = await getDb().prepare(`
+      INSERT INTO product_images (product_id, data, content_type, byte_size)
+      VALUES (?, ?, 'image/png', 3) RETURNING id
+    `).get(productId, Buffer.from([1, 2, 3]));
+
+    const beforeShot = await call(`/api/shop/images/${image.id}`);
+    assert.equal(beforeShot.status, 200, 'while it is on sale the photo is public, which is the point');
+
+    // Into the bin.
+    await ok('/api/trash', {
+      method: 'POST', body: { entityType: 'product', entityId: productId, reason: 'discontinued' },
+    });
+
+    const afterShot = await call(`/api/shop/images/${image.id}`);
+    assert.equal(afterShot.status, 404,
+      'a deleted product\'s photographs must go with it — the ids are countable');
+
+    const order = await call('/api/shop/orders', {
+      method: 'POST',
+      body: {
+        customer_name: 'Someone With An Old Link',
+        phone: '01000000000',
+        address: 'Anywhere',
+        governorate: 'Cairo',
+        lines: [{ variant_id: doomed.id, quantity: 1 }],
+      },
+    });
+    assert.ok(order.status >= 400,
+      `a deleted product must not be orderable from a cached page: ${JSON.stringify(order.data)}`);
   });
 
   // ═══════════════════════════════════════ 9. the fixed-value discount

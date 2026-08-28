@@ -20,14 +20,28 @@
  * by something outside this process - another serverless instance, or somebody
  * editing the database by hand.
  */
-import { currentTenant } from '../../infrastructure/database/connection.js';
+import { currentTenantSlug } from '../../infrastructure/database/connection.js';
 
 const TTL_MS = Number(process.env.MM_IDENTITY_TTL_MS || 8000);
 const MAX_ENTRIES = 500;
 
 const entries = new Map();
 
-const keyFor = (userId) => `${currentTenant() || '-'}:${userId}`;
+/*
+ * The SLUG, not the tenant context.
+ *
+ * `currentTenant()` hands back the whole context object, and an object in a
+ * template literal is the string "[object Object]" - the same string for every
+ * shop on the platform. That made this cache one shared namespace keyed by user
+ * id alone: shop A's user 3 and shop B's user 3 were the same entry, so a
+ * cashier could be served another shop's user row and another shop's permission
+ * list for the life of one cache entry. The token check above it does not catch
+ * this, because the attacker uses their own perfectly valid token.
+ *
+ * `currentTenantSlug()` exists for exactly this and is what every other caller
+ * uses. There is a test that fails if this line ever goes back.
+ */
+const keyFor = (userId) => `${currentTenantSlug() || '-'}:${userId}`;
 
 export function readIdentity(userId) {
   if (TTL_MS <= 0) return null;

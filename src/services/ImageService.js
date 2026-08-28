@@ -243,7 +243,18 @@ export class ImageService {
   }
 
   /** The bytes, for the authenticated serving endpoint. */
-  async bytes(imageId) {
+  /**
+   * The bytes, for the ERP. `productId` scopes the lookup to the product in the
+   * path when the caller has one - the URL says which product these photographs
+   * belong to and the answer should be unable to disagree with it.
+   */
+  async bytes(imageId, productId = null) {
+    if (productId) {
+      return this.db.prepare(
+        `SELECT id, data, content_type, byte_size, created_at FROM product_images
+          WHERE id = ? AND product_id = ?`,
+      ).get(Number(imageId), Number(productId));
+    }
     return this.db.prepare(
       'SELECT id, data, content_type, byte_size, created_at FROM product_images WHERE id = ?',
     ).get(Number(imageId));
@@ -258,11 +269,36 @@ export class ImageService {
    * next season's range is on the internet the moment it is photographed.
    */
   async publishedBytes(imageId) {
+    /*
+     * The SAME rule the shop window uses, not a shorter version of it.
+     *
+     * This asked only "is the product published", while the storefront also
+     * requires the product to be active, its brand and category to be
+     * published, and none of them to be in the recycle bin. Image ids are
+     * sequential, so the gap was walkable: photographs of deleted products,
+     * switched-off products and products under an unpublished brand were all
+     * still served to anybody counting upwards.
+     */
     return this.db.prepare(`
       SELECT i.id, i.data, i.content_type, i.byte_size, i.created_at
       FROM product_images i
       JOIN products p ON p.id = i.product_id
-      WHERE i.id = ? AND p.is_published = 1
+      WHERE i.id = ?
+        AND p.is_active = 1
+        AND p.is_published = 1
+        AND NOT EXISTS (SELECT 1 FROM trash_items tp
+                         WHERE tp.entity_type = 'product' AND tp.entity_id = p.id
+                           AND tp.status = 'in_bin')
+        AND (p.brand_id IS NULL OR EXISTS (
+              SELECT 1 FROM brands bg WHERE bg.id = p.brand_id AND bg.is_published = 1
+                AND NOT EXISTS (SELECT 1 FROM trash_items tb
+                                 WHERE tb.entity_type = 'brand' AND tb.entity_id = bg.id
+                                   AND tb.status = 'in_bin')))
+        AND (p.category_id IS NULL OR EXISTS (
+              SELECT 1 FROM categories cg WHERE cg.id = p.category_id AND cg.is_published = 1
+                AND NOT EXISTS (SELECT 1 FROM trash_items tc
+                                 WHERE tc.entity_type = 'category' AND tc.entity_id = cg.id
+                                   AND tc.status = 'in_bin')))
     `).get(Number(imageId));
   }
 

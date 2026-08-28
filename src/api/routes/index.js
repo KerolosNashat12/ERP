@@ -424,7 +424,7 @@ router.get('/products/:id/images', requirePermission('products.view'), asyncHand
  */
 router.get('/products/:id/images/:imageId/raw', requirePermission('products.view'),
   asyncHandler(async (req, res) => {
-    const image = await imageService.bytes(Number(req.params.imageId));
+    const image = await imageService.bytes(Number(req.params.imageId), Number(req.params.id));
     if (!image) throw new NotFoundError('Product photo', req.params.imageId);
     sendImage(req, res, image, { cacheControl: 'private, max-age=31536000, immutable' });
   }));

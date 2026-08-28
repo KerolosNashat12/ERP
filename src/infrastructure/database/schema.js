@@ -515,6 +515,20 @@ CREATE TABLE IF NOT EXISTS purchase_return_lines (
   -- On a replacement: how many came back in, which can be fewer than went out
   -- if the supplier was short.
   replacement_quantity REAL  NOT NULL DEFAULT 0,
+  /*
+   * And WHAT came back, which is not always the same thing.
+   *
+   * A supplier who cannot replace a faulty bottle sends a different one - a
+   * different size, the next batch, another product entirely against the same
+   * credit. NULL means like for like, which is the common case and what every
+   * replacement written before this column existed was.
+   *
+   * The cost it comes back at is its own, not the returned line's: swapping a
+   * 300 bottle for a 450 one leaves 150 owing, and pretending both were 300
+   * would quietly lose the shop money on every uneven swap.
+   */
+  replacement_variant_id INTEGER REFERENCES product_variants(id),
+  replacement_unit_cost  REAL    NOT NULL DEFAULT 0,
   reason             TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_purchase_return_lines ON purchase_return_lines(return_id);

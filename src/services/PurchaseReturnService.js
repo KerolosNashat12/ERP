@@ -243,6 +243,44 @@ export class PurchaseReturnService {
         }
 
         const replacement = round3(Number(wanted.replacement_quantity || 0));
+
+        /*
+         * WHAT is coming back. Empty means the same item, which is the common
+         * case and every replacement recorded before this existed. A different
+         * variant is the case the owner asked for: a supplier who cannot
+         * replace a faulty bottle sends another product against the same
+         * credit.
+         */
+        let swapVariant = null;
+        if (wanted.replacement_variant_id
+            && Number(wanted.replacement_variant_id) !== line.variant_id) {
+          swapVariant = await this.variants.findById(Number(wanted.replacement_variant_id));
+          if (!swapVariant) throw new NotFoundError('Variant', wanted.replacement_variant_id);
+          if (!swapVariant.is_active) {
+            throw new BusinessRuleError(
+              `${swapVariant.sku} is switched off — a supplier cannot deliver against it`,
+              { rule: 'pr_replacement_inactive', sku: swapVariant.sku },
+            );
+          }
+          if (replacement <= 0) {
+            throw new ValidationError(
+              'A different item was chosen but no quantity of it',
+              { rule: 'pr_replacement_no_quantity', sku: swapVariant.sku },
+            );
+          }
+        }
+        /*
+         * Its own cost, not the returned line's. Swapping a 300 bottle for a
+         * 450 one leaves 150 owing, and valuing both at 300 would quietly lose
+         * the shop money on every uneven swap. What the caller states wins,
+         * because the supplier's paperwork decides it; the variant's own cost
+         * is the fallback.
+         */
+        const swapCost = swapVariant
+          ? round2(wanted.replacement_unit_cost !== undefined && wanted.replacement_unit_cost !== null
+            ? Number(wanted.replacement_unit_cost)
+            : Number(swapVariant.cost_price || 0))
+          : 0;
         if (replacement > 0 && settlement !== 'replace') {
           throw new ValidationError(
             'A replacement quantity only means something on a replacement',
@@ -262,7 +300,7 @@ export class PurchaseReturnService {
         const lineTotal = round2(unit * quantity);
         subtotal += round2((unit / (1 + Number(line.tax_rate || 0) / 100)) * quantity);
         taxTotal += round2(lineTotal - (unit / (1 + Number(line.tax_rate || 0) / 100)) * quantity);
-        replacementValue += round2(unit * replacement);
+        replacementValue += round2((swapVariant ? swapCost : unit) * replacement);
 
         prepared.push({
           po_line_id: line.id,
@@ -273,6 +311,9 @@ export class PurchaseReturnService {
           unit_cost: unit,
           line_total: lineTotal,
           replacement_quantity: replacement,
+          replacement_variant_id: swapVariant ? swapVariant.id : null,
+          replacement_unit_cost: swapVariant ? swapCost : 0,
+          replacement_sku: swapVariant ? swapVariant.sku : null,
           reason: wanted.reason || payload.reason || null,
         });
       }
@@ -306,11 +347,12 @@ export class PurchaseReturnService {
         await this.db.prepare(`
           INSERT INTO purchase_return_lines
             (return_id, po_line_id, variant_id, sku, description, quantity, unit_cost,
-             line_total, replacement_quantity, reason)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             line_total, replacement_quantity, replacement_variant_id, replacement_unit_cost, reason)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
           created.id, line.po_line_id, line.variant_id, line.sku, line.description,
           line.quantity, line.unit_cost, line.line_total, line.replacement_quantity,
+          line.replacement_variant_id, line.replacement_unit_cost,
           line.reason,
         );
 
@@ -336,15 +378,17 @@ export class PurchaseReturnService {
          */
         if (line.replacement_quantity > 0) {
           await this.inventory.postMovement({
-            variantId: line.variant_id,
+            // The item the supplier actually sent, which is not always the one
+            // that went back.
+            variantId: line.replacement_variant_id || line.variant_id,
             warehouseId: order.warehouse_id,
             movementType: 'purchase_receipt',
             quantity: line.replacement_quantity,
-            unitCost: line.unit_cost,
+            unitCost: line.replacement_variant_id ? line.replacement_unit_cost : line.unit_cost,
             referenceType: 'purchase_return',
             referenceId: created.id,
             referenceNo: returnNo,
-            notes: 'replacement',
+            notes: line.replacement_variant_id ? `replacement — ${line.replacement_sku}` : 'replacement',
             actorId: context.actor?.id || null,
           });
         }
@@ -387,11 +431,12 @@ export class PurchaseReturnService {
       for (const line of record.lines) {
         if (Number(line.replacement_quantity) > 0) {
           await this.inventory.postMovement({
-            variantId: line.variant_id,
+            // Whatever actually came in is what has to go back out again.
+            variantId: line.replacement_variant_id || line.variant_id,
             warehouseId: record.warehouse_id,
             movementType: 'purchase_return',
             quantity: -Number(line.replacement_quantity),
-            unitCost: line.unit_cost,
+            unitCost: line.replacement_variant_id ? line.replacement_unit_cost : line.unit_cost,
             referenceType: 'purchase_return_reversal',
             referenceId: record.id,
             referenceNo: record.return_no,

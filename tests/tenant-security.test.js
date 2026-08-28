@@ -195,6 +195,79 @@ test('an unsigned or tampered token gets nowhere', async () => {
   assert.equal(nonsense.status, 401, 'an alg:none token is still a forgery');
 });
 
+test('one shop cannot be served another shop\'s user out of a cache', async () => {
+  /*
+   * The second shape of the same attack, and the one the tenant claim does NOT
+   * stop: the attacker uses their own valid token, for their own shop.
+   *
+   * What was wrong was inside. The identity cache - which exists so that
+   * authenticate does not read the user row and the permission list on every
+   * single request - keyed itself with the tenant CONTEXT OBJECT, and an object
+   * in a template literal is the string "[object Object]" for every shop alike.
+   * So it was one namespace keyed by user id alone: shop A's user 2 and shop
+   * B's user 2 were the same entry, and whichever shop asked second was served
+   * the other one's row and, crucially, the other one's PERMISSIONS.
+   *
+   * The probe has to be permissions rather than identity: /auth/me re-reads the
+   * profile from the correct database, so it looks innocent even while the
+   * authorisation decision behind it is being made from another shop's list.
+   * So: the same user id in both shops, an administrator in one and a stock
+   * clerk in the other, and then an administrator's request. If the cache
+   * leaks, the administrator is refused.
+   */
+  const a = await makeShop('kappa');
+  const b = await makeShop('lambda');
+
+  const roles = async (shop) => {
+    const res = await api(`/t/${shop.slug}/api/users/roles`, { cookie: shop.cookie });
+    return res.data.rows || res.data;
+  };
+  const makeUser = async (shop, roleCode, username) => {
+    const role = (await roles(shop)).find((r) => r.code === roleCode);
+    assert.ok(role, `${shop.slug}: expected a ${roleCode} role`);
+    const created = await api(`/t/${shop.slug}/api/users`, {
+      method: 'POST',
+      cookie: shop.cookie,
+      body: {
+        username, full_name: `${roleCode} ${shop.slug}`, password: 'twin-user-password', role_id: role.id,
+      },
+    });
+    assert.equal(created.status, 201, `${shop.slug}: creating ${username}: ${JSON.stringify(created.data)}`);
+    const login = await api(`/t/${shop.slug}/api/auth/login`, {
+      method: 'POST', body: { username, password: 'twin-user-password' },
+    });
+    assert.equal(login.status, 200);
+    return { id: created.data.id, cookie: login.cookie };
+  };
+
+  // Same username, same role position, different shops - and, being each
+  // shop's second user, the same id. That collision is the bug's whole
+  // precondition and it happens by itself on any two shops of the same age.
+  const adminInA = await makeUser(a, 'admin', 'twin');
+  const clerkInB = await makeUser(b, 'inventory', 'twin');
+  assert.equal(adminInA.id, clerkInB.id,
+    'the two shops must hand out the same id for this to be testing anything');
+
+  // Warm the cache with the WEAKER user, then ask as the administrator.
+  const clerkAsked = await api(`/t/${b.slug}/api/users`, { cookie: clerkInB.cookie });
+  assert.equal(clerkAsked.status, 403, 'a stock clerk cannot list users — that is the point of him');
+
+  const adminAsked = await api(`/t/${a.slug}/api/users`, { cookie: adminInA.cookie });
+  assert.equal(adminAsked.status, 200,
+    "shop A's administrator must be judged by shop A's permissions, not by whatever shop B cached");
+
+  // And the other direction: the clerk must not inherit the administrator's list.
+  const clerkAgain = await api(`/t/${b.slug}/api/users`, { cookie: clerkInB.cookie });
+  assert.equal(clerkAgain.status, 403,
+    'and shop B\'s clerk must not borrow shop A\'s permissions either');
+
+  // Interleaved, several times, because a cache is a race by nature.
+  for (let i = 0; i < 3; i += 1) {
+    assert.equal((await api(`/t/${b.slug}/api/users`, { cookie: clerkInB.cookie })).status, 403);
+    assert.equal((await api(`/t/${a.slug}/api/users`, { cookie: adminInA.cookie })).status, 200);
+  }
+});
+
 /* ═══════════════════════════════════════ 2. the console and the shop floor */
 
 test('the console token is not a shop token, and vice versa', async () => {
@@ -207,6 +280,157 @@ test('the console token is not a shop token, and vice versa', async () => {
   const shopOnConsole = await api('/api/platform/tenants', { cookie: a.cookie });
   assert.ok(shopOnConsole.status === 401 || shopOnConsole.status === 403,
     "a shop's session must not open the control plane");
+});
+
+test('the console locks out after repeated wrong passwords', async () => {
+  /*
+   * The most valuable password in the system - it can download and restore
+   * every shop on the fleet - was the only one with no attempt counting at all.
+   */
+  const { resetLoginAttempts } = await import('../src/platform/auth.js');
+  resetLoginAttempts('sec-owner');
+
+  let locked = null;
+  for (let i = 0; i < 8; i += 1) {
+    const attempt = await api('/api/platform/auth/login', {
+      method: 'POST', body: { username: 'sec-owner', password: `wrong-${i}` },
+    });
+    assert.equal(attempt.status, 401);
+    if (/too many/i.test(attempt.data?.error?.message || '')) { locked = i; break; }
+  }
+  assert.ok(locked !== null && locked < 8, 'the console must stop accepting guesses');
+
+  // And the right password is refused while it is locked, or the lock is theatre.
+  const rightButLocked = await api('/api/platform/auth/login', {
+    method: 'POST', body: { username: 'sec-owner', password: 'tenant-security-owner' },
+  });
+  assert.equal(rightButLocked.status, 401);
+
+  resetLoginAttempts('sec-owner');
+  const after = await api('/api/platform/auth/login', {
+    method: 'POST', body: { username: 'sec-owner', password: 'tenant-security-owner' },
+  });
+  assert.equal(after.status, 200, 'and it opens again once the window passes');
+  owner = after.cookie;
+});
+
+test('an unknown console username is indistinguishable from a wrong password', async () => {
+  const { resetLoginAttempts } = await import('../src/platform/auth.js');
+  resetLoginAttempts();
+  const unknown = await api('/api/platform/auth/login', {
+    method: 'POST', body: { username: 'nobody-here', password: 'whatever' },
+  });
+  const wrong = await api('/api/platform/auth/login', {
+    method: 'POST', body: { username: 'sec-owner', password: 'not-it' },
+  });
+  assert.equal(unknown.status, wrong.status);
+  assert.equal(unknown.data?.error?.message, wrong.data?.error?.message,
+    'a different sentence for a real username is a list of real usernames');
+  resetLoginAttempts();
+});
+
+test('signing out of the console actually clears its cookie', async () => {
+  // This threw a ReferenceError on every attempt, so the owner's session
+  // survived every "sign out" for the token's full twelve hours.
+  const { resetLoginAttempts } = await import('../src/platform/auth.js');
+  resetLoginAttempts();
+  const login = await api('/api/platform/auth/login', {
+    method: 'POST', body: { username: 'sec-owner', password: 'tenant-security-owner' },
+  });
+  assert.equal(login.status, 200);
+  const out = await api('/api/platform/auth/logout', { method: 'POST', cookie: login.cookie });
+  assert.equal(out.status, 200, 'sign-out must not be a 500');
+  assert.match(out.setCookie || '', /=;|=deleted|Expires=Thu, 01 Jan 1970/i);
+});
+
+test('one shop cannot list or download another shop\'s file backup', async () => {
+  /*
+   * `BackupService` knew nothing about tenants: every shop wrote its
+   * `mm-backup-<timestamp>.db` into ONE shared folder and then listed that whole
+   * folder back. Shop B's administrator opened Settings and saw shop A's backup
+   * sitting there, downloadable - and that file is the entire other shop:
+   * prices, costs, customers, payroll.
+   */
+  const a = await makeShop('mu');
+  const b = await makeShop('nu');
+
+  const madeByA = await api(`/t/${a.slug}/api/settings/backups`, { method: 'POST', cookie: a.cookie });
+  // On a libsql tenant this refuses, which is its own correct answer; the
+  // isolation below is what matters either way.
+  const listA = await api(`/t/${a.slug}/api/settings/backups`, { cookie: a.cookie });
+  const listB = await api(`/t/${b.slug}/api/settings/backups`, { cookie: b.cookie });
+  assert.equal(listA.status, 200);
+  assert.equal(listB.status, 200);
+
+  const namesOf = (res) => (res.data.rows || res.data || []).map((row) => row.file);
+  const inA = namesOf(listA);
+  const inB = namesOf(listB);
+  for (const file of inA) {
+    assert.ok(!inB.includes(file), `shop B must not see ${file}, which belongs to shop A`);
+  }
+
+  // And naming one exactly does not fetch it either.
+  if (madeByA.status === 201 || madeByA.status === 200) {
+    const file = madeByA.data?.file;
+    if (file) {
+      const stolen = await api(`/t/${b.slug}/api/settings/backups/${encodeURIComponent(file)}/download`, {
+        cookie: b.cookie,
+      });
+      assert.equal(stolen.status, 404,
+        'guessing the filename must not reach into another shop\'s folder');
+    }
+  }
+});
+
+test('a user cannot promote themselves by editing their own record', async () => {
+  /*
+   * UNDELEGATABLE stops a role being granted certain permissions. That guard was
+   * walkable in two hops: anybody trusted with `users.update` opened their OWN
+   * record and set their role to Administrator, which holds everything the list
+   * was protecting. Delegating user administration is not supposed to be the
+   * same as handing over the shop.
+   */
+  const shop = await makeShop('xi');
+  const rolesRes = await api(`/t/${shop.slug}/api/users/roles`, { cookie: shop.cookie });
+  const roles = rolesRes.data.rows || rolesRes.data;
+  const manager = roles.find((r) => r.code !== 'admin');
+  const admin = roles.find((r) => r.code === 'admin');
+
+  const created = await api(`/t/${shop.slug}/api/users`, {
+    method: 'POST',
+    cookie: shop.cookie,
+    body: {
+      username: 'promoter', full_name: 'Promoter', password: 'promoter-password', role_id: manager.id,
+    },
+  });
+  assert.equal(created.status, 201);
+  // Give them exactly the right this is about, and nothing else.
+  const withUsers = [...new Set([...(manager.permissions || []), 'users.view', 'users.update'])];
+  const granted = await api(`/t/${shop.slug}/api/users/roles/${manager.id}/permissions`, {
+    method: 'PUT', cookie: shop.cookie, body: { permissions: withUsers },
+  });
+  assert.equal(granted.status, 200, JSON.stringify(granted.data));
+
+  const login = await api(`/t/${shop.slug}/api/auth/login`, {
+    method: 'POST', body: { username: 'promoter', password: 'promoter-password' },
+  });
+  assert.equal(login.status, 200);
+
+  const promote = await api(`/t/${shop.slug}/api/users/${created.data.id}`, {
+    method: 'PUT',
+    cookie: login.cookie,
+    body: { full_name: 'Promoter', username: 'promoter', role_id: admin.id },
+  });
+  assert.equal(promote.status, 403, 'nobody hands themselves the administrator role');
+
+  // Editing something else about themselves still works — this is a guard on
+  // one field, not a wall around the record.
+  const rename = await api(`/t/${shop.slug}/api/users/${created.data.id}`, {
+    method: 'PUT',
+    cookie: login.cookie,
+    body: { full_name: 'Promoter Renamed', username: 'promoter', role_id: manager.id },
+  });
+  assert.equal(rename.status, 200);
 });
 
 /* ══════════════════════════════════════════════ 3. how the cookie is set */

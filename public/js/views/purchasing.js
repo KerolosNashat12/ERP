@@ -648,6 +648,51 @@ async function purchaseFormView(root, route) {
 }
 
 /**
+ * Choose the item a supplier is sending instead.
+ *
+ * Its own cost comes with it, seeded from what the shop last paid for it and
+ * editable, because the supplier's paperwork is what decides an uneven swap and
+ * the shop's own cost is only ever a good guess at it.
+ */
+function pickReplacement(line, refresh) {
+  const costBox = numberInput({ value: 0, min: 0, step: '0.01', style: { width: '120px' } });
+  const chosen = h('div', { class: 'muted small' }, t('nothingPicked'));
+  let variant = null;
+
+  const picker = variantPicker({
+    placeholder: t('scanPrompt'),
+    onPick: (row) => {
+      variant = row;
+      costBox.value = Number(row.cost_price || 0);
+      mount(chosen, h('span', { class: 'strong' }, `${pick(row, 'product_name')} — ${row.sku}`));
+    },
+  });
+
+  const dialog = modal({
+    title: t('replacementItem'),
+    body: h('div', { class: 'stack' },
+      picker.node,
+      chosen,
+      field({ label: t('unitCost'), input: costBox, hint: t('replacementCostHint') })),
+    onClose: () => picker.destroy(),
+    footer: h('button', {
+      class: 'btn primary',
+      onclick: () => {
+        if (!variant) { toast(t('nothingPicked'), 'warn'); return; }
+        line.swap = variant;
+        line.swapCost = Number(costBox.value) || 0;
+        // A different item with no quantity is a mistake the server refuses;
+        // defaulting it to what is going back means the screen never sets that
+        // trap in the first place.
+        if (!line.replacement) line.replacement = line.quantity;
+        dialog.close();
+        refresh();
+      },
+    }, t('save')),
+  });
+}
+
+/**
  * Goods going back to the supplier, from the order they arrived on.
  *
  * Three things a person has to see per line before they can honestly type a
@@ -665,7 +710,11 @@ function openSupplierReturn(order) {
 
   function renderTotal() {
     const total = state.lines.reduce((sum, line) => sum + line.quantity * line.unit_credit, 0);
-    const back = state.lines.reduce((sum, line) => sum + line.replacement * line.unit_credit, 0);
+    // Valued at what is actually coming back, which on an uneven swap is not
+    // what went out.
+    const back = state.lines.reduce(
+      (sum, line) => sum + line.replacement * (line.swap ? line.swapCost : line.unit_credit), 0,
+    );
     mount(totalHost,
       `${t('total')}: ${money(total)}`,
       state.settlement === 'replace' ? ` · ${t('replacementQty')}: ${money(back)}` : '');
@@ -720,6 +769,30 @@ function openSupplierReturn(order) {
               renderTotal();
             },
           }),
+        }, {
+          /*
+           * WHAT is coming back. Blank means the same item, which is the common
+           * case - a supplier replacing a faulty bottle with the same bottle.
+           * The owner's case is the other one: the supplier cannot send that
+           * item and sends a different one against the same credit, at ITS cost,
+           * so an uneven swap leaves the difference owing rather than pretending
+           * the two were worth the same.
+           */
+          key: 'swap',
+          label: t('replacementItem'),
+          render: (r) => (r.swap
+            ? h('div', { class: 'row', style: { gap: '6px', alignItems: 'center' } },
+              h('span', { class: 'mono small' }, r.swap.sku),
+              h('span', { class: 'muted small' }, money(r.swapCost)),
+              h('button', {
+                class: 'btn sm ghost',
+                title: t('sameItem'),
+                onclick: () => { r.swap = null; r.swapCost = 0; render(); },
+              }, '✕'))
+            : h('button', {
+              class: 'btn sm ghost',
+              onclick: () => pickReplacement(r, render),
+            }, t('chooseAnotherItem'))),
         }] : []),
         {
           key: 'value',
@@ -772,6 +845,8 @@ function openSupplierReturn(order) {
             po_line_id: line.id,
             quantity: line.quantity,
             replacement_quantity: state.settlement === 'replace' ? line.replacement : 0,
+            replacement_variant_id: state.settlement === 'replace' && line.swap ? line.swap.variant_id : null,
+            replacement_unit_cost: state.settlement === 'replace' && line.swap ? line.swapCost : null,
           }));
         if (!picked.length) { toast(t('errPrNothingPicked'), 'warn'); return; }
         try {
@@ -793,7 +868,9 @@ function openSupplierReturn(order) {
   api.get(`/api/purchases/${order.id}/returnable`).then((data) => {
     state.lines = data.lines
       .filter((line) => line.returnable_quantity > 0)
-      .map((line) => ({ ...line, quantity: 0, replacement: 0 }));
+      .map((line) => ({
+        ...line, quantity: 0, replacement: 0, swap: null, swapCost: 0,
+      }));
     render();
   }).catch((error) => {
     toastError(error);

@@ -967,7 +967,14 @@ export class StorefrontService {
     params.push(...facet.params);
 
     const whereSql = `WHERE ${where.join(' AND ')}`;
-    const orderSql = SORTS[sort] || SORTS.newest;
+    /*
+     * `Object.hasOwn`, not a bare lookup: `?sort=constructor` finds an inherited
+     * property, which is truthy, and would be interpolated into ORDER BY. No
+     * attacker-chosen SQL comes out of that - the value is a function, not a
+     * string - but a public URL that returns a 500 is a public URL somebody
+     * will keep pulling on.
+     */
+    const orderSql = Object.hasOwn(SORTS, String(sort)) ? SORTS[sort] : SORTS.newest;
     const size = Math.min(Math.max(toInt(pageSize, DEFAULT_PAGE_SIZE), 1), MAX_PAGE_SIZE);
     const current = Math.max(toInt(page, 1), 1);
 

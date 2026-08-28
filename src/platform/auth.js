@@ -47,12 +47,60 @@ function readToken(req) {
   return null;
 }
 
+/**
+ * Wrong guesses, and how long the door stays shut.
+ *
+ * The shop's own login has had a lockout since it was written; this one had
+ * nothing - unlimited guesses, against a single known username, on the account
+ * that can download and restore every shop on the fleet and reset any shop's
+ * administrator password. That is the most valuable password in the system and
+ * it was the only one nobody was counting attempts against.
+ *
+ * In memory rather than in a table on purpose: a control plane runs as one or
+ * two warm instances, and the alternative - a write to the platform database on
+ * every failed guess - is itself a way to make the console slow. A restart
+ * clears it, which is the honest cost of that choice; the window is small
+ * enough that a restart per six guesses is not an attack anybody can run.
+ */
+const ATTEMPTS = new Map();
+const MAX_ATTEMPTS = Number(process.env.MM_PLATFORM_MAX_ATTEMPTS || 6);
+const LOCK_MS = Number(process.env.MM_PLATFORM_LOCK_MS || 10 * 60 * 1000);
+
+function attemptState(username) {
+  const key = String(username || '').toLowerCase();
+  const now = Date.now();
+  const entry = ATTEMPTS.get(key);
+  if (entry && entry.until && entry.until <= now) ATTEMPTS.delete(key);
+  return { key, now, entry: ATTEMPTS.get(key) || null };
+}
+
+export function resetLoginAttempts(username = null) {
+  if (username === null) ATTEMPTS.clear();
+  else ATTEMPTS.delete(String(username).toLowerCase());
+}
+
 export async function login({ username, password }) {
+  const { key, now, entry } = attemptState(username);
+  if (entry?.until && entry.until > now) {
+    throw new UnauthorizedError(
+      'Too many attempts — this account is locked for a few minutes',
+    );
+  }
+
   const db = platformDb();
   const user = await db.prepare('SELECT * FROM platform_users WHERE username = ?').get(username);
   if (!user || !user.is_active || !bcrypt.compareSync(String(password || ''), user.password_hash)) {
+    const count = (entry?.count || 0) + 1;
+    ATTEMPTS.set(key, {
+      count,
+      until: count >= MAX_ATTEMPTS ? now + LOCK_MS : null,
+    });
+    // The same sentence whichever of the three it was: an unknown username, a
+    // deactivated one and a wrong password must not be tellable apart.
     throw new UnauthorizedError('Invalid username or password');
   }
+
+  ATTEMPTS.delete(key);
   await db.prepare('UPDATE platform_users SET last_login_at = ? WHERE id = ?')
     .run(new Date().toISOString(), user.id);
   return {

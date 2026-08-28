@@ -74,16 +74,44 @@ export class BrandRepository extends BaseRepository {
     super({
       table: 'brands',
       trashType: 'brand',
+      /*
+       * `is_published` is editable here now. It always existed and always
+       * decided whether the storefront shows the brand - it just could not be
+       * changed from any screen, so a brand that arrived unpublished stayed
+       * invisible on the website with nothing anywhere to say why.
+       */
       columns: ['code', 'name_en', 'name_ar', 'description', 'country', 'supplier_id',
-        'logo_url', 'is_active', 'created_by'],
+        'logo_url', 'is_active', 'is_published', 'created_by'],
       searchable: ['code', 'name_en', 'name_ar', 'country'],
     });
   }
 
+  /**
+   * The brands list, and - for each - WHETHER THE WEBSITE SHOWS IT.
+   *
+   * The shop's owner uploaded logos in the ERP and asked where they had gone on
+   * the website. Nothing was broken: the storefront shows a brand only when the
+   * brand is published AND at least one of its products is published, which is
+   * the right rule (an empty brand on a shop window is a dead end) and was
+   * invisible - the ERP said nothing, so the only way to find out was to look
+   * at the site and guess.
+   *
+   * So the same two facts the storefront decides on are returned here, and the
+   * screen says which one is missing. The counts use the storefront's own
+   * definition of published, including the recycle bin, so the answer cannot be
+   * subtly different from what the shop window actually does.
+   */
   async listWithCounts() {
     return getDb().prepare(`
       SELECT b.*, s.name_en AS supplier_name,
-             (SELECT COUNT(*) FROM products p WHERE p.brand_id = b.id) AS product_count
+             (SELECT COUNT(*) FROM products p WHERE p.brand_id = b.id) AS product_count,
+             (SELECT COUNT(*) FROM products p
+               WHERE p.brand_id = b.id
+                 AND p.is_active = 1 AND p.is_published = 1
+                 AND NOT EXISTS (SELECT 1 FROM trash_items t
+                                  WHERE t.entity_type = 'product' AND t.entity_id = p.id
+                                    AND t.status = 'in_bin')) AS published_product_count,
+             EXISTS (SELECT 1 FROM web_assets w WHERE w.slot = 'brand:' || b.id) AS has_logo
       FROM brands b
       LEFT JOIN suppliers s ON s.id = b.supplier_id
       WHERE ${notInBin('brand', 'b.id')}

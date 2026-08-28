@@ -302,6 +302,13 @@ export const purchaseReturnSchema = z.object({
     po_line_id: id,
     quantity: z.coerce.number().positive(),
     replacement_quantity: z.coerce.number().min(0).default(0),
+    /*
+     * A replacement that is a DIFFERENT item. Absent means like for like, which
+     * is what every replacement meant before this existed. Its cost is its own,
+     * because an uneven swap has to leave the difference owing.
+     */
+    replacement_variant_id: id.optional().nullable(),
+    replacement_unit_cost: z.coerce.number().min(0).optional().nullable(),
     reason: optionalString,
   })).min(1, 'Select at least one item to send back'),
 });

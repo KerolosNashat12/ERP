@@ -222,6 +222,22 @@ export const brandsView = resourceView({
     },
     { key: 'country', label: t('country') },
     { key: 'description', label: t('description'), render: (r) => h('span', { class: 'muted small' }, r.description || '—') },
+    /*
+     * Whether the WEBSITE shows this brand, and when it does not, which of the
+     * two reasons it is. The owner uploaded logos and asked where they had gone
+     * on the site; nothing was broken - the storefront shows a brand only when
+     * the brand is published and at least one of its products is - but the ERP
+     * said nothing, so the only way to find out was to guess.
+     */
+    {
+      key: '__web',
+      label: t('website'),
+      render: (r) => {
+        if (!r.is_published) return tag(t('brandHiddenUnpublished'), 'warn');
+        if (!Number(r.published_product_count)) return tag(t('brandHiddenNoProducts'), 'warn');
+        return tag(t('onTheWebsite'), 'ok');
+      },
+    },
     { key: 'is_active', label: t('status'), render: activeTag },
   ],
   fields: async () => {
@@ -233,10 +249,17 @@ export const brandsView = resourceView({
       { name: 'country', label: t('country') },
       { name: 'supplier_id', label: t('supplier'), type: 'select', options: toOptions(suppliers, (s) => pick(s, 'name')) },
       { name: 'is_active', label: t('active'), type: 'checkbox', value: 1 },
+      {
+        name: 'is_published',
+        label: t('showOnWebsite'),
+        type: 'checkbox',
+        value: 1,
+        hint: t('brandWebsiteHint'),
+      },
       { name: 'description', label: t('description'), type: 'textarea', span: 2 },
     ];
   },
-  defaults: { is_active: 1 },
+  defaults: { is_active: 1, is_published: 1 },
   rowActions: (row, refresh) => (can('brands.update')
     ? [h('button', {
       class: 'btn sm ghost', title: t('logo'), onclick: () => openBrandLogo(row, refresh),
