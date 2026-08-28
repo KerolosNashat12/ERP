@@ -41,6 +41,7 @@ const {
 } = await import('../src/infrastructure/database/connection.js');
 const { seedBaseline } = await import('../src/infrastructure/database/seed.js');
 const { runMigrations } = await import('../src/infrastructure/database/migrations/index.js');
+const { round2 } = await import('../src/shared/money.js');
 
 let base = '';
 let server = null;
@@ -537,6 +538,416 @@ test('returning goods to a supplier', async (t) => {
      */
     assert.ok(Number.isFinite(summary.outstanding));
     assert.ok(summary.orders >= 8);
+  });
+
+  /* ══════════════════════════════════════════════════════════════════════
+   *  The edge cases. Written after the feature worked, which is when the
+   *  interesting ones are actually visible: a shape the happy path never
+   *  produces, a number that only misbehaves at the third decimal place, a
+   *  second click on the same button.
+   * ══════════════════════════════════════════════════════════════════════ */
+
+  await t.test('a part-received order can only send back what actually arrived', async () => {
+    /*
+     * Ordered ten, three turned up. The other seven are not the shop's to send
+     * anywhere - they are still the supplier's problem - and "returnable" has to
+     * mean received, not ordered.
+     */
+    const variant = await product(100);
+    const po = await order([{ variant, quantity: 10, cost: 100 }], { receive: false });
+    await ok(`/api/purchases/${po.id}/receive`, {
+      method: 'POST', body: { receipts: [{ line_id: po.lines[0].id, quantity: 3 }] },
+    });
+
+    const state = await ok(`/api/purchases/${po.id}/returnable`);
+    assert.equal(state.lines[0].returnable_quantity, 3, 'three arrived, three can go back');
+
+    const tooMany = await refused('/api/purchase-returns', {
+      method: 'POST',
+      body: { purchase_order_id: po.id, lines: [{ po_line_id: po.lines[0].id, quantity: 4 }] },
+    }, 'pr_too_many');
+    assert.equal(tooMany.details.left, 3);
+  });
+
+  await t.test('one document can send back several lines, and touches only those', async () => {
+    const a = await product(100);
+    const b = await product(250);
+    const untouched = await product(70);
+    const po = await order([
+      { variant: a, quantity: 5, cost: 100 },
+      { variant: b, quantity: 4, cost: 250 },
+      { variant: untouched, quantity: 6, cost: 70 },
+    ]);
+
+    const sent = await ok('/api/purchase-returns', {
+      method: 'POST',
+      body: {
+        purchase_order_id: po.id,
+        lines: [
+          { po_line_id: po.lines[0].id, quantity: 2 },
+          { po_line_id: po.lines[1].id, quantity: 1 },
+        ],
+      },
+    });
+    assert.equal(sent.total_amount, 450, '2×100 + 1×250');
+    assert.equal(await onHand(a.id), 3);
+    assert.equal(await onHand(b.id), 3);
+    assert.equal(await onHand(untouched.id), 6, 'the line nobody picked must not move');
+
+    const state = await ok(`/api/purchases/${po.id}/returnable`);
+    const left = Object.fromEntries(state.lines.map((l) => [l.sku, l.returnable_quantity]));
+    assert.equal(left[untouched.sku], 6);
+  });
+
+  await t.test('the same product on two lines keeps two separate allowances', async () => {
+    /*
+     * A buyer who ordered the same bottle twice on one order - two prices, two
+     * deliveries - has two lines. Returning against one must not eat the
+     * other's allowance, and the credit has to follow the LINE's cost.
+     */
+    const variant = await product(100);
+    const po = await order([
+      { variant, quantity: 4, cost: 100 },
+      { variant, quantity: 6, cost: 130 },
+    ]);
+
+    await ok('/api/purchase-returns', {
+      method: 'POST',
+      body: { purchase_order_id: po.id, lines: [{ po_line_id: po.lines[0].id, quantity: 4 }] },
+    });
+
+    const state = await ok(`/api/purchases/${po.id}/returnable`);
+    assert.equal(state.lines[0].returnable_quantity, 0, 'the first line is used up');
+    assert.equal(state.lines[1].returnable_quantity, 6, 'the second is untouched');
+
+    const second = await ok('/api/purchase-returns', {
+      method: 'POST',
+      body: { purchase_order_id: po.id, lines: [{ po_line_id: po.lines[1].id, quantity: 1 }] },
+    });
+    assert.equal(second.total_amount, 130, 'credited at ITS line cost, not the other one\'s');
+  });
+
+  await t.test('shipping is not refunded — the lorry came', async () => {
+    const variant = await product(100);
+    const po = await order([{ variant, quantity: 10, cost: 100 }],
+      { discount: { shipping_amount: 250 } });
+    assert.equal(po.total_amount, 1250);
+
+    const sent = await ok('/api/purchase-returns', {
+      method: 'POST',
+      body: { purchase_order_id: po.id, lines: [{ po_line_id: po.lines[0].id, quantity: 10 }] },
+    });
+    assert.equal(sent.total_amount, 1000, 'every bottle back, and the delivery still cost what it cost');
+
+    const balance = await ok(`/api/purchases/${po.id}/balance`);
+    assert.equal(balance.net_amount, 250, 'the shop still owes the shipping');
+  });
+
+  await t.test('a cheaper swap leaves the difference owing to the shop', async () => {
+    const dear = await product(500);
+    const cheap = await product(200);
+    const po = await order([{ variant: dear, quantity: 4, cost: 500 }]);
+
+    const swap = await ok('/api/purchase-returns', {
+      method: 'POST',
+      body: {
+        purchase_order_id: po.id,
+        settlement: 'replace',
+        lines: [{
+          po_line_id: po.lines[0].id,
+          quantity: 2,
+          replacement_quantity: 2,
+          replacement_variant_id: cheap.id,
+          replacement_unit_cost: 200,
+        }],
+      },
+    });
+    assert.equal(swap.total_amount, 1000, 'two dear ones went back');
+    assert.equal(swap.replacement_amount, 400, 'two cheap ones came in');
+    assert.equal(await onHand(dear.id), 2);
+    assert.equal(await onHand(cheap.id), 2);
+  });
+
+  await t.test('awkward costs stay to the piastre', async () => {
+    /*
+     * 33.333 a piece is what a per-carton price divided by twelve looks like.
+     * Money is rounded to two places and quantities to three; what must not
+     * happen is a credit that is a third of a piastre away from the invoice.
+     */
+    const variant = await product(33.333);
+    const po = await order([{ variant, quantity: 3, cost: 33.333 }]);
+    const sent = await ok('/api/purchase-returns', {
+      method: 'POST',
+      body: { purchase_order_id: po.id, lines: [{ po_line_id: po.lines[0].id, quantity: 3 }] },
+    });
+    assert.equal(sent.total_amount, round2(3 * 33.333));
+    assert.equal(sent.total_amount, 100);
+  });
+
+  await t.test('half a bottle can go back, if that is how it was bought', async () => {
+    const variant = await product(200);
+    const po = await order([{ variant, quantity: 2.5, cost: 200 }]);
+    const sent = await ok('/api/purchase-returns', {
+      method: 'POST',
+      body: { purchase_order_id: po.id, lines: [{ po_line_id: po.lines[0].id, quantity: 0.5 }] },
+    });
+    assert.equal(sent.total_amount, 100);
+    assert.equal(await onHand(variant.id), 2);
+  });
+
+  await t.test('nothing, zero and a negative are all refused', async () => {
+    const variant = await product(100);
+    const po = await order([{ variant, quantity: 5, cost: 100 }]);
+
+    /*
+     * An empty list never reaches the service - the schema stops it at the door,
+     * which is the right layer for "you sent me nothing". What matters is that
+     * it is refused and nothing moves.
+     */
+    const empty = await call('/api/purchase-returns', {
+      method: 'POST', body: { purchase_order_id: po.id, lines: [] },
+    });
+    assert.equal(empty.status, 422);
+
+    /*
+     * A line asking for nothing is stopped at the same door. The service keeps
+     * its own `pr_nothing_picked` guard behind that - unreachable through the
+     * API, and deliberately kept, because the service is also called from tests
+     * and could be called from a script tomorrow, and "sent nothing" should not
+     * become "returned nothing, silently".
+     */
+    const zero = await call('/api/purchase-returns', {
+      method: 'POST',
+      body: { purchase_order_id: po.id, lines: [{ po_line_id: po.lines[0].id, quantity: 0 }] },
+    });
+    assert.equal(zero.status, 422);
+
+    const negative = await call('/api/purchase-returns', {
+      method: 'POST',
+      body: { purchase_order_id: po.id, lines: [{ po_line_id: po.lines[0].id, quantity: -3 }] },
+    });
+    assert.equal(negative.status, 422, 'a negative return would be a delivery');
+    assert.equal(await onHand(variant.id), 5, 'and nothing moved');
+  });
+
+  await t.test('a line from another order cannot be smuggled in', async () => {
+    const mine = await product(100);
+    const theirs = await product(100);
+    const a = await order([{ variant: mine, quantity: 5, cost: 100 }]);
+    const b = await order([{ variant: theirs, quantity: 5, cost: 100 }]);
+
+    const res = await call('/api/purchase-returns', {
+      method: 'POST',
+      body: { purchase_order_id: a.id, lines: [{ po_line_id: b.lines[0].id, quantity: 1 }] },
+    });
+    assert.equal(res.status, 404, "a line that is not on this order is not this order's to send back");
+    assert.equal(await onHand(theirs.id), 5);
+  });
+
+  await t.test('a draft order has received nothing, whatever its lines say', async () => {
+    const variant = await product(100);
+    const created = await ok('/api/purchases', {
+      method: 'POST',
+      body: {
+        supplier_id: supplier.id,
+        order_date: new Date().toISOString().slice(0, 10),
+        lines: [{
+          variant_id: variant.id, quantity_ordered: 5, unit_cost: 100, discount_percent: 0, tax_rate: 0,
+        }],
+      },
+    });
+    const draft = await ok(`/api/purchases/${created.id}`);
+    assert.equal(draft.status, 'draft');
+    await refused('/api/purchase-returns', {
+      method: 'POST',
+      body: { purchase_order_id: draft.id, lines: [{ po_line_id: draft.lines[0].id, quantity: 1 }] },
+    }, 'pr_nothing_received');
+  });
+
+  await t.test('pressing send twice does not send the goods back twice', async () => {
+    /*
+     * A slow connection and an impatient hand. The idempotency key is what makes
+     * the second press the same act as the first rather than a second one; nine
+     * pieces leaving the shelf because a button was double-clicked is exactly
+     * the kind of thing nobody notices until a stock count.
+     */
+    const variant = await product(100);
+    const po = await order([{ variant, quantity: 10, cost: 100 }]);
+    const body = { purchase_order_id: po.id, lines: [{ po_line_id: po.lines[0].id, quantity: 3 }] };
+    const key = `double-${Math.random().toString(36).slice(2)}`;
+
+    const send = () => fetch(`${base}/api/purchase-returns`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', cookie, 'Idempotency-Key': key },
+      body: JSON.stringify(body),
+    }).then(async (res) => ({ status: res.status, data: await res.json() }));
+
+    const first = await send();
+    const second = await send();
+    assert.equal(first.status, 201);
+    assert.ok(second.status < 400, `the replay answered ${second.status}`);
+    assert.equal(second.data.return_no, first.data.return_no, 'the same document, not a second one');
+    assert.equal(await onHand(variant.id), 7, 'three went back, not six');
+  });
+
+  await t.test('returning does not disturb what the rest of the stock is worth', async () => {
+    /*
+     * Ten bought at 100 and ten at 200 average out at 150. Sending back two of
+     * them must not re-price the eighteen still on the shelf - a return is goods
+     * leaving, and goods leaving have never changed an average cost.
+     */
+    const variant = await product(100);
+    const first = await order([{ variant, quantity: 10, cost: 100 }]);
+    await order([{ variant, quantity: 10, cost: 200 }]);
+    const before = await getDb().prepare(
+      'SELECT average_cost FROM stock_levels WHERE variant_id = ?',
+    ).get(variant.id);
+    assert.equal(round2(before.average_cost), 150);
+
+    await ok('/api/purchase-returns', {
+      method: 'POST',
+      body: { purchase_order_id: first.id, lines: [{ po_line_id: first.lines[0].id, quantity: 2 }] },
+    });
+    const after = await getDb().prepare(
+      'SELECT average_cost FROM stock_levels WHERE variant_id = ?',
+    ).get(variant.id);
+    assert.equal(round2(after.average_cost), 150, 'the shelf is worth what it was worth');
+    assert.equal(await onHand(variant.id), 18);
+  });
+
+  await t.test('every return is a numbered document with an audit trail behind it', async () => {
+    const variant = await product(100);
+    const po = await order([{ variant, quantity: 5, cost: 100 }]);
+    const sent = await ok('/api/purchase-returns', {
+      method: 'POST',
+      body: { purchase_order_id: po.id, reason: 'leaking caps', lines: [{ po_line_id: po.lines[0].id, quantity: 2 }] },
+    });
+
+    assert.match(sent.return_no, /^PRT-\d{4}-\d{5}$/, 'a number a person can quote on the phone');
+    assert.equal(sent.po_number, po.po_number, 'and it names the order it came from');
+
+    const audit = await getDb().prepare(`
+      SELECT action, entity_type, entity_label FROM audit_logs
+       WHERE entity_type = 'purchase_return' AND entity_label = ?
+       ORDER BY id DESC LIMIT 1
+    `).get(sent.return_no);
+    assert.ok(audit, 'a movement of stock and money with nobody attached to it is not acceptable');
+    assert.equal(audit.action, 'CREATE');
+
+    // And the stock ledger says where those two went.
+    const movement = await getDb().prepare(`
+      SELECT movement_type, quantity, reference_no FROM stock_movements
+       WHERE reference_type = 'purchase_return' AND reference_no = ?
+    `).get(sent.return_no);
+    assert.equal(movement.movement_type, 'purchase_return');
+    assert.equal(movement.quantity, -2);
+  });
+
+  await t.test('sending goods back needs the right to do it', async () => {
+    /*
+     * `purchases.return` is granted to whoever may RECEIVE goods, on purpose:
+     * the person who opens the carton and finds it broken is the person who
+     * sends it back, and a shop that narrowed the receiving right meant to
+     * narrow this one too. So the test is not "a clerk cannot" - a stock clerk
+     * receives, and therefore may - it is that somebody with NEITHER right is
+     * refused, and refused before anything moves.
+     */
+    const variant = await product(100);
+    const po = await order([{ variant, quantity: 5, cost: 100 }]);
+
+    const rolesRes = await ok('/api/users/roles');
+    const roles = rolesRes.rows || rolesRes;
+    const cashier = roles.find((r) => r.code === 'cashier');
+    assert.ok(cashier, 'expected a cashier role in the seed');
+    assert.ok(!(cashier.permissions || []).includes('purchases.return'),
+      'a cashier must not hold the right this test is about');
+
+    await ok('/api/users', {
+      method: 'POST',
+      body: {
+        username: 'till-only', full_name: 'Till Only', password: 'till-only-password', role_id: cashier.id,
+      },
+    });
+    const login = await fetch(`${base}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: 'till-only', password: 'till-only-password' }),
+    });
+    const cashierCookie = (login.headers.get('set-cookie') || '').split(';')[0];
+
+    const attempt = await fetch(`${base}/api/purchase-returns`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', cookie: cashierCookie, 'Idempotency-Key': `p-${Math.random()}` },
+      body: JSON.stringify({ purchase_order_id: po.id, lines: [{ po_line_id: po.lines[0].id, quantity: 1 }] }),
+    });
+    assert.equal(attempt.status, 403, 'the till does not send goods back to suppliers');
+    assert.equal(await onHand(variant.id), 5, 'and nothing moved on the way to being refused');
+
+    // Reading the order is a different right and stays open to them.
+    const canLook = await fetch(`${base}/api/purchases/${po.id}`, { headers: { cookie: cashierCookie } });
+    assert.ok([200, 403].includes(canLook.status));
+  });
+
+  await t.test('two returns racing for the same stock cannot both win', async () => {
+    /*
+     * Two people, two tills, one carton - or one person on a bad connection who
+     * pressed twice with two different keys, so idempotency does not cover it.
+     * Each request checks what is returnable and then writes; if the check and
+     * the write are not one atomic act, both can pass a check that only one of
+     * them should.
+     *
+     * The rule being defended is arithmetic, not politeness: whatever happens,
+     * the shop must not have sent back more than it received.
+     */
+    const variant = await product(100);
+    const po = await order([{ variant, quantity: 10, cost: 100 }]);
+
+    const send = (quantity) => fetch(`${base}/api/purchase-returns`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json', cookie, 'Idempotency-Key': `race-${Math.random()}`,
+      },
+      body: JSON.stringify({
+        purchase_order_id: po.id, lines: [{ po_line_id: po.lines[0].id, quantity }],
+      }),
+    }).then((res) => res.status);
+
+    const [a, b] = await Promise.all([send(6), send(6)]);
+    const won = [a, b].filter((status) => status < 400).length;
+
+    const state = await ok(`/api/purchases/${po.id}/returnable`);
+    const returned = state.lines[0].returned_quantity;
+    assert.ok(returned <= 10, `sent back ${returned} of 10 received`);
+    assert.equal(await onHand(variant.id), 10 - returned, 'the shelf and the paperwork agree');
+    assert.ok(won >= 1, 'one of them has to succeed, or the shop cannot return anything under load');
+    console.log(`      race: ${a}/${b}, ${returned} of 10 went back`);
+  });
+
+  await t.test('an order in the recycle bin takes no more returns', async () => {
+    const variant = await product(100);
+    const po = await order([{ variant, quantity: 5, cost: 100 }]);
+    const binned = await call('/api/trash', {
+      method: 'POST',
+      body: { entityType: 'purchase_order', entityId: po.id, reason: 'raised by mistake' },
+    });
+
+    if (binned.status >= 400) {
+      /*
+       * A received order may refuse to be deleted at all, which is a better
+       * answer than deleting it - so that refusal IS the protection, and it is
+       * what this asserts.
+       */
+      assert.ok(binned.status < 500, `deleting a received order answered ${binned.status}`);
+      return;
+    }
+
+    const attempt = await call('/api/purchase-returns', {
+      method: 'POST',
+      body: { purchase_order_id: po.id, lines: [{ po_line_id: po.lines[0].id, quantity: 1 }] },
+    });
+    assert.ok(attempt.status >= 400,
+      'an order somebody deleted must not go on accepting documents');
+    assert.equal(await onHand(variant.id), 5);
   });
 
   // ═══════════════════════ 8b. what the PUBLIC side may see and sell

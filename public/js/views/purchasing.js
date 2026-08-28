@@ -623,6 +623,19 @@ async function purchaseFormView(root, route) {
         && ['partially_received', 'received'].includes(existing.status)
         ? h('button', { class: 'btn', onclick: () => openSupplierReturn(existing) }, '↩ ' + t('returnToSupplier'))
         : null,
+      /*
+       * Its own button, because a swap is what people come looking for by name.
+       * Same screen underneath - see openSupplierReturn - opened with the
+       * settlement already set, so the columns for what is coming back are
+       * there before anybody has to know they exist.
+       */
+      existing && can('purchases.return')
+        && ['partially_received', 'received'].includes(existing.status)
+        ? h('button', {
+          class: 'btn',
+          onclick: () => openSupplierReturn(existing, { settlement: 'replace' }),
+        }, '⇄ ' + t('swapWithSupplier'))
+        : null,
       // Present whatever the status is, and saying why when it cannot act —
       // a delete button that is simply absent is what sent the owner looking.
       existing && can('purchases.delete') ? actionButton({
@@ -701,8 +714,19 @@ function pickReplacement(line, refresh) {
  * can be returnable on paper and impossible in fact, because the pieces were
  * sold last week - so the box is capped at it and the row says so.
  */
-function openSupplierReturn(order) {
-  const state = { settlement: 'credit', reason: '', lines: [] };
+function openSupplierReturn(order, { settlement = 'credit' } = {}) {
+  /*
+   * The same screen, opened at the setting the person came for.
+   *
+   * A swap IS a return - goods out and goods in, one document, one transaction -
+   * so building a second screen for it would be building the same thing twice.
+   * But the owner looked for the word "استبدال" on the purchase order three
+   * times and did not find it, because it was a choice inside a dialog rather
+   * than something on the page. A feature nobody can find is a feature nobody
+   * has. So there are two doors into one room, and the door you came through
+   * decides what the settlement starts as.
+   */
+  const state = { settlement, reason: '', lines: [] };
   const host = h('div');
   const totalHost = h('div', { class: 'muted small' });
 
@@ -807,7 +831,7 @@ function openSupplierReturn(order) {
     renderTotal();
   }
 
-  const settlement = selectInput({
+  const settlementPicker = selectInput({
     value: state.settlement,
     options: [
       { value: 'credit', label: t('settlementCredit') },
@@ -828,11 +852,11 @@ function openSupplierReturn(order) {
   });
 
   const dialog = modal({
-    title: `${t('returnToSupplier')} — ${order.po_number}`,
+    title: `${state.settlement === 'replace' ? t('swapWithSupplier') : t('returnToSupplier')} — ${order.po_number}`,
     size: 'wide',
     body: h('div', { class: 'stack' },
       h('div', { class: 'filters' },
-        h('div', { class: 'field' }, field({ label: t('settlement'), input: settlement })),
+        h('div', { class: 'field' }, field({ label: t('settlement'), input: settlementPicker })),
         h('div', { class: 'field grow' }, field({ label: t('reason'), input: reason }))),
       host,
       totalHost),

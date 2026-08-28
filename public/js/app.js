@@ -32,6 +32,14 @@ const screen = (load, name = 'default') => {
 
 const appRoot = document.getElementById('app');
 
+/**
+ * What the sidebar prints under the shop's name. The build only appears when
+ * the server knows one - a shop PC has no commit and should not grow an empty
+ * bracket because of it.
+ */
+let buildInfo = null;
+const buildLabel = () => (buildInfo?.commit ? `ERP v1.0 · ${buildInfo.commit}` : 'ERP v1.0');
+
 /** Navigation model — a single list drives the sidebar and the permission gate. */
 const NAV = [
   {
@@ -147,6 +155,7 @@ let tenantInfo = null;
 async function loadTenantInfo() {
   try {
     const { tenant, branding, deployment } = await api.get('/api/session');
+    buildInfo = deployment?.build || null;
     tenantInfo = tenant;
     setTenant(tenant);
     /**
@@ -203,7 +212,16 @@ function buildShell() {
       shopMark(),
       h('div', { class: 'sidebar-brand-text' },
         h('div', { class: 'name' }, companyName()),
-        h('div', { class: 'sub' }, 'ERP v1.0'))),
+        /*
+         * The build, beside the version.
+         *
+         * "I published — is it live?" is asked after every release, and until
+         * now the only way to answer it was to fetch the JavaScript and search
+         * inside it for a function name. Seven characters of commit here turn
+         * that into a glance: if the sidebar shows the sha the publish log
+         * printed, the shop is running what was published.
+         */
+        h('div', { class: 'sub' }, buildLabel()))),
     h('nav', { class: 'nav', id: 'nav' }));
 
   const scanBox = h('div', { class: 'topbar-scan' },
