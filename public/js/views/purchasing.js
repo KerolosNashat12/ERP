@@ -624,16 +624,20 @@ async function purchaseFormView(root, route) {
         ? h('button', { class: 'btn', onclick: () => openSupplierReturn(existing) }, '↩ ' + t('returnToSupplier'))
         : null,
       /*
-       * Its own button, because a swap is what people come looking for by name.
-       * Same screen underneath - see openSupplierReturn - opened with the
-       * settlement already set, so the columns for what is coming back are
-       * there before anybody has to know they exist.
+       * Its own button AND its own screen. It began as one dialog with a
+       * settlement chooser, which failed twice over: the owner looked for the
+       * word «استبدال» three times and never found it, and once it was findable
+       * the chooser was still sitting on the plain return screen offering to
+       * turn it into something else. Two doors into two rooms — the return
+       * screen asks what is going back, the swap screen asks what is going back
+       * AND what is coming in, and neither asks the person to classify what
+       * they are doing before they can do it.
        */
       existing && can('purchases.return')
         && ['partially_received', 'received'].includes(existing.status)
         ? h('button', {
           class: 'btn',
-          onclick: () => openSupplierReturn(existing, { settlement: 'replace' }),
+          onclick: () => openSupplierReturn(existing, { swap: true }),
         }, '⇄ ' + t('swapWithSupplier'))
         : null,
       // Present whatever the status is, and saying why when it cannot act —
@@ -714,18 +718,27 @@ function pickReplacement(line, refresh) {
  * can be returnable on paper and impossible in fact, because the pieces were
  * sold last week - so the box is capped at it and the row says so.
  */
-function openSupplierReturn(order, { settlement = 'credit' } = {}) {
+function openSupplierReturn(order, { swap = false } = {}) {
   /*
-   * The same screen, opened at the setting the person came for.
+   * Two screens, one function — and `swap` is not a setting the person can
+   * change, it is which button they pressed.
    *
-   * A swap IS a return - goods out and goods in, one document, one transaction -
-   * so building a second screen for it would be building the same thing twice.
-   * But the owner looked for the word "استبدال" on the purchase order three
-   * times and did not find it, because it was a choice inside a dialog rather
-   * than something on the page. A feature nobody can find is a feature nobody
-   * has. So there are two doors into one room, and the door you came through
-   * decides what the settlement starts as.
+   * Underneath, a swap IS a return: goods out and goods in, one document, one
+   * transaction, so there is no second implementation here. What there is no
+   * longer is a «التسوية» chooser sitting on the return screen, because once
+   * the swap had a button of its own that chooser was offering to turn a return
+   * into a different kind of document AFTER somebody had already said which one
+   * they wanted. A screen that asks you to re-declare what you came to do is a
+   * screen that will be got wrong.
+   *
+   * The consequence, said out loud: a return is always recorded as a CREDIT
+   * against the order — what went back comes off what the shop owes, and when
+   * the order is already paid it becomes money the supplier owes the shop (see
+   * PurchaseReturnService.balance). "The supplier wired the money back" is not
+   * a thing this screen records any more; it never changed a single figure,
+   * because the balance counts every completed return whatever it is labelled.
    */
+  const settlement = swap ? 'replace' : 'credit';
   const state = { settlement, reason: '', lines: [] };
   const host = h('div');
   const totalHost = h('div', { class: 'muted small' });
@@ -741,7 +754,7 @@ function openSupplierReturn(order, { settlement = 'credit' } = {}) {
     );
     mount(totalHost,
       `${t('total')}: ${money(total)}`,
-      state.settlement === 'replace' ? ` · ${t('replacementQty')}: ${money(back)}` : '');
+      swap ? ` · ${t('replacementQty')}: ${money(back)}` : '');
   }
 
   function render() {
@@ -777,7 +790,7 @@ function openSupplierReturn(order, { settlement = 'credit' } = {}) {
             },
           }),
         },
-        ...(state.settlement === 'replace' ? [{
+        ...(swap ? [{
           key: 'replacement',
           label: t('replacementQty'),
           align: 'end',
@@ -831,32 +844,16 @@ function openSupplierReturn(order, { settlement = 'credit' } = {}) {
     renderTotal();
   }
 
-  const settlementPicker = selectInput({
-    value: state.settlement,
-    options: [
-      { value: 'credit', label: t('settlementCredit') },
-      { value: 'refund', label: t('settlementRefund') },
-      { value: 'replace', label: t('settlementReplace') },
-    ],
-    onchange: (event) => {
-      state.settlement = event.target.value;
-      // Leaving a replacement quantity behind on a credit is a refusal from the
-      // server; clearing it here means the screen never sets that trap.
-      if (state.settlement !== 'replace') for (const line of state.lines) line.replacement = 0;
-      render();
-    },
-  });
   const reason = textInput({
     placeholder: t('reason'),
     oninput: (event) => { state.reason = event.target.value; },
   });
 
   const dialog = modal({
-    title: `${state.settlement === 'replace' ? t('swapWithSupplier') : t('returnToSupplier')} — ${order.po_number}`,
+    title: `${swap ? t('swapWithSupplier') : t('returnToSupplier')} — ${order.po_number}`,
     size: 'wide',
     body: h('div', { class: 'stack' },
       h('div', { class: 'filters' },
-        h('div', { class: 'field' }, field({ label: t('settlement'), input: settlementPicker })),
         h('div', { class: 'field grow' }, field({ label: t('reason'), input: reason }))),
       host,
       totalHost),
@@ -868,15 +865,15 @@ function openSupplierReturn(order, { settlement = 'credit' } = {}) {
           .map((line) => ({
             po_line_id: line.id,
             quantity: line.quantity,
-            replacement_quantity: state.settlement === 'replace' ? line.replacement : 0,
-            replacement_variant_id: state.settlement === 'replace' && line.swap ? line.swap.variant_id : null,
-            replacement_unit_cost: state.settlement === 'replace' && line.swap ? line.swapCost : null,
+            replacement_quantity: swap ? line.replacement : 0,
+            replacement_variant_id: swap && line.swap ? line.swap.variant_id : null,
+            replacement_unit_cost: swap && line.swap ? line.swapCost : null,
           }));
         if (!picked.length) { toast(t('errPrNothingPicked'), 'warn'); return; }
         try {
           await api.post('/api/purchase-returns', {
             purchase_order_id: order.id,
-            settlement: state.settlement,
+            settlement,
             reason: state.reason || null,
             lines: picked,
           });
@@ -885,7 +882,7 @@ function openSupplierReturn(order, { settlement = 'credit' } = {}) {
           window.location.reload();
         } catch (error) { toastError(error); }
       },
-    }, t('sendBack')),
+    }, swap ? t('swapWithSupplier') : t('sendBack')),
   });
 
   mount(host, spinner());

@@ -44,13 +44,30 @@ const order = await page.evaluate(async () => {
     if (!res.ok) throw new Error(`${res.status} ${url} ${await res.text()}`);
     return res.json();
   };
+  /*
+   * Something to send back. A shop that has been trading already has plenty;
+   * an empty one - a fresh database, which is what this runs against in CI -
+   * has none, and a check that only works on a populated shop is a check
+   * nobody can run before they have a problem.
+   */
   const stock = await (await fetch('/api/inventory/stock?page=1')).json();
-  const variant = stock.rows.find((row) => row.quantity > 0);
+  let variantId = (stock.rows || []).find((row) => row.quantity > 0)?.variant_id || null;
   const supplier = await post('/api/suppliers', { name_en: `Check Supplier ${Date.now()}` });
+  if (!variantId) {
+    const stamp = Date.now().toString(36).toUpperCase().slice(-5);
+    const product = await post('/api/products', {
+      sku_prefix: `CHK${stamp}`,
+      name_en: `Check product ${stamp}`,
+      name_ar: `منتج اختبار ${stamp}`,
+      base_price: 300,
+      variants: [{ sku: `CHK${stamp}-1`, variant_label: '', cost_price: 100, selling_price: 300 }],
+    });
+    variantId = product.variants[0].id;
+  }
   const created = await post('/api/purchases', {
     supplier_id: supplier.id,
     order_date: new Date().toISOString().slice(0, 10),
-    lines: [{ variant_id: variant.variant_id, quantity_ordered: 10, unit_cost: 100, discount_percent: 0, tax_rate: 0 }],
+    lines: [{ variant_id: variantId, quantity_ordered: 10, unit_cost: 100, discount_percent: 0, tax_rate: 0 }],
   });
   await post(`/api/purchases/${created.id}/approve`, {});
   const full = await (await fetch(`/api/purchases/${created.id}`)).json();
@@ -59,7 +76,22 @@ const order = await page.evaluate(async () => {
   });
   // Paid in full, so the interesting half of the feature is what gets tested.
   await post(`/api/purchases/${created.id}/payment`, { amount: 1000, method: 'cash' });
-  return { id: created.id, po: created.po_number };
+
+  /*
+   * Something DIFFERENT for the supplier to send instead — the owner's case.
+   * Made here, and its code handed back, so the picker below searches for a
+   * product this check knows exists rather than for one that happened to be in
+   * somebody's shop the day the check was written.
+   */
+  const stamp = Date.now().toString(36).toUpperCase().slice(-5);
+  const swapProduct = await post('/api/products', {
+    sku_prefix: `SWP${stamp}`,
+    name_en: `Swap target ${stamp}`,
+    name_ar: `بديل ${stamp}`,
+    base_price: 400,
+    variants: [{ sku: `SWP${stamp}-1`, variant_label: '', cost_price: 150, selling_price: 400 }],
+  });
+  return { id: created.id, po: created.po_number, swapSku: swapProduct.variants[0].sku };
 });
 console.log(`working on ${order.po}`);
 
@@ -119,21 +151,78 @@ if (!/owes|ليه عندنا/i.test(strip)) fail(`a fully paid order that was re
  */
 await page.goto(`${BASE}/app.html#/purchases/${order.id}`);
 await page.waitForTimeout(1800);
+/*
+ * The swap is its OWN button now, not a setting inside the return dialog. The
+ * owner's words: «ضفنا تبديل اصلا لوحدها ف المفروض تتشال من المرتجع». So the
+ * check is in two halves - the return screen must NOT offer to become
+ * something else, and the swap screen must arrive with its columns already
+ * there.
+ */
 await page.evaluate(() => {
   const b = [...document.querySelectorAll('.page-head button')]
     .find((n) => /Send back to supplier|مرتجع للمورد/.test(n.textContent || ''));
   if (b) b.click();
 });
 await page.waitForSelector('#modal-root tbody tr', { timeout: 15000 });
+/*
+ * Read the dialog by its TITLE rather than by "whatever is in #modal-root".
+ *
+ * A fresh shop opens with "Change password" already on screen — every account
+ * still on a seeded default is made to change it — and that dialog sits in the
+ * same #modal-root. A selector that means "the first table in the modal root"
+ * therefore reads whichever dialog happens to be first in the DOM, which is how
+ * this check spent three runs reporting that a swap dialog had no swap columns
+ * while looking at a completely different dialog.
+ */
+const dialogNamed = (pattern) => page.evaluateHandle((source) => {
+  const rule = new RegExp(source);
+  return [...document.querySelectorAll('#modal-root > *')]
+    .find((node) => rule.test(node.querySelector('.modal-head h3')?.textContent || '')) || null;
+}, pattern);
+
+const readDialog = async (pattern) => {
+  const handle = await dialogNamed(pattern);
+  return handle.evaluate((node) => (node ? {
+    columns: [...node.querySelectorAll('thead th')].map((n) => n.textContent.trim()),
+    hasSelect: Boolean(node.querySelector('select')),
+    firstRow: node.querySelector('tbody tr')?.innerText.replace(/\n/g, ' | ') || '',
+  } : null));
+};
+
+const returnDialog = await readDialog('Send back to supplier|مرتجع للمورد');
+if (!returnDialog) fail('the return dialog did not open');
+else {
+  if (returnDialog.hasSelect) fail('the plain return dialog still carries a settlement picker');
+  if (returnDialog.columns.some((c) => /instead|بدله/.test(c))) {
+    fail('the plain return dialog is still showing the replacement columns');
+  }
+}
+// Close it by the button inside THAT dialog, for the same reason.
 await page.evaluate(() => {
-  const select = document.querySelector('#modal-root select');
-  select.value = 'replace';
-  select.dispatchEvent(new Event('change', { bubbles: true }));
+  const node = [...document.querySelectorAll('#modal-root > *')]
+    .find((n) => /Send back to supplier|مرتجع للمورد/.test(n.querySelector('.modal-head h3')?.textContent || ''));
+  node?.querySelector('.modal-head button')?.click();
 });
 await page.waitForTimeout(600);
-const swapColumns = await page.$$eval('#modal-root thead th', (ns) => ns.map((n) => n.textContent.trim()));
-if (!swapColumns.some((c) => /Coming back|الراجع/.test(c))) fail('choosing replacement did not add the coming-back column');
-if (!swapColumns.some((c) => /instead|بدله/.test(c))) fail('no column for choosing a different item');
+
+// Now the swap door, which must open with the columns already in place.
+const swapOpened = await page.evaluate(() => {
+  const b = [...document.querySelectorAll('.page-head button')]
+    .find((n) => /Swap with the supplier|استبدال من المورد/.test(n.textContent || ''));
+  if (!b) return false;
+  b.click();
+  return true;
+});
+if (!swapOpened) fail('there is no swap button on the purchase order');
+await page.waitForSelector('#modal-root tbody tr', { timeout: 15000 });
+await page.waitForTimeout(400);
+const swapDialog = await readDialog('Swap with the supplier|استبدال من المورد');
+if (!swapDialog) fail('the swap dialog did not open');
+else {
+  if (!swapDialog.columns.some((c) => /Coming back|الراجع/.test(c))) fail('the swap dialog has no coming-back column');
+  if (!swapDialog.columns.some((c) => /instead|بدله/.test(c))) fail('no column for choosing a different item');
+  if (swapDialog.hasSelect) fail('the swap dialog is still asking which kind of document this is');
+}
 
 const opened = await page.evaluate(() => {
   const b = [...document.querySelectorAll('#modal-root tbody button')]
@@ -145,12 +234,17 @@ const opened = await page.evaluate(() => {
 if (!opened) fail('no "a different item" button on the replacement row');
 else {
   await page.waitForTimeout(900);
-  // The picker is the second dialog; search for anything and take the first hit.
-  const boxes = await page.$$('#modal-root input');
-  await boxes[boxes.length - 1].fill('').catch(() => {});
-  const search = await page.$$('#modal-root input[placeholder]');
-  await search[search.length - 1].fill('D5');
-  await page.waitForTimeout(1200);
+  /*
+   * The picker's own search box, addressed by the thing it belongs to rather
+   * than by "the last input in the dialog" — which quietly became the cost box
+   * the day numberInput started carrying an empty placeholder attribute, so
+   * this typed a SKU into a price field and then reported that the picker
+   * found nothing.
+   */
+  const search = await page.$('#modal-root .pos-search input');
+  if (!search) fail('the replacement picker has no search box');
+  else await search.fill(order.swapSku);
+  await page.waitForTimeout(1400);
   const picked = await page.evaluate(() => {
     const hit = document.querySelector('#modal-root .pos-result');
     if (!hit) return false;
@@ -169,9 +263,9 @@ else {
     });
     if (!saved) fail('could not confirm the chosen item');
     await page.waitForTimeout(900);
-    const row = await page.evaluate(() => document.querySelector('#modal-root tbody tr')?.innerText.replace(/\n/g, ' | ') || '');
+    const row = (await readDialog('Swap with the supplier|استبدال من المورد'))?.firstRow || '';
     console.log('replacement row:', row);
-    if (!/D5/.test(row)) fail(`the chosen item is not shown on the row: ${row}`);
+    if (!row.includes(order.swapSku)) fail(`the chosen item is not shown on the row: ${row}`);
   }
 }
 await page.evaluate(() => {

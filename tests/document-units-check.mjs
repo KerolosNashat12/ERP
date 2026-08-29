@@ -41,12 +41,63 @@ const unitsShown = () => page.evaluate(() => {
   return m ? Number(m[1].replace(/,/g, '')) : null;
 });
 
+/*
+ * Two items to put on a document, and a sale to look at afterwards.
+ *
+ * Seeded here rather than assumed: this check used to type two SKUs from the
+ * owner's own shop, which meant it could only ever run against that one
+ * database — and a check that cannot run on an empty shop is a check nobody
+ * runs before there is a problem. If the shop already trades, its own data is
+ * used and nothing is created beyond these two lines.
+ */
+const seeded = await page.evaluate(async () => {
+  const post = async (url, body) => {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'Idempotency-Key': `u-${Math.random()}` },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error(`${res.status} ${url} ${await res.text()}`);
+    return res.json();
+  };
+  const stamp = Date.now().toString(36).toUpperCase().slice(-5);
+  const skus = [];
+  const variantIds = [];
+  for (const index of [1, 2]) {
+    const product = await post('/api/products', {
+      sku_prefix: `UNT${stamp}${index}`,
+      name_en: `Units check ${stamp}-${index}`,
+      name_ar: `اختبار قطع ${stamp}-${index}`,
+      base_price: 100 * index,
+      variants: [{
+        sku: `UNT${stamp}${index}-0`, variant_label: '', cost_price: 40 * index, selling_price: 100 * index,
+      }],
+    });
+    skus.push(product.variants[0].sku);
+    variantIds.push(product.variants[0].id);
+    // Stock, so the sale below is possible at all.
+    await post('/api/inventory/quick-adjust', {
+      variantId: product.variants[0].id, newQuantity: 50, reason: 'correction',
+    });
+  }
+  // And a sale of both, so there is an invoice and a receipt to read.
+  const sale = await post('/api/sales', {
+    payment_method: 'cash',
+    lines: [
+      { variant_id: variantIds[0], quantity: 4 },
+      { variant_id: variantIds[1], quantity: 2 },
+    ],
+  });
+  return { skus, saleUnits: 6, invoice: sale.invoice_no };
+});
+console.log(`seeded ${seeded.skus.join(', ')} and ${seeded.invoice}`);
+
 // ------------------------------------------------------- the purchase order
 await page.goto(`${BASE}/app.html#/purchases/new`);
 await page.waitForTimeout(1200);
 const codeBoxes = await page.$$('input[placeholder*="Scan"], input[placeholder*="امسح"]');
 const lineBox = codeBoxes[codeBoxes.length - 1];
-for (const code of ['D6-0', 'D5-0']) {
+for (const code of seeded.skus) {
   await lineBox.fill(code);
   await lineBox.press('Enter');
   await page.waitForTimeout(900);
