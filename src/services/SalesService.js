@@ -338,8 +338,31 @@ export class SalesService {
         line_total: l.line_total,
       })));
 
-      // Issue stock and snapshot the true COGS from the moving-average cost.
+      /*
+       * Issue stock, and snapshot the TRUE cost of this sale — the moving
+       * average at the moment it left the shelf, not the price of the most
+       * recent purchase order.
+       *
+       * ── Why the line is corrected as well as the header ──────────────────
+       * `#priceLines` filled `unit_cost` from the variant's standard cost,
+       * because that is all it can know before the stock is issued. That value
+       * is the LATEST PURCHASE PRICE — receiving a purchase order overwrites
+       * it — and it is not what the shop paid for the piece it just sold.
+       *
+       * Buy one at 250, buy another at 300, sell one at 300: the shelf holds
+       * two pieces at an average of 275, the sale costs 275 and makes 25. The
+       * header said exactly that. Every LINE said its cost was 300, so the
+       * profit on it was zero — and «الأرباح حسب المنتج», the report somebody
+       * opens to ask what a product earns, answered ZERO for a sale that made
+       * money. `sales_summary` and `profit_and_costs` read the header and said
+       * 25. Two reports, the same sale, different answers.
+       *
+       * So the number the movement actually used is written back to the line
+       * it came from. One cost per line, one cost per sale, and the three
+       * reports agree because they are reading the same figure.
+       */
       let actualCost = 0;
+      const trueLineCosts = [];
       for (const line of totals.lines) {
         const level = await repositories.inventory.ensureLevel(line.variant_id, warehouseId);
         const unitCost = Number(level.average_cost || line.unit_cost || 0);
@@ -356,7 +379,9 @@ export class SalesService {
           actorId: context.actor?.id || null,
         });
         actualCost = round2(actualCost + line.quantity * unitCost);
+        trueLineCosts.push({ variantId: line.variant_id, unitCost });
       }
+      await this.sales.setLineCosts(sale.id, trueLineCosts);
       await this.sales.update(sale.id, { total_cost: actualCost });
 
       for (const payment of payments) {

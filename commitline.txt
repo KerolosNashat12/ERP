@@ -1,31 +1,39 @@
-Shoot mode - photograph a catalogue without losing your place
+Shoot mode, and a profit report that was saying zero
 
-The owner asked four times for product photographs to be downloaded from the
-internet. They cannot be: pictures of a named product belong to whoever shot
-them, and a generic stock bottle on a product page is worse than an empty
-frame - a customer orders the thing in the picture and returns the thing in
-the box. Three open-licensed sources were tried and all three are unreachable.
+COSTING (found by the owner's question about buying the same product twice)
+This ERP values stock at MOVING WEIGHTED AVERAGE: one piece at 250 and one at
+300 make two pieces at 275, and a sale costs 275. There are no purchase layers
+to draw down, so "which PO is deducted first" has no answer - and does not
+need one.
 
-So the answer is to make HIS photographs cheap. The cost was never the
-shooting, it was the navigation: find a bare product, open it, scroll to the
-photo card, upload, go back, remember where you were, two hundred times.
+But asking it exposed a real bug. Each sale LINE stored the variant's standard
+cost, which receiving a purchase order overwrites with the latest price, while
+the sale HEADER stored the true average. On exactly his numbers:
+  sales_summary     profit 25  (header)
+  profit_and_costs  profit 25  (header)
+  sales_by_product  profit  0  (line)   <- wrong
+The report a shop opens to ask what a product earns was the one saying zero.
+The line now carries the cost the stock movement actually took out, so all
+three agree. Same shape as the 682-vs-673 disagreement found before.
 
-Products -> Photo session. One product on the screen, a button, and the next
-one, ordered by BRAND so the walk follows the shelves instead of scattering
-one supplier through the list. Skipping moves on without marking anything
-done, so a skipped product is offered again next time. The counter is the
-whole job, not the page.
+Checked and CORRECT already, now pinned by tests: a void puts the piece back
+at what it left at rather than at today's average; a customer return re-enters
+at what it was sold at; issuing stock does not move the average; receiving a
+dearer batch updates the standard cost and NEVER the shelf price.
 
-ALSO:
-- The figures band now turns itself on for a shop with a real catalogue
-  (migration 029), instead of shipping off and making the person who asked for
-  it go hunting for a switch.
-- The rounding jumped to 50s at 200, turning 248 products into "200+" - true,
-  and 48 products of false modesty. Now "240+".
-- Screens not in the sidebar showed "Dashboard" as their title. Two of them.
-- FIX in a test: the camera-attribute fence stripped comments with a regex, and
-  "image/*" contains a comment opening - so it deleted the rest of every file
-  it checked and went green on a broken one. It is a real scanner now, with a
-  control for exactly that string. Found by a reversion check.
+SHOOT MODE
+Products -> Photo session. One product, a button, the next one, ordered by
+brand so the walk follows the shelves. Skipping does not mark anything done.
+Built because product photographs cannot be downloaded: three open-licensed
+sources were tried and all three are unreachable, and a generic stock bottle
+on a product page is worse than an empty frame.
 
-npm test 1181 -> 1189. Plus tests/shoot-ui-check.mjs.
+ALSO
+- The figures band turns itself on for a shop with a real catalogue (029).
+- 248 products rounded to "200+"; now "240+".
+- Two screens outside the sidebar were titled "Dashboard".
+- FIX in a test: the camera-attribute fence stripped comments with a regex,
+  and image-slash-star contains a comment opening, so it deleted the rest of
+  every file and went green on a broken one. Found by a reversion check.
+
+npm test 1189 -> 1197.

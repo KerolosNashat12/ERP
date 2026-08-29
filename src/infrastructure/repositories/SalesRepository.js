@@ -3,6 +3,7 @@ import { BaseRepository } from './BaseRepository.js';
 import { getDb } from '../database/connection.js';
 import { matchReasonColumns } from '../database/productSearch.js';
 import { notInBin } from '../../shared/trashFilter.js';
+import { round3 } from '../../shared/money.js';
 
 /**
  * How much of an invoice has come back: 'none', 'partial' or 'full'.
@@ -159,6 +160,41 @@ export class SalesRepository extends BaseRepository {
     // Sequential on purpose: line ids are assigned in insert order and the
     // invoice is read back ordered by id.
     for (const line of lines) await insert.run({ sale_id: saleId, ...line });
+  }
+
+  /**
+   * Correct each line's cost to what the stock movement actually took out.
+   *
+   * The lines are written before the stock is issued, because they are part of
+   * the same insert as the sale — so they carry the variant's STANDARD cost,
+   * which is the price of the most recent purchase order and not what the shop
+   * paid for the piece that just left. Only the movement knows the moving
+   * average, and only after it has run.
+   *
+   * ── One line per variant, matched in order ─────────────────────────────
+   * A sale can hold the same variant twice (two lines, different discounts),
+   * and both must be corrected. So the update walks the lines in id order —
+   * the order they were inserted, which is the order the costs were collected
+   * in — rather than matching on variant_id, which would set both lines to
+   * whichever cost happened to be looked up last.
+   */
+  async setLineCosts(saleId, costs) {
+    if (!costs?.length) return;
+    const rows = await this.db
+      .prepare('SELECT id, variant_id FROM sale_lines WHERE sale_id = ? ORDER BY id')
+      .all(saleId);
+    const update = this.db.prepare('UPDATE sale_lines SET unit_cost = ? WHERE id = ?');
+    for (let i = 0; i < rows.length && i < costs.length; i += 1) {
+      /*
+       * A guard, not a matcher: if the two lists have drifted out of step the
+       * safe thing is to leave the cost alone rather than write one line's
+       * cost onto another line's product. That would be a wrong number that
+       * looks right, which is worse than the stale one it replaced.
+       */
+      if (rows[i].variant_id !== costs[i].variantId) continue;
+      // eslint-disable-next-line no-await-in-loop -- one small update per line.
+      await update.run(round3(costs[i].unitCost), rows[i].id);
+    }
   }
 
   async lines(saleId) {
