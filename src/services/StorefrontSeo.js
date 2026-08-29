@@ -632,7 +632,30 @@ export async function renderPage({
   const boot = `<script type="application/json" id="mm-boot">${jsonScript(bootPayload({ data, route, lang }))}</script>`;
 
   const { head: before, tail: after } = shell();
-  const opening = lang === DEFAULT_LANG ? before : before.replace(HTML_TAG, '<html lang="en" dir="ltr">');
+
+  /*
+   * THE PAPER, ON THE FIRST BYTE.
+   *
+   * `applyBranding()` sets `data-paper` from the config it fetches, which is
+   * one round trip after the page has already painted — so a shop on the luxe
+   * template flashed a white page and then went black, on every single visit.
+   * That flash is worst exactly where it matters most: a phone on mobile data,
+   * arriving from Google, on the shop's most-visited page.
+   *
+   * The server already knows which template this shop wears — it is in the
+   * branding block it is rendering the head from — so it stamps the attribute
+   * onto <html> here and the very first paint is the right colour. The browser
+   * sets it again a moment later with the same value, which costs nothing and
+   * keeps one owner of the rule.
+   *
+   * The `lang`/`dir` swap below is the same mechanism, and this rides on it:
+   * both rewrite the one tag the shell ships with.
+   */
+  const paper = data.shopConfig?.branding?.template === 'luxe' ? 'night' : 'day';
+  const openTag = lang === DEFAULT_LANG
+    ? `<html lang="ar" dir="rtl" data-paper="${paper}">`
+    : `<html lang="en" dir="ltr" data-paper="${paper}">`;
+  const opening = before.replace(HTML_TAG, openTag);
   return {
     status: page.status || 200,
     html: `${opening}${head}\n  ${boot}${after}`,

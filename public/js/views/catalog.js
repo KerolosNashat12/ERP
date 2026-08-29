@@ -11,6 +11,9 @@ import { onScan } from '../core/scanner.js';
 import { navigate } from '../core/router.js';
 import { productDetailsView } from './productDetails.js';
 import { confirmDelete } from './trash.js';
+// The filename → code rule, imported rather than reimplemented: the server
+// matches with the same module, so what this screen ticks is what gets filed.
+import { codeFromFilename, sequenceOf } from '../../shared/photoFilename.js';
 
 // ---------------------------------------------------------------- list view
 
@@ -469,6 +472,7 @@ export async function productsView(root, route) {
       h('span', { class: 'spacer' }),
       can('products.update') ? h('button', { class: 'btn', onclick: () => openGenderReview(load) }, t('genderReview')) : null,
       can('products.update') ? h('button', { class: 'btn', onclick: () => openBulkPrice(load) }, t('bulkPrice')) : null,
+    can('products.update') ? h('button', { class: 'btn', onclick: () => openBulkPhotos(load) }, t('photoBulkTitle')) : null,
       can('products.create') ? h('button', { class: 'btn primary', onclick: () => navigate('products/new') }, '＋ ' + t('newProduct')) : null),
     h('div', { class: 'card' },
       h('div', { class: 'filters' },
@@ -1386,4 +1390,256 @@ async function openBulkPrice(refresh) {
       }, t('apply')),
     ],
   });
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   BULK PHOTOS — a folder of photographs, filed against the products in them.
+
+   The owner's problem, in his words: «please you add a high quality photos for
+   me please help me», with 248 products and a photo card that takes one file
+   at a time. Two hundred and forty-eight visits to a product editor is not a
+   feature anybody uses; it is why most of a catalogue stays bare.
+
+   ── The shape of the screen, and why it is two steps ────────────────────────
+   Pick the files, SEE what will happen, then upload. Not one step, because the
+   thing that goes wrong here is filenames: eleven of two hundred are typed
+   wrong, and a screen that uploaded first would tell somebody that afterwards,
+   by which time they no longer know which eleven. So the match runs first, on
+   filenames alone, and the whole outcome is on screen as a list before a byte
+   of image data moves — matched, already-has-photos, and not recognised, each
+   one nameable and fixable.
+
+   ── The matching is the SERVER's, on purpose ────────────────────────────────
+   The browser sends filenames and gets back products. It does not know what a
+   product code looks like, and it must not: the rule lives next to the
+   catalogue it is matching against. The one piece both ends share is how a
+   filename becomes a code, and that is imported from `shared/photoFilename.js`
+   rather than written twice.
+
+   ── Ordering, because the first photo is the one the shop shows ─────────────
+   `LX08-1.jpg`, `LX08-2.jpg`, `LX08-3.jpg` upload in that order, so the first
+   becomes the product's main photograph — the one on the card, in the basket,
+   in the WhatsApp preview. Uploading them in whatever order the file picker
+   happened to hand over would put the shot of the barcode on the front of the
+   card, and the shop would have to fix 248 of them by hand.
+
+   ── Why uploads are one at a time ───────────────────────────────────────────
+   Compression happens in this tab, on a shop's laptop, and each photograph is
+   a canvas the size of the picture. Four at once is four of those in memory
+   and four requests on a connection that drops. One at a time is slower and
+   finishes; the progress line is what makes that acceptable to watch.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/** Files per match request — the server's own ceiling. Keep the two in step. */
+const MATCH_BATCH = 300;
+
+async function openBulkPhotos(refresh) {
+  /** Every file the person has picked, in the order they will be uploaded. */
+  let files = [];
+  /** `filename` → what the server said about it. Empty until a match runs. */
+  let matches = new Map();
+  let busy = false;
+
+  const summaryHost = h('div');
+  const listHost = h('div');
+  const progressHost = h('div');
+
+  const picker = h('input', {
+    type: 'file',
+    accept: 'image/*',
+    multiple: true,
+    // Chromium lets a person drop a whole folder in; other browsers ignore
+    // this attribute, and the plain multi-select still works there.
+    webkitdirectory: false,
+    onchange: (event) => addFiles([...event.target.files]),
+  });
+
+  const uploadButton = h('button', {
+    class: 'btn primary',
+    onclick: () => upload(),
+  }, t('photoBulkUpload'));
+
+  /**
+   * Sort key for a file: its product code, then its sequence number, then its
+   * name. Grouping by code first is what makes "the first photo of each
+   * product" a well-defined thing rather than an accident of picker order.
+   */
+  const sortKey = (file) => {
+    const name = file.name || '';
+    return [codeFromFilename(name).toLowerCase(), sequenceOf(name), name];
+  };
+
+  async function addFiles(picked) {
+    const images = picked.filter((file) => file.type.startsWith('image/'));
+    if (!images.length) {
+      if (picked.length) toast(t('photoNotAnImage'), 'warn');
+      return;
+    }
+    // Adding to what is already there, and de-duplicated by name+size, so a
+    // person who picks a second folder does not lose the first and a person
+    // who picks the same folder twice does not upload everything twice.
+    const seen = new Set(files.map((file) => `${file.name}:${file.size}`));
+    for (const file of images) {
+      const key = `${file.name}:${file.size}`;
+      if (!seen.has(key)) { seen.add(key); files.push(file); }
+    }
+    files.sort((a, b) => {
+      const [ka, sa, na] = sortKey(a);
+      const [kb, sb, nb] = sortKey(b);
+      return ka.localeCompare(kb) || sa - sb || na.localeCompare(nb);
+    });
+    await runMatch();
+  }
+
+  /** Ask the server which products these filenames belong to. */
+  async function runMatch() {
+    busy = true;
+    render();
+    try {
+      const next = new Map();
+      for (let from = 0; from < files.length; from += MATCH_BATCH) {
+        const batch = files.slice(from, from + MATCH_BATCH);
+        // eslint-disable-next-line no-await-in-loop -- batches are sequential.
+        const result = await api.post('/api/products/photo-match', {
+          filenames: batch.map((file) => file.name),
+        });
+        for (const row of result.rows) next.set(row.filename, row);
+      }
+      matches = next;
+    } catch (error) {
+      toastError(error);
+    } finally {
+      busy = false;
+      render();
+    }
+  }
+
+  const matchOf = (file) => matches.get(file.name) || null;
+  const matched = () => files.filter((file) => matchOf(file)?.product_id);
+
+  async function upload() {
+    const queue = matched();
+    if (!queue.length) { toast(t('photoBulkNothingMatched'), 'warn'); return; }
+    busy = true;
+    let done = 0;
+    let failed = 0;
+    render();
+    for (const file of queue) {
+      const match = matchOf(file);
+      try {
+        // eslint-disable-next-line no-await-in-loop -- see the note at the top.
+        const dataUrl = await compressToDataUrl(file);
+        // eslint-disable-next-line no-await-in-loop
+        await api.post(`/api/products/${match.product_id}/images`, { dataUrl });
+        done += 1;
+      } catch {
+        // One bad file must not end the run: a folder of two hundred with one
+        // corrupt JPEG in it should upload a hundred and ninety-nine and say
+        // which one it could not read.
+        failed += 1;
+        match.failed = true;
+      }
+      mount(progressHost, h('p', { class: 'muted small' },
+        `${number(done + failed)} / ${number(queue.length)}`));
+    }
+    busy = false;
+    // Re-match, so photo counts on screen are what the shop now actually has
+    // and a second run of the same folder shows "already has 3" honestly.
+    await runMatch();
+    toast(failed
+      ? t('photoBulkDoneWithErrors').replace('{done}', number(done)).replace('{failed}', number(failed))
+      : t('photoBulkDone').replace('{done}', number(done)), failed ? 'warn' : 'ok');
+    invalidate('products');
+    if (refresh) refresh();
+  }
+
+  /** The three counts, as the line a person reads before they commit. */
+  function renderSummary() {
+    if (!files.length) { mount(summaryHost); return; }
+    const ok = matched().length;
+    const unknown = files.length - ok;
+    const already = matched().filter((file) => matchOf(file).photo_count > 0).length;
+    mount(summaryHost, h('div', { class: 'row', style: { gap: '8px', flexWrap: 'wrap' } },
+      tag(`${number(files.length)} ${t('photoBulkFiles')}`, ''),
+      tag(`${number(ok)} ${t('photoBulkMatched')}`, ok ? 'ok' : ''),
+      unknown ? tag(`${number(unknown)} ${t('photoBulkUnmatched')}`, 'warn') : null,
+      already ? tag(`${number(already)} ${t('photoBulkAlreadyHas')}`, 'gold') : null));
+  }
+
+  function render() {
+    renderSummary();
+    mount(listHost, files.length
+      ? dataTable({
+        columns: [
+          { key: 'filename', label: t('photoBulkFile'), class: 'mono small', render: (row) => row.file.name },
+          {
+            key: 'product',
+            label: t('product'),
+            render: (row) => {
+              const match = row.match;
+              if (!match?.product_id) {
+                return h('span', { class: 'danger' }, t('photoBulkNoProduct'));
+              }
+              return h('div', {},
+                h('div', { class: 'strong' }, pick(match, 'name')),
+                h('div', { class: 'muted small mono' }, match.sku_prefix));
+            },
+          },
+          {
+            key: 'note',
+            label: '',
+            render: (row) => {
+              const match = row.match;
+              if (match?.failed) return tag(t('photoBulkFailed'), 'danger');
+              if (!match?.product_id) return null;
+              return match.photo_count
+                ? tag(`${number(match.photo_count)} ${t('photos')}`, 'gold')
+                : null;
+            },
+          },
+          {
+            key: 'size',
+            label: t('photoBulkSize'),
+            render: (row) => h('span', { class: 'muted small' }, fileSize(row.file.size)),
+          },
+          {
+            key: '__x',
+            label: '',
+            render: (row, index) => (busy ? null : h('button', {
+              class: 'btn sm ghost',
+              onclick: () => { files.splice(index, 1); render(); },
+            }, '✕')),
+          },
+        ],
+        rows: files.map((file) => ({ file, match: matchOf(file) })),
+      })
+      : h('p', { class: 'muted' }, t('photoBulkEmpty')));
+    uploadButton.disabled = busy || !matched().length;
+    uploadButton.textContent = busy
+      ? t('photoBulkWorking')
+      : `${t('photoBulkUpload')} (${number(matched().length)})`;
+  }
+
+  const dialog = modal({
+    title: t('photoBulkTitle'),
+    size: 'wide',
+    body: h('div', { class: 'stack' },
+      /*
+       * The instruction, in the shop's own language, with a real example in
+       * it. A person who has to guess the naming rule will name the first
+       * twenty files wrong, and this screen exists because retyping is the
+       * thing we are trying to stop.
+       */
+      h('p', { class: 'muted' }, t('photoBulkHint')),
+      field({ label: t('photoBulkPick'), input: picker }),
+      summaryHost,
+      progressHost,
+      listHost),
+    footer: [
+      h('button', { class: 'btn', onclick: () => dialog.close() }, t('close')),
+      uploadButton,
+    ],
+  });
+
+  render();
 }

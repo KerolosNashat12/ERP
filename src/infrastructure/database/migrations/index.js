@@ -45,6 +45,7 @@ import migration022 from './022-gender-and-offers.js';
 import migration023 from './023-exchanges.js';
 import migration024 from './024-purchase-returns.js';
 import migration025 from './025-purchase-replacement-item.js';
+import migration026 from './026-website-template.js';
 
 /** Ordered. Append only. */
 const MIGRATIONS = [
@@ -73,6 +74,7 @@ const MIGRATIONS = [
   migration023,
   migration024,
   migration025,
+  migration026,
 ];
 
 async function ensureRegistry() {

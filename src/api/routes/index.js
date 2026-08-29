@@ -365,6 +365,20 @@ router.get('/products/scan/:code', requirePermission('products.view'), asyncHand
   res.json(await catalogService.findByCode(req.params.code));
 }));
 
+/**
+ * "Which of these files do I know?" — the lookup behind the bulk photo screen.
+ *
+ * A POST rather than a GET because the payload is a list of two hundred
+ * filenames, which does not belong in a URL: it is too long for one, and a
+ * shop's filenames are its stock list. Nothing is written, so it takes
+ * `products.view` — the same right as looking at the catalogue, which is all
+ * this is. Uploading the photographs afterwards goes through
+ * `POST /products/:id/images`, which requires `products.update`.
+ */
+router.post('/products/photo-match', requirePermission('products.view'), asyncHandler(async (req, res) => {
+  res.json(await catalogService.matchPhotoFilenames(req.body?.filenames || []));
+}));
+
 router.post('/products/combinations', requirePermission('products.view'), asyncHandler(async (req, res) => {
   res.json({ rows: await catalogService.generateCombinations(req.body.attribute_ids || []) });
 }));
@@ -611,7 +625,10 @@ router.post('/inventory/quick-adjust', requirePermission('inventory.adjust'),
   }));
 
 router.get('/inventory/count-sheet', requirePermission('inventory.count'), asyncHandler(async (req, res) => {
-  res.json({ rows: await inventoryService.buildCountSheet(req.query) });
+  // `{ rows, total, truncated }` — the last two are not decoration. A sheet
+  // capped below what the shop holds has to say so, or the clerk counts part
+  // of the shop believing they counted all of it. See buildCountSheet().
+  res.json(await inventoryService.buildCountSheet(req.query));
 }));
 
 router.get('/inventory/adjustments', requirePermission('inventory.view'), asyncHandler(async (req, res) => {

@@ -13,7 +13,7 @@ import {
   AppError, BusinessRuleError, ConflictError, ForbiddenError, NotFoundError, ValidationError,
 } from '../shared/errors.js';
 import { ALL_PERMISSIONS, UNDELEGATABLE } from '../shared/permissions.js';
-import { normalizeHexColor, booleanOr } from '../shared/branding.js';
+import { normalizeHexColor, booleanOr, TEMPLATES } from '../shared/branding.js';
 import authService from './AuthService.js';
 import auditService from './AuditService.js';
 
@@ -224,6 +224,11 @@ export class UserService {
  * save) where someone is looking.
  */
 const SETTING_ENUMS = {
+  // Which of the two storefronts this shop wears. The list is imported rather
+  // than repeated: a third template added in shared/branding.js has to become
+  // savable here on the same commit, and a hand-copied array is how it would
+  // not. See TEMPLATES there.
+  'web.template': TEMPLATES,
   'web.banner_align': ['right', 'center', 'left'],
   'web.banner_valign': ['top', 'middle', 'bottom'],
   'web.banner_text_size': ['small', 'medium', 'large'],

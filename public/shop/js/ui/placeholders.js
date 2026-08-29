@@ -35,25 +35,56 @@ function accent(fallback = '#b58a3c') {
 const svg = (markup) => `data:image/svg+xml;utf8,${encodeURIComponent(markup)}`;
 
 /**
- * A bottle, square, on the frame's own background.
+ * A drawn mark for a product with no photograph, square, on the frame's own
+ * background.
  *
- * Square because every photo frame in this shop is square (`--photo-ratio`), and
- * a placeholder that is a different shape from the pictures beside it defeats
- * the point of having a ratio at all.
+ * ── Why it is not always a bottle ──────────────────────────────────────────
+ * It was. Every bare product on every shop drew the same perfume bottle,
+ * because this shop sells perfume. That was wrong the moment the platform got
+ * its second customer: a shop selling wallets drew a bottle on every card it
+ * had not photographed yet, which is not "no picture yet" — it is a picture of
+ * the wrong thing.
+ *
+ * So it now reads the product's own name through the SAME vocabulary the
+ * category tiles use (`CATEGORY_ICONS` below). «محفظة جلد» draws a wallet,
+ * "Body Mist" draws a bottle, "Silver Bracelet" draws jewellery, and a name
+ * that means nothing to the list draws the neutral tag rather than a guess.
+ *
+ * Sharing the vocabulary is the point, not an economy: a category tile and a
+ * bare product card that both mean "bags" now draw the same shape, so a page
+ * with several of each looks like one design instead of a pile of clip art.
+ * A word added for a category is a word the product cards gain on the same
+ * commit.
+ *
+ * ── Why the name and not the category ──────────────────────────────────────
+ * The card already carries the product's name; it does not carry its
+ * category's, and adding a join to the listing query to fetch one would cost
+ * every shopper on every page for a placeholder. A product name is also the
+ * more specific of the two — "Very Sexy Body Mist" says more about what to
+ * draw than "Women" does.
+ *
+ * Square because every photo frame in this shop is square (`--photo-ratio`),
+ * and a placeholder that is a different shape from the pictures beside it
+ * defeats the point of having a ratio at all.
  */
 export function defaultProductArt(label = '') {
   const tint = accent();
   const initials = String(label || monogramText() || '').trim().slice(0, 2).toUpperCase();
+  /*
+   * The icon is drawn on a 24×24 grid. Scaled by 5 it is 120×120, and the
+   * translate centres that inside the 200×200 frame while leaving the lower
+   * third clear for the initials. `stroke-width` is divided by the same scale
+   * so the line lands at the weight it was drawn at rather than five times it.
+   */
+  const path = productIconPath(label);
   return svg(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" role="img" aria-hidden="true">
   <rect width="200" height="200" fill="none"/>
-  <g fill="none" stroke="${tint}" stroke-opacity="0.42" stroke-width="3.2"
-     stroke-linejoin="round" stroke-linecap="round">
-    <rect x="86" y="34" width="28" height="18" rx="4"/>
-    <path d="M92 52v10c0 4-2 6-6 9-10 6-16 15-16 27v46c0 8 6 14 14 14h32c8 0 14-6 14-14v-46c0-12-6-21-16-27-4-3-6-5-6-9V52"/>
-    <path d="M74 118h52"/>
+  <g transform="translate(40 30) scale(5)" fill="none" stroke="${tint}" stroke-opacity="0.42"
+     stroke-width="1.05" stroke-linejoin="round" stroke-linecap="round">
+    <path d="${path}"/>
   </g>
-  <text x="100" y="106" text-anchor="middle" font-family="Georgia, serif"
-        font-size="26" fill="${tint}" fill-opacity="0.5">${initials}</text>
+  <text x="100" y="176" text-anchor="middle" font-family="Georgia, serif"
+        font-size="22" fill="${tint}" fill-opacity="0.5">${initials}</text>
 </svg>`);
 }
 
@@ -182,6 +213,24 @@ const CATEGORY_FALLBACK = 'M4 12.5 12.5 4H20v7.5L11.5 20zM16.5 7.5h.01';
  */
 export function categoryIconPath(row) {
   const haystack = `${row?.name_ar || ''} ${row?.name_en || ''}`.toLowerCase();
+  const hit = CATEGORY_ICONS.find((entry) => entry.words.some((word) => haystack.includes(word)));
+  return hit ? hit.path : CATEGORY_FALLBACK;
+}
+
+/**
+ * Which icon a PRODUCT's name means — the same vocabulary, read off the
+ * product instead of the shelf it sits on.
+ *
+ * It is a separate function from `categoryIconPath` even though the body is
+ * nearly the same, because the two take different shapes: a category is a row
+ * with two name columns, a product placeholder is handed one already-picked
+ * string (whichever language the page is in). Collapsing them would mean every
+ * caller building a fake row, which is more code at more call sites than this.
+ *
+ * Exported so `defaultProductArt` above and the test can both reach it.
+ */
+export function productIconPath(label) {
+  const haystack = String(label || '').toLowerCase();
   const hit = CATEGORY_ICONS.find((entry) => entry.words.some((word) => haystack.includes(word)));
   return hit ? hit.path : CATEGORY_FALLBACK;
 }

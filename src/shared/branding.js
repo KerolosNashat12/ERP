@@ -23,6 +23,53 @@
 export const DEFAULT_ACCENT = '#c8a24a';
 
 /**
+ * THE TWO WEBSITES A SHOP CAN WEAR.
+ *
+ * The platform sells one storefront to every kind of shop, and one storefront
+ * cannot be right for all of them: a perfume boutique and a hardware shop want
+ * opposite things from the same page. So the shop picks.
+ *
+ *   classic  White cards on grey paper, the shop's colour on the buttons and
+ *            the prices. Bright, plain, and the right answer for a shop whose
+ *            product photography is casual — a phone snap on a counter reads
+ *            fine on white and looks like a mistake on black.
+ *
+ *   luxe     Near-black paper, gold hairlines, serif names, square photos.
+ *            Built from the design the owner sent (see
+ *            /home/claude/briefs/storefront-luxe.md). It flatters good
+ *            photography and punishes bad — which is the honest trade and the
+ *            reason this is a CHOICE rather than a replacement.
+ *
+ * ── Why this is its own setting and not `dark` ─────────────────────────────
+ * It was `dark` for one release, and that was a shortcut with a real cost:
+ * `dark` already meant something — which colour the BANDS are, the promo strip
+ * and the footer — and overloading it meant a shop could not have a dark
+ * footer on a light page any more, which is a combination the classic design
+ * was built around. Two questions, two settings.
+ *
+ * ── What the default has to be ─────────────────────────────────────────────
+ * `classic`. A platform does not redesign its customers' shops because its
+ * owner liked a mock-up; a shop changes when somebody at that shop decides it
+ * should. Migration 026 is what stops that being a downgrade for anybody
+ * already wearing the night storefront — see the note there.
+ */
+export const TEMPLATES = ['classic', 'luxe'];
+export const DEFAULT_TEMPLATE = 'classic';
+
+/**
+ * A stored template value, or the default.
+ *
+ * The same read-path argument as `normalizeHexColor` below it: the ERP refuses
+ * an unknown value on save, where a person is looking, and this refuses one on
+ * the way out — a hand-edited row, a restored backup or an import must not be
+ * able to put a template nobody has written CSS for onto a live shop.
+ */
+export function normalizeTemplate(value) {
+  const raw = String(value ?? '').trim().toLowerCase();
+  return TEMPLATES.includes(raw) ? raw : DEFAULT_TEMPLATE;
+}
+
+/**
  * Arabic script, including the presentation forms a copy-paste from Word can
  * carry. Detection is on the first letter of the derived monogram, which is
  * enough: a name is not written half in one script and half in the other.
@@ -185,9 +232,13 @@ export function buildBranding({ get, companyName, hasLogo = false, logoUrl = '/a
     // a broken value into a CSS custom property on `<html>`.
     accent: normalizeHexColor(get('web.theme_accent')) || DEFAULT_ACCENT,
     dark: booleanOr(get('web.theme_dark'), true),
+    // Which of the two storefronts this shop wears. See TEMPLATES above for
+    // what each one is and why the default is the plain one.
+    template: normalizeTemplate(get('web.template')),
   };
 }
 
 export default {
   monogram, normalizeHexColor, booleanOr, companyNameFrom, buildBranding, DEFAULT_ACCENT,
+  normalizeTemplate, TEMPLATES, DEFAULT_TEMPLATE,
 };

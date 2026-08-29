@@ -82,3 +82,58 @@ test('a substring match finds the word inside a real category name', () => {
   assert.equal(icon('', "Men's Perfumes — Outlet"), icon('', 'Perfume'));
   assert.equal(icon('محافظ جلد طبيعي'), icon('محافظ'));
 });
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   THE SAME VOCABULARY, READ OFF A PRODUCT.
+
+   A bare product card used to draw a perfume bottle — every product, every
+   shop, because the shop this was built for sells perfume. On the platform's
+   second customer that stopped being "no picture yet" and became a picture of
+   the wrong thing: a wallet shop with a bottle on every card it had not
+   photographed.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+test('a bare product is drawn as what it IS, not as a bottle', async () => {
+  const { productIconPath, categoryIconPath } = await import('../public/shop/js/ui/placeholders.js');
+
+  /*
+   * Named against the category that means the same thing, rather than against
+   * a copy of the path table. That is the property worth holding: a shelf tile
+   * and a bare card that both mean "wallets" draw the same shape, so a page
+   * with several of each reads as one design. It also means a word added to
+   * the vocabulary for a category reaches the product cards on the same
+   * commit, by construction rather than by somebody remembering.
+   */
+  const pairs = [
+    ['محفظة جلد بني', 'محافظ'],
+    ['Very Sexy Body Mist', 'Body Splash'],
+    ['سلسلة فضة', 'مجوهرات'],
+    ['Aviator Sunglasses', 'Sunglasses'],
+    ['ساعة يد رجالي', 'ساعات'],
+    ['Chanel No 5 EDP', 'Perfume'],
+  ];
+  for (const [productName, categoryName] of pairs) {
+    assert.equal(
+      productIconPath(productName),
+      categoryIconPath({ name_ar: categoryName, name_en: categoryName }),
+      `"${productName}" is not drawn the same way as the shelf it belongs on`,
+    );
+  }
+
+  // The control: these are not all one icon.
+  assert.ok(new Set(pairs.map(([name]) => productIconPath(name))).size >= 5,
+    'every product is drawn the same way, so the match above proves nothing');
+});
+
+test('a product whose name means nothing gets the neutral mark, not a guess', async () => {
+  const { productIconPath, categoryIconPath } = await import('../public/shop/js/ui/placeholders.js');
+  const neutral = categoryIconPath({ name_ar: 'حاجات تانية', name_en: 'Miscellaneous' });
+  for (const name of ['Item 4021', 'صنف جديد', '', null, undefined]) {
+    assert.equal(productIconPath(name), neutral,
+      `"${name}" was guessed at instead of drawn neutrally`);
+  }
+  // And the neutral mark is not a bottle — a shop that sells no perfume should
+  // never see one. Asserted against perfume specifically, because that is the
+  // shape this used to draw for absolutely everything.
+  assert.notEqual(neutral, categoryIconPath({ name_ar: 'عطور', name_en: 'Perfume' }));
+});

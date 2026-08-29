@@ -13,6 +13,10 @@ import {
   DEFAULT_GENDER, isGender, isDiscountType, suggestGender, offerPrice,
 } from '../shared/pricing.js';
 import auditService from './AuditService.js';
+// The filename → code rule, shared with the browser that shows the result.
+// One rule, imported at both ends: a screen that ticked a file the upload
+// then filed against nothing would be worse than no screen. See that module.
+import { codeCandidates, sequenceOf } from '../../public/shared/photoFilename.js';
 
 const nowIso = () => new Date().toISOString();
 
@@ -63,6 +67,15 @@ const GENERATED = Symbol('generated default variant');
  * does before anybody notices.
  */
 const BULK_LIMIT = 500;
+
+/**
+ * How many filenames one match request may carry. A shop dropping a folder of
+ * a thousand photographs is a real thing; answering for all of them in one
+ * request is not — the screen pages through in batches this size, which keeps
+ * each round trip small enough to survive a shop's connection and gives the
+ * person progress they can watch instead of a spinner that might be stuck.
+ */
+const PHOTO_MATCH_LIMIT = 300;
 
 const BULK_FIELDS = {
   gender: {
@@ -762,6 +775,72 @@ export class CatalogService {
     const variant = await this.variants.findByCode(String(code || '').trim());
     if (!variant) throw new NotFoundError('Item with code', code);
     return variant;
+  }
+
+  /**
+   * Match a list of filenames to products, for the bulk photo screen.
+   *
+   * The shop drops a folder in; this answers "which of these do I know?"
+   * BEFORE a single photograph is uploaded, so the person sees the whole
+   * outcome — matched, already has photos, not recognised — as a list they can
+   * read, and can fix the two filenames they got wrong instead of finding out
+   * afterwards that eleven photos went nowhere.
+   *
+   * ── The filename is cleaned here, not in the browser ───────────────────────
+   * `VS-1042 (2).jpg`, `vs-1042_3.JPG` and `VS-1042-2.jpeg` are all the same
+   * product, because a phone and a camera and Windows all number duplicates
+   * differently and no shop is going to rename two hundred files. The rule that
+   * strips that numbering has to be the same rule the upload uses, so it lives
+   * on the server where both can reach it rather than being written twice.
+   *
+   * A code is never INVENTED from a name: everything is matched exactly (case
+   * aside) against a real product code, SKU or barcode. A fuzzy match here
+   * would file a photograph of one product against another, which is worse
+   * than not matching it at all — the shop would never know to look.
+   */
+  async matchPhotoFilenames(filenames = []) {
+    const files = (Array.isArray(filenames) ? filenames : [])
+      .map((name) => String(name ?? '').trim())
+      .filter(Boolean)
+      .slice(0, PHOTO_MATCH_LIMIT);
+    if (!files.length) return { rows: [], matched: 0, unmatched: 0 };
+
+    /*
+     * Every reading of every filename, looked up in ONE query. `codeCandidates`
+     * gives at most two per file (the literal stem and the stem with a trailing
+     * duplicate number removed), so two hundred files is at most four hundred
+     * codes in one `IN` list — still one round trip, still one index seek per
+     * code.
+     */
+    const candidates = files.map((filename) => codeCandidates(filename));
+    const matches = await this.products.matchCodes(candidates.flat());
+    const byCode = new Map(matches.map((row) => [String(row.code).toLowerCase(), row]));
+
+    const rows = files.map((filename, index) => {
+      // Best first: see codeCandidates(). The literal filename beats the
+      // stripped one, so a shop whose codes end in a number needs no special
+      // handling and a shop numbering its shots still lands on the product.
+      const tried = candidates[index];
+      const code = tried.find((candidate) => byCode.has(candidate.toLowerCase())) || tried[0] || null;
+      const hit = code ? byCode.get(code.toLowerCase()) : null;
+      return {
+        filename,
+        code: code || null,
+        sequence: sequenceOf(filename),
+        product_id: hit ? hit.product_id : null,
+        sku_prefix: hit ? hit.sku_prefix : null,
+        name_en: hit ? hit.name_en : null,
+        name_ar: hit ? hit.name_ar : null,
+        matched_on: hit ? hit.matched_on : null,
+        photo_count: hit ? hit.photo_count : 0,
+      };
+    });
+
+    return {
+      rows,
+      matched: rows.filter((row) => row.product_id).length,
+      unmatched: rows.filter((row) => !row.product_id).length,
+    };
   }
 
   async lookup(term, warehouseId) {

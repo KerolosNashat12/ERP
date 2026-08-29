@@ -472,7 +472,7 @@ export async function legacyInvoicesView(root, route) {
               event.currentTarget.disabled = true;
               try {
                 await api.post(`/api/attachments/legacy_invoice/${invoice.id}`, photo);
-                toast(t('photoAdded'));
+                toast(t('invoicePhotoAdded'));
                 mount(pickerHost);
                 refresh();
               } catch (error) { toastError(error); event.currentTarget.disabled = false; }
@@ -504,13 +504,13 @@ export async function legacyInvoicesView(root, route) {
               title: t('removePhoto'),
               onclick: async () => {
                 const ok = await confirmDialog({
-                  title: t('removePhoto'), message: t('removePhotoConfirm'),
+                  title: t('removePhoto'), message: t('invoiceRemovePhotoConfirm'),
                   danger: true, confirmLabel: t('removePhoto'),
                 });
                 if (!ok) return;
                 try {
                   await api.del(`/api/attachments/${attachment.id}`);
-                  toast(t('photoRemoved'));
+                  toast(t('invoicePhotoRemoved'));
                   refresh();
                 } catch (error) { toastError(error); }
               },

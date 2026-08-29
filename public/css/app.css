@@ -1024,3 +1024,20 @@ table.data td select { min-inline-size: 118px; }
   padding: 2px 7px;
   border-radius: 10px;
 }
+
+/*
+ * The website-design preview, when the shop is on the boutique template.
+ *
+ * The colours already arrive from `applyTheme` — the same function the
+ * storefront runs — so this is only the SHAPE: square corners, a serif name,
+ * no shadow. A preview that showed the right colours on a rounded card with a
+ * drop shadow would be telling half the truth about what a shop is choosing.
+ */
+.theme-preview.is-luxe { border-radius: 4px; }
+.theme-preview.is-luxe .tp-page { background: var(--bg); }
+.theme-preview.is-luxe .tp-btn { border-radius: 4px; }
+.theme-preview.is-luxe .tp-price {
+  font-family: Georgia, "Times New Roman", serif;
+  color: var(--accent);
+}
+.theme-preview.is-luxe .tp-chip { border-radius: 999px; }

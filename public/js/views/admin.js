@@ -1139,12 +1139,42 @@ export async function settingsView(root, route) {
   // --- the colour
 
   const themeForm = buildForm([
+    /*
+     * WHICH STOREFRONT THIS SHOP WEARS.
+     *
+     * A select rather than a pair of pictures to click, and that is a
+     * deliberate downgrade from what a design tool would do: the two previews
+     * live directly below it and they are real — derived by the same function
+     * the site runs — so the picture a shop owner needs is already on the
+     * screen, and a second set of thumbnails would be a third thing that can
+     * drift from the site.
+     *
+     * The values are the ones `shared/branding.js` validates. A shop that
+     * somehow stores a third is served 'classic' rather than a broken page.
+     */
+    {
+      name: 'web.template',
+      label: t('websiteTemplate'),
+      type: 'select',
+      hint: t('websiteTemplateHint'),
+      disabled: !editable,
+      options: [
+        { value: 'classic', label: t('templateClassic') },
+        { value: 'luxe', label: t('templateLuxe') },
+      ],
+    },
     {
       name: 'web.theme_accent', label: t('themeAccent'), type: 'color',
       hint: t('themeAccentHint'), disabled: !editable,
     },
     { name: 'web.theme_dark', label: t('themeDark'), type: 'checkbox', disabled: !editable },
   ], settings, { columns: 2 });
+
+  // An unset template is stored as an empty string and would leave the select
+  // on nothing; the storefront would serve 'classic', so that is what the
+  // screen has to show. Same argument as the accent immediately below.
+  const templateInput = themeForm.inputs.get('web.template').input;
+  if (!['classic', 'luxe'].includes(templateInput.value)) templateInput.value = 'classic';
 
   // An unset colour is stored as an empty string and would reach the picker as
   // black — the default the storefront would actually use is the honest value
@@ -1167,12 +1197,21 @@ export async function settingsView(root, route) {
    * that does not exist.
    */
   function renderThemePreview() {
-    const dark = themeForm.values()['web.theme_dark'] === 1;
-    // `night: dark` is not a preference of this preview — it is the line
-    // `applyBranding()` runs on the storefront, copied. The moment the two
-    // disagree the preview is showing a site that does not exist, which is the
-    // one thing a preview must never do.
-    applyTheme(themePreview, { accent: accentInput.value, dark, night: dark });
+    const values = themeForm.values();
+    const dark = values['web.theme_dark'] === 1;
+    /*
+     * These two lines are `applyBranding()` on the storefront, copied. The
+     * moment they disagree the preview is showing a site that does not exist,
+     * which is the one thing a preview must never do — so they are written the
+     * same way round, from the same two settings, and not simplified.
+     */
+    const night = values['web.template'] === 'luxe';
+    applyTheme(themePreview, { accent: accentInput.value, dark, night });
+    // The preview also has to LOOK like the template, not just be tinted by
+    // it: the luxe storefront has square corners, a serif and no shadow, and a
+    // preview that showed those colours on a rounded card would be telling
+    // half the truth. `data-paper` is set by applyTheme; app.css branches on it.
+    themePreview.classList.toggle('is-luxe', night);
   }
   for (const [, { input }] of themeForm.inputs) {
     input.addEventListener('input', renderThemePreview);

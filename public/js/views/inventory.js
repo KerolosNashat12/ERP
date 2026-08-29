@@ -627,10 +627,24 @@ async function adjustmentFormView(root, route) {
   }
 
   async function loadCountSheet() {
-    const { rows } = await api.get('/api/inventory/count-sheet');
+    const { rows, total, truncated } = await api.get('/api/inventory/count-sheet');
     lines = rows;
     renderLines();
-    toast(`${rows.length} ${t('products')}`);
+    /*
+     * A sheet that carries fewer lines than the shop holds says so, and stays
+     * on screen long enough to be read. The endpoint caps very large sheets
+     * (see buildCountSheet) and the clerk has to know: counting 1,000 of 1,430
+     * lines while believing it was all of them is a stock take that reports a
+     * shop it never looked at.
+     */
+    if (truncated) {
+      toast(
+        t('countSheetPartial')
+          .replace('{shown}', number(rows.length))
+          .replace('{total}', number(total)),
+        'warn', 9000,
+      );
+    } else toast(`${rows.length} ${t('products')}`);
   }
 
   async function save(thenPost = false) {

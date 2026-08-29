@@ -66,6 +66,22 @@ const CONFIG_KEYS = [
   'web.meta_description_en', 'web.meta_description_ar',
   'web.theme_accent', 'web.theme_dark',
 
+  /*
+   * Which of the two storefronts this shop wears. It has to be in THIS list,
+   * not just in the settings table: `config()` fetches exactly these keys in
+   * one query and hands the result to `buildBranding()` as its whole world, so
+   * a key missing here does not read as "unset" somewhere harmless — it reads
+   * as unset to `normalizeTemplate()`, which answers 'classic' by design.
+   *
+   * That is what happened on this feature's first build. Every other piece was
+   * right — the migration, the enum, the SSR, the picker — and the storefront
+   * still came back 'classic' for a shop that had chosen 'luxe', because the
+   * one query never asked for the row. It looked correct while testing,
+   * because 'classic' is also the default; the failure mode of a missing key
+   * here is a setting that saves, reports success, and does nothing.
+   */
+  'web.template',
+
   // --- website: social links + their visibility toggles
   'web.social_facebook', 'web.social_facebook_enabled',
   'web.social_instagram', 'web.social_instagram_enabled',

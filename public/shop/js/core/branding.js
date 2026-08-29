@@ -100,20 +100,21 @@ export function brandMark({ className = 'brand-mark', logoClass = 'brand-logo' }
 export function applyBranding() {
   const b = branding();
   /*
-   * `dark` is one setting and it now decides two things, which is deliberate
-   * rather than lazy: a shop that ticked "dark" was already saying its
-   * identity is a dark one, and until now all it got for that was a dark
-   * footer under a white page — half an answer to a question it had already
-   * answered. Ticking it now gives the whole site the night paper (see
-   * /home/claude/briefs/storefront-luxe.md), and un-ticking it gives back
-   * exactly the daylight storefront that existed before, unchanged.
+   * TWO SETTINGS, TWO QUESTIONS.
+   *
+   * `dark` says what colour the BANDS are — the promo strip, the footer, the
+   * toast. `template` says which of the two storefronts this shop wears. They
+   * were briefly one setting, and that was a shortcut with a real cost: a shop
+   * could no longer have a dark footer on a light page, which is a combination
+   * the classic design was built around. See TEMPLATES in shared/branding.js.
    *
    * Only the STOREFRONT passes `night`. The landing page at /kj calls the same
-   * function with the same `dark: true` and must keep its light paper, which
-   * is why this is an argument here and not a new meaning inside the module.
+   * function with `dark: true` and must keep its light paper, which is why
+   * this is an argument here and not a new meaning inside the module.
    */
   const dark = b.dark !== false;
-  applyTheme(document.documentElement, { accent: b.accent, dark, night: dark });
+  const night = b.template === 'luxe';
+  applyTheme(document.documentElement, { accent: b.accent, dark, night });
   // The monogram is drawn by CSS as the hero's watermark, so it arrives the
   // same way the colours do rather than as a second element to position.
   document.documentElement.style.setProperty('--brand-monogram', JSON.stringify(monogramText()));

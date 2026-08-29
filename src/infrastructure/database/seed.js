@@ -217,6 +217,10 @@ export async function seedBaseline() {
       ['web.meta_description_ar', '', 'string', 'website'],
       ['web.theme_accent', '#c8a24a', 'string', 'website'],
       ['web.theme_dark', '1', 'boolean', 'website'],
+      // Which storefront design. 'classic' for a shop nobody has decided
+      // about — see TEMPLATES in shared/branding.js for why the plain one is
+      // the default and migration 026 for what existing shops get.
+      ['web.template', 'classic', 'string', 'website'],
     ];
     for (const [key, value, type, group] of settings) await insertSetting.run(key, value, type, group);
 

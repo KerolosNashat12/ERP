@@ -14,6 +14,21 @@ import auditService from './AuditService.js';
 
 const INBOUND = new Set(['purchase_receipt', 'sale_return', 'opening_balance']);
 
+/**
+ * How the stock-count sheet is fetched, and how big it is allowed to get.
+ *
+ * `COUNT_SHEET_PAGE` is the largest page `stockOnHand()` will serve — it
+ * clamps anything higher, which is precisely how the old one-shot fetch came
+ * to truncate in silence. Asking for exactly the clamp makes the loop below
+ * take the fewest round trips it can.
+ *
+ * `COUNT_SHEET_MAX` is the honest limit of a sheet: a table a person scrolls
+ * while walking a shop. Past it the endpoint says so (`truncated`) instead of
+ * pretending the shop ends there. See `buildCountSheet()`.
+ */
+const COUNT_SHEET_PAGE = 1000;
+const COUNT_SHEET_MAX = 5000;
+
 export class InventoryService {
   constructor(deps = {}) {
     this.inventory = deps.inventory || repositories.inventory;
@@ -315,11 +330,64 @@ export class InventoryService {
   }
 
   /** Build a stock-count sheet pre-filled with system quantities. */
+  /**
+   * The sheet a stock take starts from: every line the shop holds, pre-filled
+   * with what the system believes, so the clerk only types what they counted.
+   *
+   * ── Why this pages instead of asking for one big page ──────────────────────
+   * It used to call `stockOnHand({ pageSize: 1000 })` and return whatever came
+   * back. `stockOnHand` CLAMPS `pageSize` to 1000, so on a shop with more than
+   * a thousand active variants the sheet quietly stopped at the thousandth
+   * name in alphabetical order — and said nothing. The clerk counted what was
+   * on the sheet, posted it, and every line past the cut was simply never
+   * counted; the ERP reported "1000 products" as if that were the shop.
+   *
+   * Nothing is destroyed by that — posting an adjustment only touches the lines
+   * it carries, so the missing ones keep their quantities rather than being
+   * written off. What is destroyed is the POINT of a stock take: the shop
+   * believes it has counted itself and it has not, and the discrepancy the
+   * count existed to find is in the part that never appeared.
+   *
+   * This is not hypothetical. It is the bug that broke the smoke test the day
+   * the seeded catalogue crossed a thousand variants.
+   *
+   * ── Why there is still a ceiling ───────────────────────────────────────────
+   * A sheet is a table in a browser and a clerk walking a shop with it. Beyond
+   * `COUNT_SHEET_MAX` lines it is neither, and building it unbounded turns one
+   * click into a query that can outlive the request.
+   *
+   * So the ceiling stays — but it is REPORTED. `total` is what the shop
+   * actually holds and `truncated` says plainly that the sheet is not all of
+   * it, so the screen can tell the clerk to narrow by warehouse, brand or
+   * category (all three are already filters on this endpoint) and count the
+   * shop in parts. A partial sheet a clerk knows about is a working stock take.
+   * A partial sheet nobody mentions is the bug above.
+   */
   async buildCountSheet({ warehouseId, brandId, categoryId, search } = {}) {
-    const { rows } = await this.inventory.stockOnHand({
-      warehouseId: warehouseId || (await this.locationId()), brandId, categoryId, search, pageSize: 1000,
-    });
-    return rows.map((row) => ({
+    const filters = {
+      warehouseId: warehouseId || (await this.locationId()),
+      brandId,
+      categoryId,
+      search,
+      pageSize: COUNT_SHEET_PAGE,
+    };
+
+    const collected = [];
+    let total = 0;
+    for (let page = 1; ; page += 1) {
+      // eslint-disable-next-line no-await-in-loop -- pages must be sequential.
+      const result = await this.inventory.stockOnHand({ ...filters, page });
+      total = result.total;
+      collected.push(...result.rows);
+      if (collected.length >= total) break;
+      if (collected.length >= COUNT_SHEET_MAX) break;
+      // A page that came back empty while `total` still claims more would loop
+      // for ever. It cannot happen through the query above, and a loop that
+      // hangs the server is not the way to find out that it did.
+      if (result.rows.length === 0) break;
+    }
+
+    const rows = collected.slice(0, COUNT_SHEET_MAX).map((row) => ({
       variant_id: row.variant_id,
       sku: row.sku,
       product_name_en: row.product_name_en,
@@ -330,6 +398,8 @@ export class InventoryService {
       difference: 0,
       unit_cost: row.average_cost,
     }));
+
+    return { rows, total, truncated: total > rows.length };
   }
 
   async saveAdjustment(payload, context = {}, adjustmentId = null) {

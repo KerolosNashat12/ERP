@@ -16,7 +16,9 @@
     "db:reset": "node scripts/reset.js",
     "setup": "node scripts/migrate.js && node scripts/seed.js --demo",
     "backup": "node scripts/backup.js",
-    "test": "node --test \"tests/**/*.test.js\""
+    "test": "node --test \"tests/**/*.test.js\"",
+    "backup:shop": "node scripts/backup-shop.js",
+    "restore:shop": "node scripts/restore-shop.js"
   },
   "dependencies": {
     "@libsql/client": "^0.15.0",

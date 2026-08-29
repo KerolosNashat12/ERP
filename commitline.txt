@@ -1,0 +1,17 @@
+Two storefront templates, bulk product photos, and three bugs the tests found
+
+- web.template: 'classic' or 'luxe', chosen per shop in Settings → Appearance.
+  Migration 026 derives it from web.theme_dark so no live shop changes look.
+  SSR stamps data-paper on the first byte, so no flash of the wrong paper.
+- FIX: web.template was missing from StorefrontService.CONFIG_KEYS, so the
+  setting saved, reported success and did nothing.
+- FIX: the stock count sheet silently stopped at 1,000 lines (stockOnHand
+  clamps pageSize). It now pages the whole shop and says so when capped.
+- Bulk photos: drop a folder named by product code / variant SKU / barcode,
+  see what matched before anything uploads, first shot becomes the main photo.
+- FIX: 19 duplicate i18n keys — deleting a PRODUCT photo asked "remove this
+  photo from the invoice?". Fenced by tests/i18n-dictionary.test.js.
+- A bare product now draws what it IS (wallet, watch, bag) instead of always
+  a perfume bottle, sharing the category icon vocabulary.
+
+npm test 1096 → 1117, all passing.

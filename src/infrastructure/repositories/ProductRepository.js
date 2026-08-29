@@ -343,6 +343,91 @@ export class ProductRepository extends BaseRepository {
     }));
     return product;
   }
+
+  /**
+   * Which product each of these codes belongs to — the lookup behind the bulk
+   * photo screen, where a shop drops two hundred files named after the things
+   * in them.
+   *
+   * ── One query, not one per code ────────────────────────────────────────────
+   * Two hundred files would otherwise be two hundred round trips, on a shop's
+   * connection, before a single byte of a photograph moves. The codes go in as
+   * one `IN` list and come back as one map.
+   *
+   * ── The three things a filename might be, and why the order matters ────────
+   * A shop names its files after whatever it has printed on the box, and that
+   * is one of three things:
+   *
+   *   1. the PRODUCT code (`sku_prefix`) — the code the whole product wears,
+   *      which is what a person photographing a product would write;
+   *   2. a VARIANT SKU — the code on one colour or size of it;
+   *   3. a BARCODE — what the scanner reads off the label.
+   *
+   * All three resolve to a product, and a photograph belongs to the product,
+   * not to one of its variants. Product code is tried first because it is the
+   * only one that can be ambiguous the other way round: a product code is a
+   * PREFIX of its variants' SKUs by construction (`TPL` → `TPL-1`), so an
+   * exact match on the product code must win before anything looks at SKUs, or
+   * a shop whose product codes happen to equal a variant SKU somewhere else
+   * would file photos against the wrong thing.
+   *
+   * Matching is NOCASE throughout: a file called `vs-1042.jpg` is the same
+   * product as one called `VS-1042.JPG`, and no shop is going to retype two
+   * hundred filenames to find that out.
+   *
+   * `photo_count` comes back with each match because the screen has to be able
+   * to say "this one already has 3" before it adds a fourth. Uploading is
+   * additive and a person who has run the same folder twice deserves to be
+   * told rather than to discover it on the shop.
+   */
+  async matchCodes(codes = []) {
+    const wanted = [...new Set(
+      codes.map((code) => String(code ?? '').trim()).filter(Boolean),
+    )];
+    if (!wanted.length) return [];
+
+    const holes = wanted.map(() => '?').join(', ');
+    /*
+     * Every candidate, each carrying which of the three it is. Choosing the
+     * best one per code is done in JavaScript below rather than with a
+     * GROUP BY … HAVING MIN(rank): SQLite only promises that bare columns come
+     * from the min row under narrow conditions that this query does not meet,
+     * and "usually right" is not a property to build a photo filing system on.
+     * The list is one row per code per place it matched — small enough that
+     * picking from it costs nothing.
+     */
+    const candidates = await getDb().prepare(`
+      SELECT c.code AS code, c.rank AS rank, c.matched_on AS matched_on,
+             p.id AS product_id, p.sku_prefix AS sku_prefix,
+             p.name_en AS name_en, p.name_ar AS name_ar,
+             (SELECT COUNT(*) FROM product_images pi WHERE pi.product_id = p.id) AS photo_count
+      FROM (
+        SELECT p2.sku_prefix AS code, p2.id AS product_id, 'product_code' AS matched_on, 1 AS rank
+          FROM products p2
+         WHERE p2.sku_prefix COLLATE NOCASE IN (${holes})
+        UNION ALL
+        SELECT v.sku AS code, v.product_id AS product_id, 'variant_sku' AS matched_on, 2 AS rank
+          FROM product_variants v
+         WHERE v.sku COLLATE NOCASE IN (${holes})
+        UNION ALL
+        SELECT v2.barcode AS code, v2.product_id AS product_id, 'barcode' AS matched_on, 3 AS rank
+          FROM product_variants v2
+         WHERE v2.barcode IS NOT NULL AND TRIM(v2.barcode) <> ''
+           AND v2.barcode COLLATE NOCASE IN (${holes})
+      ) AS c
+      JOIN products p ON p.id = c.product_id
+      ORDER BY c.rank, p.id
+    `).all(...wanted, ...wanted, ...wanted);
+
+    const best = new Map();
+    for (const row of candidates) {
+      const key = String(row.code).toLowerCase();
+      // Ordered by rank, so the first one seen for a code is the best one.
+      if (!best.has(key)) best.set(key, row);
+    }
+    return [...best.values()];
+  }
+
 }
 
 export class VariantRepository extends BaseRepository {
