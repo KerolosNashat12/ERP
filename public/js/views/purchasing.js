@@ -90,15 +90,47 @@ export async function supplierReturnsView(root, route) {
         { key: 'return_date', label: t('date'), render: (r) => date(r.return_date) },
         { key: 'po_number', label: t('poNumber'), class: 'mono small' },
         { key: 'supplier', label: t('supplier'), render: (r) => pick(r, 'supplier_name') },
+        /*
+         * WHAT KIND OF DOCUMENT THIS IS — the column the owner went looking
+         * for and did not find. He recorded a swap, opened this list, and saw
+         * a row that said «نفس الصنف تاني» under a heading called "settlement",
+         * on a screen called "supplier returns", with one money column showing
+         * the gross value of goods that had already been replaced.
+         *
+         * `kind` is derived on the server from whether anything actually came
+         * back (see PurchaseReturnService.list), not from the word somebody
+         * picked in a dialog — so a document labelled "replace" with nothing
+         * replaced reads as the return it really is.
+         */
         {
-          key: 'settlement',
-          label: t('settlement'),
-          render: (r) => tag(t({
-            credit: 'settlementCredit', refund: 'settlementRefund', replace: 'settlementReplace',
-          }[r.settlement] || 'settlementCredit')),
+          key: 'kind',
+          label: t('type'),
+          render: (r) => (r.kind === 'swap'
+            ? tag(`⇄ ${t('docSwap')}`, 'gold')
+            : tag(`↩ ${t('docReturn')}`)),
         },
         { key: 'line_count', label: t('products'), type: 'number' },
-        { key: 'total_amount', label: t('total'), type: 'money', render: (r) => money(r.total_amount) },
+        /*
+         * Three money columns instead of one, because a swap has three numbers
+         * and showing only the first is what made the list disagree with the
+         * order it belongs to. What went out, what came in against it, and the
+         * only one that touches the supplier's balance: the difference.
+         */
+        { key: 'total_amount', label: t('sentBackLine'), type: 'money', render: (r) => money(r.total_amount) },
+        {
+          key: 'replacement_amount',
+          label: t('cameBackLine'),
+          type: 'money',
+          render: (r) => (Number(r.replacement_amount) > 0 ? money(r.replacement_amount) : '—'),
+        },
+        {
+          key: 'credit_amount',
+          label: t('creditWorth'),
+          type: 'money',
+          render: (r) => (Math.abs(Number(r.credit_amount)) < 0.005 && r.kind === 'swap'
+            ? h('span', { class: 'muted small' }, t('evenSwap'))
+            : h('span', { class: 'strong' }, money(r.credit_amount))),
+        },
         {
           key: 'status',
           label: t('status'),
@@ -540,7 +572,24 @@ async function purchaseFormView(root, route) {
     mount(linesHost, dataTable({
       columns: [
         { key: 'sku', label: t('sku'), class: 'mono small' },
-        { key: 'product', label: t('product'), render: (l) => `${pick(l, 'product_name')} — ${l.variant_label || ''}` },
+        /*
+         * The product, AND what later happened to it.
+         *
+         * The line itself never changes — the order has to go on saying what
+         * was agreed and what arrived — but it used to say only that, which is
+         * how the owner sent a bottle back, took a different one in, and found
+         * the order still listing the bottle that had gone with no mark on it
+         * and no sign of the one that replaced it. The history rides
+         * underneath the name: what went back, and what came in instead, named
+         * and priced. `line.replacements` comes from the order aggregate.
+         */
+        {
+          key: 'product',
+          label: t('product'),
+          render: (l) => h('div', {},
+            h('div', {}, `${pick(l, 'product_name')} — ${l.variant_label || ''}`),
+            lineHistory(l)),
+        },
         { key: 'quantity_ordered', label: t('ordered'), align: 'end', render: (l) => (editable ? lineNumber(l, 'quantity_ordered', afterLineEdit, '80px') : number(l.quantity_ordered)) },
         { key: 'quantity_received', label: t('received'), type: 'number', render: (l) => number(l.quantity_received || 0) },
         { key: 'unit_cost', label: t('unitCost'), align: 'end', render: (l) => (editable ? lineNumber(l, 'unit_cost', afterLineEdit) : money(l.unit_cost)) },
@@ -732,6 +781,47 @@ function pickReplacement(line, refresh) {
  * can be returnable on paper and impossible in fact, because the pieces were
  * sold last week - so the box is capped at it and the row says so.
  */
+/**
+ * What happened to one purchase-order line after the goods arrived.
+ *
+ * Returns nothing at all for a line nothing happened to, which is most of
+ * them — a note under every row would be noise, and noise is what people stop
+ * reading. For the rest it says the two things a person standing at the shelf
+ * needs: how many went back, and what came in against them.
+ *
+ * The different-item case is spelled out rather than implied. «اتبدل بـ يارا
+ * اوتليت» is the sentence the owner was looking for and could not find; a row
+ * that merely showed a quantity moving would have left him doing the same
+ * detective work on the next order.
+ */
+function lineHistory(line) {
+  const returned = Number(line.returned_quantity || 0);
+  const replacements = line.replacements || [];
+  if (!returned && !replacements.length) return null;
+
+  const parts = [];
+  if (returned) parts.push(h('span', { class: 'tag warn line-note' }, `↩ ${t('sentBackLine')} ${number(returned)}`));
+
+  for (const swap of replacements) {
+    const differentItem = swap.replacement_variant_id !== null
+      && swap.replacement_variant_id !== undefined
+      && Number(swap.replacement_variant_id) !== Number(line.variant_id);
+    const name = differentItem
+      ? `${pick(swap, 'replacement_name')} — ${swap.replacement_variant_label || ''}`
+      : null;
+    parts.push(h('span', { class: 'tag gold line-note' },
+      `⇄ ${number(swap.replacement_quantity)} `,
+      differentItem ? `${t('swappedFor')} ${name}` : t('cameBackLine'),
+      // The money, whenever the two sides are not worth the same. An even swap
+      // says nothing about price because there is nothing to say; an uneven one
+      // is exactly where a shopkeeper needs the number in front of him.
+      Math.abs(Number(swap.replacement_unit_cost || 0) - Number(swap.returned_unit_cost || 0)) > 0.005
+        ? ` (${money(swap.returned_unit_cost)} → ${money(swap.replacement_unit_cost)})`
+        : ''));
+  }
+  return h('div', { class: 'row wrap', style: { gap: '6px', marginTop: '4px' } }, parts);
+}
+
 function openSupplierReturn(order, { swap = false } = {}) {
   /*
    * Two screens, one function — and `swap` is not a setting the person can
@@ -755,7 +845,14 @@ function openSupplierReturn(order, { swap = false } = {}) {
   const settlement = swap ? 'replace' : 'credit';
   const state = { settlement, reason: '', lines: [] };
   const host = h('div');
-  const totalHost = h('div', { class: 'muted small' });
+  /*
+   * Its own class, not just `muted small`. The explanatory sentence added
+   * above it wears those two as well, and a check looking for "the muted small
+   * thing in the dialog" started reading the sentence instead of the total —
+   * which is the same class of bug as every other selector in this project
+   * that meant "whatever happens to be first".
+   */
+  const totalHost = h('div', { class: 'muted small return-total' });
 
   const cap = (line) => Math.min(line.returnable_quantity, line.on_hand);
 
@@ -867,6 +964,17 @@ function openSupplierReturn(order, { swap = false } = {}) {
     title: `${swap ? t('swapWithSupplier') : t('returnToSupplier')} — ${order.po_number}`,
     size: 'wide',
     body: h('div', { class: 'stack' },
+      /*
+       * One sentence saying what this screen does, above the table.
+       *
+       * The columns were «رجّع» and «الراجع» — two spellings of one word next
+       * to each other — and the owner asked outright which was which. The
+       * headings are fixed, and this is the belt: on the swap screen it says
+       * that something comes back and that it may be a different item, and on
+       * the return screen it says the opposite, so neither is a screen you have
+       * to already understand to use.
+       */
+      h('p', { class: 'muted small', style: { margin: 0 } }, t(swap ? 'swapNote' : 'returnNote')),
       h('div', { class: 'filters' },
         h('div', { class: 'field grow' }, field({ label: t('reason'), input: reason }))),
       host,
@@ -896,7 +1004,7 @@ function openSupplierReturn(order, { swap = false } = {}) {
           window.location.reload();
         } catch (error) { toastError(error); }
       },
-    }, swap ? t('swapWithSupplier') : t('sendBack')),
+    }, swap ? t('swapWithSupplier') : t('sendBackAction')),
   });
 
   mount(host, spinner());

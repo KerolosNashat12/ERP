@@ -91,7 +91,10 @@ const order = await page.evaluate(async () => {
     base_price: 400,
     variants: [{ sku: `SWP${stamp}-1`, variant_label: '', cost_price: 150, selling_price: 400 }],
   });
-  return { id: created.id, po: created.po_number, swapSku: swapProduct.variants[0].sku };
+  return {
+    id: created.id, po: created.po_number,
+    swapSku: swapProduct.variants[0].sku, swapName: swapProduct.name_en,
+  };
 });
 console.log(`working on ${order.po}`);
 
@@ -114,7 +117,7 @@ await page.waitForTimeout(600);
 
 const columns = await page.$$eval('#modal-root thead th', (ns) => ns.map((n) => n.textContent.trim()));
 console.log('columns:', columns.join(' · '));
-for (const wanted of [/Received|استلم/, /On the shelf|على الرف/, /Send back|رجّع/]) {
+for (const wanted of [/Received|استلم/, /On the shelf|على الرف/, /Going back to the supplier|راجع للمورد/]) {
   if (!columns.some((c) => wanted.test(c))) fail(`the dialog is missing a column matching ${wanted}`);
 }
 
@@ -125,21 +128,31 @@ await page.evaluate(() => {
   box.dispatchEvent(new Event('change', { bubbles: true }));
 });
 await page.waitForTimeout(600);
-const totalText = await page.evaluate(() => document.querySelector('#modal-root .muted.small')?.textContent || '');
+const totalText = await page.evaluate(() => document.querySelector('#modal-root .return-total')?.textContent || '');
 console.log('dialog total:', totalText);
 if (!/300/.test(totalText)) fail(`the dialog總 should show 300 for three at a hundred: ${totalText}`);
 
 await page.evaluate(() => {
   const b = [...document.querySelectorAll('#modal-root button')]
-    .find((n) => /^(Send back|رجّع)$/.test((n.textContent || '').trim()));
+    .find((n) => /^(Send it back|ابعت المرتجع)$/.test((n.textContent || '').trim()));
   if (b) b.click();
 });
 await page.waitForTimeout(2500);
 
 // The order now says the supplier owes the shop.
 await page.goto(`${BASE}/app.html#/purchases/${order.id}`);
-await page.waitForTimeout(2000);
-const strip = await page.evaluate(() => document.querySelector('.summary-cards')?.innerText.replace(/\n/g, ' | ') || '');
+// The strip is fetched after the page draws — `renderBalance()` is its own
+// request — so waiting for the page is not waiting for the strip.
+await page.waitForSelector('.summary-cards', { timeout: 15000 }).catch(() => {});
+await page.waitForTimeout(2500);
+let strip = await page.evaluate(() => document.querySelector('.summary-cards')?.innerText.replace(/\n/g, ' | ') || '');
+if (!strip) {
+  console.log('debug: url', page.url(), 'head?', await page.evaluate(() => Boolean(document.querySelector('.page-head'))),
+    'balance', JSON.stringify(await page.evaluate(async (id) => (await (await fetch(`/api/purchases/${id}/balance`)).json()), order.id)));
+  await page.reload({ waitUntil: 'networkidle' }).catch(() => {});
+  await page.waitForTimeout(2500);
+  strip = await page.evaluate(() => document.querySelector('.summary-cards')?.innerText.replace(/\n/g, ' | ') || '');
+}
 console.log('balance strip:', strip);
 if (!/300/.test(strip)) fail(`the order does not show the 300 that went back: ${strip}`);
 if (!/owes|ليه عندنا/i.test(strip)) fail(`a fully paid order that was returned must say the supplier owes us: ${strip}`);
@@ -219,7 +232,7 @@ await page.waitForTimeout(400);
 const swapDialog = await readDialog('Swap with the supplier|استبدال من المورد');
 if (!swapDialog) fail('the swap dialog did not open');
 else {
-  if (!swapDialog.columns.some((c) => /Coming back|الراجع/.test(c))) fail('the swap dialog has no coming-back column');
+  if (!swapDialog.columns.some((c) => /Coming in instead|جاي بدله/.test(c))) fail('the swap dialog has no coming-in column');
   if (!swapDialog.columns.some((c) => /instead|بدله/.test(c))) fail('no column for choosing a different item');
   if (swapDialog.hasSelect) fail('the swap dialog is still asking which kind of document this is');
 }
@@ -316,6 +329,30 @@ if (!/300/.test(swapStrip)) fail(`the 300 that came in is not on the strip: ${sw
 // And the number itself, asked of the server rather than read off a card.
 const money = await page.evaluate(async (id) => (await (await fetch(`/api/purchases/${id}/balance`)).json()), order.id);
 console.log('balance after the swap:', JSON.stringify(money));
+/*
+ * And the thing the owner actually went looking for: after a swap, does the
+ * PURCHASE ORDER say so? His words were «المنتج القديم لسه ظاهر حتى بعد
+ * التبديل والجديد مش موجود» — the line still listed the item that left, with
+ * no mark on it and no sign of the one that replaced it. Every API test passed
+ * while that was true, because none of them looked at the screen.
+ */
+const lineNote = await page.evaluate(() => {
+  const row = [...document.querySelectorAll('tbody tr')]
+    .find((tr) => /sent back|رجع/i.test(tr.innerText || ''));
+  return row ? row.innerText.replace(/\n/g, ' | ') : null;
+});
+console.log('the swapped line now reads:', lineNote);
+if (!lineNote) fail('the purchase order line says nothing about the swap that happened to it');
+else {
+  if (!/swapped for|اتبدل/i.test(lineNote)) {
+    fail(`the line does not name what came in instead: ${lineNote}`);
+  }
+  // By NAME, which is what a person reads — the sku is in the row already.
+  if (!lineNote.includes(order.swapName)) {
+    fail(`the replacement item is not named on the line: ${lineNote}`);
+  }
+}
+
 const moved = (key) => Math.round((money[key] - beforeSwap[key]) * 100) / 100;
 if (moved('returned_amount') !== 200) fail(`the swap sent back ${moved('returned_amount')}, expected 200`);
 if (moved('replacement_amount') !== 300) fail(`${moved('replacement_amount')} came back instead, expected 300`);

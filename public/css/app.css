@@ -1005,3 +1005,22 @@ table.data td select { min-inline-size: 118px; }
   /* The page behind a drawer should not scroll under your finger. */
   body.sidebar-open { overflow: hidden; }
 }
+
+/*
+ * A note attached to a table row rather than a status on its own: what later
+ * happened to a purchase-order line, printed under the product's name.
+ *
+ * A plain `.tag` cannot do this job — it is `nowrap`, which is right for a
+ * one-word status and wrong for «اتبدل بـ يارا اوتليت (250.00 ج.م → 380.00
+ * ج.م)», a sentence that has to wrap inside a column somebody has already
+ * squeezed. Lighter weight too: this is context under a name, not a label
+ * competing with it.
+ */
+.tag.line-note {
+  white-space: normal;
+  font-weight: 500;
+  font-size: 11px;
+  line-height: 1.45;
+  padding: 2px 7px;
+  border-radius: 10px;
+}

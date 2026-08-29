@@ -93,6 +93,71 @@ export class PurchaseOrderRepository extends BaseRepository {
       JOIN v_variant_details vd ON vd.variant_id = l.variant_id
       WHERE l.purchase_order_id = ? ORDER BY l.id
     `).all(id);
+
+    /*
+     * WHAT LATER HAPPENED TO EACH LINE.
+     *
+     * The order says what was agreed and what arrived, and it must go on saying
+     * that for ever — that is why a return is its own document rather than an
+     * edit of this one. But "the order does not change" was read as "the order
+     * says nothing", and the shop's owner found the consequence the first time
+     * he swapped an item: he sent one bottle back, a different one came in, and
+     * the purchase order still listed only the bottle that had gone, with no
+     * mark on it and no sign anywhere of the one that replaced it. In his
+     * words: «المنتج القديم لسه ظاهر حتى بعد التبديل والجديد مش موجود».
+     *
+     * So each line now carries its own history alongside it. The line itself is
+     * untouched — same quantities, same cost, same total — and these are three
+     * extra fields that the screen can show underneath it:
+     *
+     *   returned_quantity     how many of this line have gone back
+     *   replaced_quantity     how many came in against those
+     *   replacements[]        WHAT came in: sku, name, quantity, unit cost —
+     *                         including the case that matters, where it is a
+     *                         different product from the one that left.
+     *
+     * Reversed returns are excluded, exactly as the balance excludes them: a
+     * return recorded in error must leave no mark on the line it was about.
+     */
+    const history = await this.db.prepare(`
+      SELECT rl.po_line_id,
+             COALESCE(SUM(rl.quantity), 0)             AS returned_quantity,
+             COALESCE(SUM(rl.replacement_quantity), 0) AS replaced_quantity
+        FROM purchase_return_lines rl
+        JOIN purchase_returns r ON r.id = rl.return_id AND r.status = 'completed'
+       WHERE r.purchase_order_id = ?
+       GROUP BY rl.po_line_id
+    `).all(id);
+
+    const swaps = await this.db.prepare(`
+      SELECT rl.po_line_id, rl.replacement_quantity, rl.replacement_unit_cost,
+             rl.replacement_variant_id, rl.unit_cost AS returned_unit_cost,
+             r.return_no,
+             vd.sku AS replacement_sku,
+             vd.product_name_en AS replacement_name_en,
+             vd.product_name_ar AS replacement_name_ar,
+             vd.variant_label   AS replacement_variant_label
+        FROM purchase_return_lines rl
+        JOIN purchase_returns r ON r.id = rl.return_id AND r.status = 'completed'
+        LEFT JOIN v_variant_details vd
+               ON vd.variant_id = COALESCE(rl.replacement_variant_id, rl.variant_id)
+       WHERE r.purchase_order_id = ? AND rl.replacement_quantity > 0
+       ORDER BY rl.id
+    `).all(id);
+
+    const historyBy = new Map(history.map((row) => [row.po_line_id, row]));
+    const swapsBy = new Map();
+    for (const swap of swaps) {
+      if (!swapsBy.has(swap.po_line_id)) swapsBy.set(swap.po_line_id, []);
+      swapsBy.get(swap.po_line_id).push(swap);
+    }
+
+    for (const line of order.lines) {
+      const row = historyBy.get(line.id);
+      line.returned_quantity = Number(row?.returned_quantity || 0);
+      line.replaced_quantity = Number(row?.replaced_quantity || 0);
+      line.replacements = swapsBy.get(line.id) || [];
+    }
     return order;
   }
 

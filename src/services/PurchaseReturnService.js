@@ -124,13 +124,47 @@ export class PurchaseReturnService {
     const rows = await this.db.prepare(`
       SELECT r.*, s.name_en AS supplier_name_en, s.name_ar AS supplier_name_ar,
              u.full_name AS created_by_name,
-             (SELECT COUNT(*) FROM purchase_return_lines l WHERE l.return_id = r.id) AS line_count
+             (SELECT COUNT(*) FROM purchase_return_lines l WHERE l.return_id = r.id) AS line_count,
+             /*
+              * Whether anything came back IN against this document - the fact
+              * that makes it a SWAP rather than a return, and the one the list
+              * was not showing. The settlement column alone cannot answer it:
+              * that is what somebody selected in a dialog, and it said replace
+              * on documents where nothing was ever replaced.
+              *
+              * (No backticks in this comment on purpose - it lives inside a JS
+              * template literal, where one is a syntax error at import time.
+              * This is the third time that has cost a round.)
+              */
+             (SELECT COUNT(*) FROM purchase_return_lines l
+               WHERE l.return_id = r.id AND l.replacement_quantity > 0) AS swap_lines,
+             /* And whether any of those came back as a DIFFERENT product. */
+             (SELECT COUNT(*) FROM purchase_return_lines l
+               WHERE l.return_id = r.id AND l.replacement_variant_id IS NOT NULL) AS other_item_lines
         FROM purchase_returns r
         JOIN suppliers s ON s.id = r.supplier_id
         LEFT JOIN users u ON u.id = r.created_by
        WHERE ${where.join(' AND ')}
        ORDER BY r.id DESC
     `).all(...params);
+
+    /*
+     * `kind` is derived here rather than stored, for the reason every derived
+     * state in this system is derived: the inputs are already in the database
+     * and a stored flag is a fourth thing to keep in step. A document is a swap
+     * when goods actually came back against it — not when somebody chose the
+     * word "replace" in a dialog.
+     *
+     * `credit_amount` is the same arithmetic the order balance does, per
+     * document, so the list can say what each one was actually worth. An even
+     * swap is worth nothing and now says so, instead of showing its gross value
+     * beside a balance that did not move by it.
+     */
+    for (const row of rows) {
+      row.kind = Number(row.swap_lines) > 0 ? 'swap' : 'return';
+      row.swapped_for_other_item = Number(row.other_item_lines) > 0;
+      row.credit_amount = round2(Number(row.total_amount) - Number(row.replacement_amount || 0));
+    }
     return { rows };
   }
 

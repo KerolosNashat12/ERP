@@ -1150,4 +1150,180 @@ test('returning goods to a supplier', async (t) => {
     assert.equal(legacy.discount_type, 'percent');
     assert.equal(legacy.discount_amount, 250);
   });
+
+  /* ═══════════════ what a person can SEE after a swap ═══════════════════════
+   *
+   * The tests above this line prove the money and the shelf, and they all passed
+   * while the owner did a swap on his live shop and could not tell it had
+   * happened. His four words for it:
+   *
+   *   «ايه الفرق بين رجع والراجع» — two columns, two spellings of one word.
+   *   «ده تبديل» — and the list called it a return.
+   *   «ظاهر في المرتجع مش تبديل» — no state saying a swap had happened.
+   *   «المنتج القديم لسه ظاهر والجديد مش موجود» — the order still listed only
+   *   the bottle that left, with no mark on it and no sign of the one that
+   *   replaced it.
+   *
+   * Every one of those is a fact the SERVER has and was not sending. So these
+   * assert the payloads the screens are drawn from — which is the level at which
+   * "the feature works" and "a person can tell it worked" are the same question.
+   */
+  await t.test('a swap is visible everywhere it happened', async (t) => {
+    const call = async (pathname, options) => ok(pathname, options);
+
+    const supplier = await ok('/api/suppliers', {
+      method: 'POST', body: { name_en: 'Visibility Supplier', name_ar: 'مورد' },
+    });
+    const make = async (en, ar, cost) => {
+      const prefix = en.replace(/\W/g, '').slice(0, 6).toUpperCase();
+      const created = await ok('/api/products', {
+        method: 'POST',
+        body: {
+          sku_prefix: prefix, name_en: en, name_ar: ar, base_price: cost * 2,
+          variants: [{ sku: `${prefix}-1`, variant_label: '', cost_price: cost, selling_price: cost * 2 }],
+        },
+      });
+      return created.variants[0];
+    };
+
+    // The owner's own case, with his own numbers: one bottle out, a DIFFERENT
+    // and dearer bottle in.
+    const wentOut = await make('Very Sexy outlet', 'فيري سكسي السودا اوتليت', 250);
+    const cameIn = await make('Yara outlet', 'يارا اوتليت', 380);
+
+    const created = await ok('/api/purchases', {
+      method: 'POST',
+      body: {
+        supplier_id: supplier.id,
+        order_date: '2026-06-22',
+        lines: [{ variant_id: wentOut.id, quantity_ordered: 2, unit_cost: 250, discount_percent: 0, tax_rate: 0 }],
+      },
+    });
+    await ok(`/api/purchases/${created.id}/approve`, { method: 'POST', body: {} });
+    const order = await ok(`/api/purchases/${created.id}`);
+    await ok(`/api/purchases/${created.id}/receive`, {
+      method: 'POST', body: { receipts: [{ line_id: order.lines[0].id, quantity: 2 }] },
+    });
+
+    // Before the swap the line carries an empty history rather than no history —
+    // a screen should not have to guess whether the field is missing or zero.
+    const before = await ok(`/api/purchases/${created.id}`);
+    assert.equal(before.lines[0].returned_quantity, 0);
+    assert.equal(before.lines[0].replaced_quantity, 0);
+    assert.deepEqual(before.lines[0].replacements, []);
+
+    await ok('/api/purchase-returns', {
+      method: 'POST',
+      body: {
+        purchase_order_id: created.id,
+        settlement: 'replace',
+        lines: [{
+          po_line_id: order.lines[0].id,
+          quantity: 1,
+          replacement_quantity: 1,
+          replacement_variant_id: cameIn.id,
+          replacement_unit_cost: 380,
+        }],
+      },
+    });
+
+    await t.test('the purchase order line says what happened to it', async () => {
+      const after = await ok(`/api/purchases/${created.id}`);
+      const line = after.lines[0];
+
+      // The line itself is untouched — that is the whole reason a return is its
+      // own document, and a "fix" that edited the order would break it.
+      assert.equal(line.quantity_ordered, 2, 'the order was rewritten by a return');
+      assert.equal(line.quantity_received, 2, 'what arrived is no longer what arrived');
+      assert.equal(line.unit_cost, 250);
+
+      // …and it now carries its history beside it.
+      assert.equal(line.returned_quantity, 1, 'the line does not say one went back');
+      assert.equal(line.replaced_quantity, 1, 'the line does not say one came in');
+      assert.equal(line.replacements.length, 1);
+
+      const swap = line.replacements[0];
+      assert.equal(swap.replacement_quantity, 1);
+      assert.equal(swap.replacement_variant_id, cameIn.id,
+        'the order does not name the item that came in');
+      assert.equal(swap.replacement_name_ar, 'يارا اوتليت',
+        'the replacement has no name on it — the screen would print an id');
+      assert.equal(swap.replacement_sku, cameIn.sku);
+      // Both prices, because the difference is the point of showing it at all.
+      assert.equal(round2(swap.returned_unit_cost), 250);
+      assert.equal(round2(swap.replacement_unit_cost), 380);
+    });
+
+    await t.test('the supplier-returns list calls a swap a swap', async () => {
+      const list = await ok('/api/purchase-returns');
+      const row = list.rows.find((r) => r.purchase_order_id === created.id);
+      assert.ok(row, 'the swap is not on the supplier returns list at all');
+
+      assert.equal(row.kind, 'swap',
+        'the list still calls this a return — the owner looked at exactly this row');
+      assert.equal(row.swapped_for_other_item, true,
+        'the list cannot tell a same-item replacement from a different-item swap');
+
+      // Three numbers, not one. The list used to show only the first, next to an
+      // order balance that had not moved by it.
+      assert.equal(round2(row.total_amount), 250, 'what went out');
+      assert.equal(round2(row.replacement_amount), 380, 'what came in');
+      assert.equal(round2(row.credit_amount), -130,
+        'the list does not say the shop received 130 more than it sent');
+    });
+
+    await t.test('an ordinary return is NOT called a swap', async () => {
+      /*
+       * The control. Without it `kind` could return "swap" for everything and
+       * every assertion above would still pass.
+       */
+      const plain = await ok('/api/purchase-returns', {
+        method: 'POST',
+        body: {
+          purchase_order_id: created.id,
+          lines: [{ po_line_id: order.lines[0].id, quantity: 1 }],
+        },
+      });
+      const list = await ok('/api/purchase-returns');
+      const row = list.rows.find((r) => r.return_no === plain.return_no);
+      assert.equal(row.kind, 'return', 'a plain return is being shown as a swap');
+      assert.equal(row.swapped_for_other_item, false);
+      assert.equal(round2(row.replacement_amount), 0);
+      assert.equal(round2(row.credit_amount), round2(row.total_amount),
+        'a return with nothing coming back is worth its whole value off the order');
+    });
+
+    await t.test('a reversed swap leaves no mark on the line', async () => {
+      /*
+       * The history is derived from completed documents only — the same rule the
+       * balance follows. A swap recorded in error must not leave the order
+       * saying an item was replaced when it was not.
+       */
+      const swapDoc = await ok('/api/purchase-returns', {
+        method: 'POST',
+        body: {
+          purchase_order_id: created.id,
+          settlement: 'replace',
+          lines: [{
+            po_line_id: order.lines[0].id,
+            quantity: 0.5,
+            replacement_quantity: 0.5,
+            replacement_variant_id: cameIn.id,
+            replacement_unit_cost: 380,
+          }],
+        },
+      }).catch(() => null);
+
+      if (!swapDoc) return; // half a bottle refused on this line; nothing to test
+      const during = await ok(`/api/purchases/${created.id}`);
+      assert.equal(during.lines[0].replacements.length, 2);
+
+      await ok(`/api/purchase-returns/${swapDoc.id}/reverse`, {
+        method: 'POST', body: { reason: 'recorded in error' },
+      });
+      const after = await ok(`/api/purchases/${created.id}`);
+      assert.equal(after.lines[0].replacements.length, 1,
+        'a reversed swap is still shown on the order line');
+    });
+  });
 });

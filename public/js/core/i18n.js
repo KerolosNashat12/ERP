@@ -107,9 +107,30 @@ const dictionary = {
     supplierReturns: 'Supplier Returns', returnToSupplier: 'Send back to supplier',
     newSupplierReturn: 'New supplier return', returnNo: 'Return no.',
     returnable: 'Can go back', alreadyReturned: 'Already sent back', onShelf: 'On the shelf',
-    sendBack: 'Send back', settlement: 'Settlement', settlementCredit: 'Off what we owe',
-    settlementRefund: 'Money back', settlementReplace: 'Same item again',
-    replacementQty: 'Coming back', supplierOwesUs: 'The supplier owes us',
+    /*
+     * These two used to be "Send back" and "Coming back", which in Arabic came
+     * out as «رجّع» and «الراجع» — two spellings of one word, side by side, as
+     * the headings of the two columns whose whole job is to be told apart. The
+     * owner asked outright which was which. Each one now names its direction
+     * and its counterparty, and the dialog carries a sentence saying it too.
+     */
+    sendBack: 'Going back to the supplier',
+    // The COLUMN above says which quantity this is; the BUTTON has to be a
+    // verb. They were one key, so renaming the column silently renamed the
+    // button to "Going back to the supplier" — a heading sitting where "do it"
+    // belongs, and a browser check that could no longer find the button at all.
+    sendBackAction: 'Send it back',
+    replacementQty: 'Coming in instead',
+    settlement: 'Settlement',
+    settlementCredit: 'Return — off what we owe',
+    settlementRefund: 'Return — money back',
+    settlementReplace: 'Swap — goods came in instead',
+    docReturn: 'Return', docSwap: 'Swap',
+    swapNote: 'Send back what is wrong, and say how many are coming in against it. What comes in can be a different item.',
+    returnNote: 'These go back to the supplier and come off what this order owes. Nothing comes in against them.',
+    sentBackLine: 'sent back', cameBackLine: 'came in instead', swappedFor: 'swapped for',
+    creditWorth: 'Worth off the order', evenSwap: 'Even swap — no money moves',
+    supplierOwesUs: 'The supplier owes us',
     weOweSupplier: 'We still owe', orderTotalNet: 'After returns',
     returnedToSupplier: 'Sent back', reverseReturn: 'Undo this return',
     // The two halves of a swap, and what they net to. Both are shown, because
@@ -1031,9 +1052,19 @@ const dictionary = {
     supplierReturns: 'مرتجعات الموردين', returnToSupplier: 'مرتجع للمورد',
     newSupplierReturn: 'مرتجع مورد جديد', returnNo: 'رقم المرتجع',
     returnable: 'ينفع يرجع', alreadyReturned: 'رجع قبل كده', onShelf: 'على الرف',
-    sendBack: 'رجّع', settlement: 'التسوية', settlementCredit: 'يتخصم من اللي عليّا',
-    settlementRefund: 'يرجّع الفلوس', settlementReplace: 'نفس الصنف تاني',
-    replacementQty: 'الراجع', supplierOwesUs: 'المورد ليه عندنا',
+    sendBack: 'راجع للمورد',
+    sendBackAction: 'ابعت المرتجع',
+    replacementQty: 'جاي بدله',
+    settlement: 'التسوية',
+    settlementCredit: 'مرتجع — يتخصم من اللي علينا',
+    settlementRefund: 'مرتجع — يرجّع الفلوس',
+    settlementReplace: 'استبدال — جه بضاعة بدلها',
+    docReturn: 'مرتجع', docSwap: 'استبدال',
+    swapNote: 'ابعت اللي غلط، وقول جاي كام بدله. اللي جاي ممكن يكون صنف تاني خالص.',
+    returnNote: 'دي راجعة للمورد وهتتخصم من اللي علينا في الفاتورة دي. مفيش حاجة جاية بدلها.',
+    sentBackLine: 'رجع', cameBackLine: 'جه بدله', swappedFor: 'اتبدل بـ',
+    creditWorth: 'اللي هيتخصم من الفاتورة', evenSwap: 'استبدال متعادل — مفيش فلوس بتتحرك',
+    supplierOwesUs: 'المورد ليه عندنا',
     weOweSupplier: 'لسه علينا', orderTotalNet: 'بعد المرتجعات',
     returnedToSupplier: 'اترجع', reverseReturn: 'إلغاء المرتجع',
     replacedBySupplier: 'جه بدله', returnCredit: 'رصيد على الفاتورة',
