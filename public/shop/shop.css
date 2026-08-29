@@ -3895,3 +3895,104 @@ html[data-paper="night"] .tile-count {
   letter-spacing: .2em;
 }
 html[data-paper="night"]:not([lang="ar"]) .tile-count { text-transform: uppercase; }
+
+/* --------------------------------------------------------------------------
+   THE CARD ON HOVER — the photograph moves, and a button arrives.
+
+   Both are the reference's own: the picture scales slowly inside a fixed
+   frame, and a gold ADD TO CART slides up over the bottom of it.
+
+   ── How it is positioned, and why not the obvious way ──────────────────────
+   The button is a SIBLING of the card's anchor, not a child of the photo — a
+   <button> inside an <a> is invalid HTML and browsers disagree about the
+   click, which is the same reason the favourite heart is a sibling too. So it
+   cannot simply be `bottom: 0` of the photo box.
+
+   What it can be is a square overlay: the photo is ratio-locked to
+   `--photo-ratio` and fills the card's width, so an absolutely positioned box
+   pinned to the card's top with the SAME aspect ratio ends exactly where the
+   photo ends. Its content aligns to the bottom of itself, and the button lands
+   on the photo's lower edge without a single measured pixel.
+
+   None of it exists on a touch screen: there is no hover there, and a button
+   that appeared on tap would swallow the tap meant to open the product.
+   -------------------------------------------------------------------------- */
+.card-add { display: none; }
+
+@media (hover: hover) {
+  html[data-paper="night"] .card-photo { overflow: hidden; }
+  html[data-paper="night"] .card-photo .photo {
+    transition: transform .55s cubic-bezier(.4, 0, .2, 1);
+  }
+  html[data-paper="night"] .card { transition: border-color .3s cubic-bezier(.4, 0, .2, 1); }
+  html[data-paper="night"] .card:hover { border-color: var(--accent); }
+  html[data-paper="night"] .card:hover .card-photo .photo { transform: scale(1.06); }
+
+  html[data-paper="night"] .card-add {
+    position: absolute;
+    inset-block-start: 0;
+    inset-inline: 0;
+    aspect-ratio: var(--photo-ratio);
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    padding-block-end: var(--sp-5);
+    /* The box is only a ruler — every pixel of it that is not the button has
+       to let the click through to the card's own anchor underneath. */
+    pointer-events: none;
+    z-index: 2;
+  }
+  /*
+   * The button itself is the ::before-less inner content: gold, square, tracked
+   * capitals, and translated down out of the frame until the card is hovered.
+   */
+  html[data-paper="night"] .card-add > * {
+    pointer-events: auto;
+  }
+  html[data-paper="night"] .card-add {
+    opacity: 0;
+    transform: translateY(10px);
+    transition: opacity .3s cubic-bezier(.4, 0, .2, 1), transform .3s cubic-bezier(.4, 0, .2, 1);
+  }
+  html[data-paper="night"] .card:hover .card-add,
+  html[data-paper="night"] .card:focus-within .card-add {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/*
+ * The visible button is the CHILD, not the overlay.
+ *
+ * `.card-add` is a ruler — a square box the size of the photo, whose only job
+ * is to end where the photo ends. Painting the slab on it would paint the
+ * whole photo gold. `.card-add-btn` is the rectangle a person actually sees,
+ * sitting at the bottom of that ruler.
+ */
+html[data-paper="night"] .card-add-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-3);
+  background: var(--accent);
+  color: var(--accent-ink);
+  padding: var(--sp-4) var(--sp-6);
+  border-radius: var(--radius);
+  font-family: var(--font);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  letter-spacing: .12em;
+  line-height: 1;
+  white-space: nowrap;
+  pointer-events: auto;
+}
+html[data-paper="night"]:not([lang="ar"]) .card-add-btn { text-transform: uppercase; }
+html[data-paper="night"][lang="ar"] .card-add-btn {
+  font-family: var(--font-ar);
+  letter-spacing: 0;
+}
+html[data-paper="night"] .card-add {
+  background: none;
+  border: 0;
+  cursor: pointer;
+  text-decoration: none;
+}

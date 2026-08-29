@@ -121,6 +121,9 @@ const dictionary = {
     chooseVariant: 'Choose an option',
     quantity: 'Quantity',
     addToCart: 'Add to cart',
+    // A product with more than one variant cannot be added from a shelf —
+    // there is a real question to answer first, on its own page.
+    chooseOptions: 'Choose options',
     addedToCart: 'Added to your cart',
     viewCart: 'View cart',
     aboutThisPiece: 'About this piece',
@@ -392,6 +395,7 @@ const dictionary = {
     chooseVariant: 'اختار النوع',
     quantity: 'الكمية',
     addToCart: 'أضف إلى السلة',
+    chooseOptions: 'اختار المقاس',
     addedToCart: 'تمت الإضافة إلى السلة',
     viewCart: 'شوف السلة',
     aboutThisPiece: 'عن القطعة دي',

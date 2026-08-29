@@ -8,6 +8,10 @@ import { priceRange } from '../core/format.js';
 import { href } from '../core/router.js';
 import { routePath, slugFor } from '../../../shared/shopUrls.js';
 import * as favorites from '../core/favorites.js';
+// The quick-add button on a card puts a line in the basket and says so — the
+// same two modules the product page uses, so there is one cart and one toast.
+import * as cart from '../core/cart.js';
+import { toast } from './states.js';
 
 /**
  * Availability is a word from the API — 'in_stock' | 'low' | 'out' — and never a
@@ -216,7 +220,65 @@ export function productCard(card, { eager = false } = {}) {
         brand && el('span.card-brand', brand),
         el('h3.card-name', name),
         cardPrice(card))),
-    favoriteButton(card.id));
+    favoriteButton(card.id),
+    quickAdd(card));
+}
+
+/**
+ * The button the design lays over a photograph on hover.
+ *
+ * ── Three states, and each of them is the truth about the product ───────────
+ * A basket line is a VARIANT, so what this can offer depends on how many the
+ * product has, and the server answers that per card (see `cardVariant` in
+ * StorefrontService):
+ *
+ *   one variant, in stock   → adds it, in one tap, without leaving the shelf.
+ *   two or more variants    → "choose" — it opens the product page, because
+ *                             there is a real question to answer and guessing
+ *                             the first variant is how somebody ends up with
+ *                             the 30ml they did not want.
+ *   out of stock            → nothing at all. A button that cannot work is
+ *                             worse than no button.
+ *
+ * ── Why it is a sibling of the link, not inside it ─────────────────────────
+ * The whole card is one anchor so a thumb anywhere on it opens the product. A
+ * `<button>` inside an `<a>` is invalid HTML and browsers disagree about the
+ * click; the favourite heart already solved this by being a sibling laid over
+ * the corner, and this is the same arrangement over the bottom of the photo.
+ */
+function quickAdd(card) {
+  if (card.availability === 'out') return null;
+
+  const many = Number(card.variant_count || 0) > 1 || !card.variant_id;
+  if (many) {
+    return el('a.card-add', {
+      href: href(routePath('product', { id: card.id, slug: slugFor(card) })),
+      tabindex: '-1',
+      'aria-hidden': 'true',
+    }, el('span.card-add-btn', icon(ICONS.bag, { size: 16 }), el('span', t('chooseOptions'))));
+  }
+
+  return el('button.card-add', {
+    type: 'button',
+    tabindex: '-1',
+    'aria-hidden': 'true',
+    onClick: (event) => {
+      // The card is a link; adding to the basket must not also navigate.
+      event.preventDefault();
+      event.stopPropagation();
+      cart.add({
+        variant_id: card.variant_id,
+        product_id: card.id,
+        name_en: card.name_en,
+        name_ar: card.name_ar,
+        label: '',
+        price: Number(card.price_from) || 0,
+        tax_rate: Number(card.tax_rate || 0),
+        image_id: card.image_id,
+      }, 1);
+      toast(t('addedToCart'));
+    },
+  }, el('span.card-add-btn', icon(ICONS.bag, { size: 16 }), el('span', t('addToCart'))));
 }
 
 export function productGrid(cards, { eagerCount = 4 } = {}) {

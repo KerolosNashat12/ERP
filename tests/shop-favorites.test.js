@@ -218,12 +218,31 @@ test('storefront favourites and the best-sellers flag', async (t) => {
          * on purpose — this fixture is not discounted, and a card that is not
          * on sale must not carry an old price at all, or a template could
          * strike through a number equal to the one beside it.
+         *
+         * The storefront redesign added three more, and they are the reason
+         * this list is written out by hand rather than sampled: a card can now
+         * be added to a basket from the shelf, and a basket line is a VARIANT.
+         *
+         *   variant_count   how many there are — the card asks this before it
+         *                   offers anything, so a product with two sizes sends
+         *                   the shopper to its page instead of guessing.
+         *   variant_id      the one to add, and NULL unless there is exactly
+         *                   one. Not a secret: it is already on the product
+         *                   page and in every basket line.
+         *   tax_rate        what the customer is charged, which they see at
+         *                   checkout either way.
+         *
+         * None of them is a stock number and none is a cost — the loop below
+         * is what actually guards that, and it is unchanged.
          */
         assert.deepEqual(Object.keys(card).sort(), [
           'availability', 'brand_id', 'brand_name_ar', 'brand_name_en', 'category_id',
           'discount_percent', 'gender', 'id', 'image_id', 'name_ar', 'name_en',
-          'on_sale', 'price_from', 'price_to',
+          'on_sale', 'price_from', 'price_to', 'tax_rate', 'variant_count', 'variant_id',
         ]);
+        // And the new field means what it says on a single-variant fixture.
+        assert.equal(card.variant_count, 1);
+        assert.ok(Number.isInteger(card.variant_id), 'a one-variant card carries the variant to add');
         assert.equal(card.on_sale, false);
         assert.equal(card.gender, 'unisex');
         assert.equal(card.availability, 'in_stock');

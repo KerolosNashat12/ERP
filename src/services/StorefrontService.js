@@ -226,6 +226,23 @@ const isTrue = (value) => ['1', 'true', 'on', 'yes'].includes(String(value ?? ''
  * variants are priced differently discounts them all at the same rate anyway,
  * so the badge is true of every one of them.
  */
+/**
+ * The one-tap half of a card: the variant to add, or nothing.
+ *
+ * Deliberately not `single_variant_id` verbatim. A product with three variants
+ * still has a first one, and sending it under a name like `variant_id` is how a
+ * shopper ends up with the 30ml in their basket because they tapped a card for
+ * a bottle that also comes in 100ml. The id only survives the count check.
+ */
+function cardVariant(row) {
+  const count = Number(row.variant_count || 0);
+  return {
+    variant_count: count,
+    variant_id: count === 1 ? Number(row.single_variant_id) || null : null,
+    tax_rate: Number(row.tax_rate || 0),
+  };
+}
+
 function cardPricing(row) {
   const from = offerPrice(row.price_from, row);
   const to = offerPrice(row.price_to, row);
@@ -329,7 +346,32 @@ const CARD_COLUMNS = `
       WHERE ip.id = p.primary_image_id AND ip.product_id = p.id),
     (SELECT i2.id FROM product_images i2
       WHERE i2.product_id = p.id ORDER BY i2.display_order, i2.id LIMIT 1)
-  ) AS image_id
+  ) AS image_id,
+  /*
+   * ENOUGH TO PUT THIS CARD IN A BASKET, WHEN THERE IS ONLY ONE THING TO PUT.
+   *
+   * A card carried a price range and no variant, which is correct for drawing
+   * a card and useless for the "add to cart" the design puts on one: a basket
+   * line is a VARIANT, and a product with three sizes has no single answer.
+   *
+   * So the question is asked here rather than guessed at in the browser. A
+   * product with exactly one active variant sends that variant's id and its
+   * tax rate, and a card can add it in one tap. A product with two or more
+   * sends variant_count above one and no id at all - the card then takes the
+   * shopper to the page where the choice actually exists, which is the honest
+   * behaviour and the one the reference design has too the moment a product
+   * has options.
+   *
+   * variant_id is NULL rather than absent for a multi-variant product, so a
+   * client can tell "there is no single variant" from "this field is missing
+   * because the server is old".
+   */
+  (SELECT COUNT(*) FROM product_variants vc
+    WHERE vc.product_id = p.id AND vc.is_active = 1) AS variant_count,
+  (SELECT vs.id FROM product_variants vs
+    WHERE vs.product_id = p.id AND vs.is_active = 1
+    LIMIT 2) AS single_variant_id,
+  p.tax_rate AS tax_rate
 `;
 
 const CARD_FROM = `
@@ -1189,6 +1231,9 @@ export class StorefrontService {
       brand_name_ar: row.brand_name_ar,
       category_id: row.category_id,
       ...cardPricing(row),
+      // What it takes to add this card to a basket in one tap, when the
+      // product has exactly one thing to add. See cardVariant().
+      ...cardVariant(row),
       gender: row.gender || 'unisex',
       image_id: row.image_id,
       availability: rollUp(byProduct.get(row.id) || []),
