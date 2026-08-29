@@ -14,6 +14,9 @@ import { routePath, slugFor, routeSegments } from '../../../shared/shopUrls.js';
 import { brandMark, shopName, tagline, about, searchPlaceholder } from '../core/branding.js';
 import * as cart from '../core/cart.js';
 import * as favorites from '../core/favorites.js';
+import { api, imageUrl } from '../core/api.js';
+import { money } from '../core/format.js';
+import { defaultProductImage } from './placeholders.js';
 
 let cartCountNode = null;
 let favCountNode = null;
@@ -77,10 +80,105 @@ function searchForm() {
   });
   searchInput = input;
 
+  /*
+   * The suggestion list, as a sibling of the input inside the form.
+   *
+   * A shopper on a phone types three letters and wants the thing, not a
+   * results page they then have to read. So: the picture, the name and the
+   * price, and a tap goes straight to the product. Submitting the form still
+   * does what it always did — the full search page — because a shopper who
+   * wants to browse everything matching a word should get to.
+   */
+  const menu = el('div.search-menu', { hidden: true, role: 'listbox' });
+  let picks = [];
+  let active = -1;
+  let token = 0;
+
+  const close = () => { menu.hidden = true; picks = []; active = -1; };
+
+  const open = (product) => {
+    close();
+    input.blur();
+    navigate(routePath('product', { id: product.id, slug: slugFor(product) }));
+  };
+
+  const draw = (result) => {
+    picks = result.rows || [];
+    if (!picks.length) { close(); return; }
+    /*
+     * `.filter(Boolean)` is load-bearing. `replaceChildren` is not `el()` — it
+     * does not skip a null child, it stringifies it, and the menu rendered the
+     * word "null" above the first product on every search that was not a typo.
+     */
+    menu.replaceChildren(...[
+      /*
+       * Said out loud, and only when it is worth saying. A shopper who
+       * mistyped a brand name should be told that is what happened — silently
+       * showing them something they did not type reads as a broken shop.
+       */
+      result.tier === 'typo' ? el('p.search-note', t('searchDidYouMean')) : null,
+      ...picks.map((product, index) => el('button.search-item', {
+        type: 'button',
+        role: 'option',
+        // `mousedown`, not `click`: the input blurs first on a click, the blur
+        // handler closes the menu, and the click lands on nothing.
+        onMouseDown: (event) => { event.preventDefault(); open(product); },
+        onFocus: () => { active = index; },
+      },
+      productThumb(product),
+      el('span.search-item-name', pick(product, 'name')),
+      product.price_from != null
+        ? el('span.search-item-price', money(product.price_from))
+        : null)),
+    ].filter(Boolean));
+    menu.hidden = false;
+    active = -1;
+  };
+
+  let timer = null;
+  input.addEventListener('input', () => {
+    clearTimeout(timer);
+    const term = input.value.trim();
+    if (term.length < 2) { close(); return; }
+    timer = setTimeout(async () => {
+      const mine = ++token;
+      try {
+        const result = await api.suggest(term);
+        // A slower earlier request must not overwrite a newer answer.
+        if (mine === token && document.activeElement === input) draw(result);
+      } catch {
+        close();
+      }
+    }, 200);
+  });
+
+  input.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') { close(); return; }
+    if (menu.hidden || !picks.length) return;
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault();
+      active += event.key === 'ArrowDown' ? 1 : -1;
+      if (active < 0) active = picks.length - 1;
+      if (active >= picks.length) active = 0;
+      menu.querySelectorAll('.search-item').forEach((node, index) => {
+        node.classList.toggle('is-active', index === active);
+      });
+      return;
+    }
+    if (event.key === 'Enter' && active >= 0) {
+      // Only when a row is highlighted. Otherwise Enter submits the form and
+      // the shopper gets the full results page, which is what they asked for.
+      event.preventDefault();
+      open(picks[active]);
+    }
+  });
+  input.addEventListener('blur', () => setTimeout(close, 140));
+
   return el('form.search', {
     role: 'search',
     onSubmit: (event) => {
       event.preventDefault();
+      close();
       const term = input.value.trim();
       // An empty search is a request to see everything, not an error.
       navigate(term ? `search?q=${encodeURIComponent(term)}` : 'products');
@@ -88,7 +186,17 @@ function searchForm() {
     },
   },
   el('button.search-go', { type: 'submit', 'aria-label': t('search') }, icon(ICONS.search, { size: 18 })),
-  input);
+  input,
+  menu);
+}
+
+/** The little square beside a suggestion — the photo, or the drawn mark. */
+function productThumb(product) {
+  const src = imageUrl(product.image_id);
+  if (!src) return el('span.search-item-thumb', defaultProductImage(pick(product, 'name')));
+  return el('span.search-item-thumb', el('img', {
+    src, alt: '', loading: 'lazy', decoding: 'async',
+  }));
 }
 
 function languageToggle() {

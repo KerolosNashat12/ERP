@@ -6,6 +6,7 @@ import { session, can, loadSession, clearSession, badges, refreshBadges, setTena
 import { defineRoutes, startRouter, navigate } from './core/router.js';
 import { startScanner, onScan, triggerScan } from './core/scanner.js';
 import { shopMark, applyShopIdentity } from './core/brand.js';
+import { attachSuggest } from './core/suggest.js';
 import { applyDeploymentBanner } from '../shared/deploymentBanner.js';
 
 import { renderLogin, promptPasswordChange } from './views/auth.js';
@@ -224,20 +225,84 @@ function buildShell() {
         h('div', { class: 'sub' }, buildLabel()))),
     h('nav', { class: 'nav', id: 'nav' }));
 
+  /*
+   * The topbar box does two jobs and must keep doing the first one perfectly.
+   *
+   * It is where a barcode is SCANNED: the scanner types a whole code in under
+   * 80ms and presses Enter, and `triggerScan` puts the item wherever the
+   * current screen wants it. That behaviour is untouched below.
+   *
+   * What is new is that a PERSON typing into the same box now gets suggestions
+   * from the whole shop — products, brands, shelves, suppliers, customers,
+   * invoices, purchase orders. The two cannot collide: `attachSuggest`
+   * debounces past the speed of a scan (so a scan never opens a menu, because
+   * the box is already cleared before the timer fires) and only takes Enter
+   * when a row is actually highlighted with the arrow keys. Every other Enter
+   * falls through to the handler below, exactly as before.
+   */
+  const scanInput = h('input', {
+    placeholder: t('scanPrompt'),
+    'aria-label': t('searchEverything'),
+    dataset: { scanTarget: 'true' },
+  });
   const scanBox = h('div', { class: 'topbar-scan' },
     h('span', { class: 'ico' }, '⌗'),
-    h('input', {
-      placeholder: t('scanPrompt'),
-      dataset: { scanTarget: 'true' },
-      onkeydown: (event) => {
-        if (event.key !== 'Enter') return;
-        event.preventDefault();
-        const value = event.target.value.trim();
-        if (!value) return;
-        event.target.value = '';
-        triggerScan(value);
-      },
-    }));
+    scanInput);
+
+  /*
+   * ORDER MATTERS HERE, and it is the whole reason the scan handler is added
+   * with `addEventListener` below instead of being an `onkeydown` on the
+   * element above.
+   *
+   * Both want Enter. The suggestion list wants it when a row is highlighted;
+   * the scanner wants it every other time. Listeners on one element fire in the
+   * order they were SET, so with `onkeydown` written into the element the scan
+   * always ran first — and pressing Enter on a highlighted suggestion both
+   * opened the product AND fired a barcode lookup for the half-typed word,
+   * which 404'd. Harmless-looking, and it would have been a failed scan sound
+   * and a red toast at the till.
+   *
+   * Attaching the suggestions FIRST and the scan SECOND lets the scan handler
+   * ask one honest question — did something already take this key? — using
+   * `defaultPrevented`, which the suggestion list sets only when it consumed
+   * Enter itself.
+   */
+  const suggestions = attachSuggest(scanInput, {
+    // Picking a suggestion empties the box: it is a jump, not a filter, and a
+    // term left behind would be re-scanned by the next Enter.
+    onPick: () => { scanInput.value = ''; },
+  });
+  scanInput.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter') return;
+    /*
+     * Asked of the list itself, NOT via `event.defaultPrevented`.
+     *
+     * The global scanner (core/scanner.js) listens on `document` in the capture
+     * phase, so by the time any listener on this box is reached the default is
+     * already prevented on every Enter — `defaultPrevented` would say "handled"
+     * for a scan as well as for a suggestion, and the box would stop clearing
+     * after a scan. `tookEvent` answers the narrower question that is actually
+     * being asked.
+     */
+    if (suggestions.tookEvent(event)) return;
+    // Read BEFORE preventing, or this is always true and the scanner's own
+    // emit can never be told apart from ours.
+    const alreadyScanned = event.defaultPrevented;
+    event.preventDefault();
+    const value = scanInput.value.trim();
+    if (!value) return;
+    scanInput.value = '';
+    /*
+     * ONE lookup per scan.
+     *
+     * A code typed at scanner speed has ALREADY been recognised and emitted by
+     * the global scanner — that is what prevented the default. Calling
+     * `triggerScan` again here sent a second identical lookup for every scan in
+     * the shop, which is what a network trace showed. So this only emits for
+     * input the scanner did not claim: a code somebody typed by hand.
+     */
+    if (!alreadyScanned) triggerScan(value);
+  });
 
   /**
    * The phone's sidebar: open it with the button, close it with ANYTHING.

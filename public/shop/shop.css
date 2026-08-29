@@ -1080,11 +1080,30 @@ html[lang="ar"] .hero-eyebrow { letter-spacing: .06em; text-transform: none; fon
   font-size: calc(var(--fs-display) * var(--hero-scale, 1));
   max-width: 16ch;
   display: -webkit-box;
-  -webkit-line-clamp: 2;
+  /*
+   * Two lines for a heading the shop typed as one sentence — the clamp is what
+   * stops a long one overflowing a hero box whose height is fixed.
+   *
+   * But a shop can now AUTHOR its line breaks, and when it has, the clamp must
+   * be what it wrote: «Accessories / That Define / Your Essence» came back as
+   * "Accessories / That Defin…" with the third line gone, which looks like a
+   * broken banner rather than a limit. `headingLines()` sets `--hero-lines`
+   * from the count it actually rendered, capped at three so six typed lines
+   * still cannot push the buttons out of the box.
+   */
+  -webkit-line-clamp: var(--hero-lines, 2);
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
 html[lang="ar"] .hero-title { max-width: 20ch; }
+/*
+ * A shop that chose its own breaks has also chosen its own measure, so the
+ * 16ch that exists to force a sensible wrap gets out of the way — otherwise a
+ * line like "Explore the Collection" wraps anyway and eats one of the three
+ * lines it was given.
+ */
+.hero-title.is-lined { max-width: 24ch; }
+html[lang="ar"] .hero-title.is-lined { max-width: 28ch; }
 /* On the accent fill the body copy is the same ink as the heading, one step
    quieter — there is no second ink to reach for on a coloured ground, and a
    grey would be the one shade that looks like a mistake there. */
@@ -3743,6 +3762,21 @@ html[data-paper="night"] .hero-title {
   line-height: 1.06;
   letter-spacing: -0.01em;
 }
+/*
+ * ARABIC NEEDS THE ROOM. 1.06 is a Latin display setting — it works because a
+ * capital reaches the cap height and stops. Arabic puts marks ABOVE the letter:
+ * «تُعرّف» carries a damma and a shadda over the same word, and at 1.06 inside a
+ * clamped, `overflow: hidden` box the tops of them were sliced off. It read as
+ * a rendering fault rather than as tight leading.
+ *
+ * `-.01em` of tracking goes too: letter-spacing in Arabic pulls apart the
+ * joins between letters, which is not tightening, it is breaking the word.
+ */
+html[lang="ar"][data-paper="night"] .hero-title,
+html[lang="ar"] .hero-title {
+  line-height: 1.45;
+  letter-spacing: normal;
+}
 html[data-paper="night"] .hero-body {
   color: var(--ink-2);
   max-inline-size: 44ch;
@@ -4156,8 +4190,230 @@ html[data-paper="night"] .brand-logo-img {
  * that leans, which is the pattern the design uses and degrades to nothing on
  * a one-line heading.
  */
+/*
+ * BOTH skins, not only the night one.
+ *
+ * The rule used to be scoped to `[data-paper="night"]`, and it was also dead:
+ * nothing produced an `<em>`. `headingLines()` in views/home.js now splits the
+ * shop's banner heading on its line breaks and leans the SECOND line, so the
+ * rule finally has something to style — and a shop on the classic template
+ * that writes a three-line heading deserves the same editorial line as one on
+ * luxe. The weight override stays night-only, because that is where the
+ * display serif is loaded.
+ */
+.hero-title .hero-line { display: block; }
+.hero-title em.hero-line,
+.hero-title i {
+  font-style: italic;
+}
+/*
+ * NOT IN ARABIC. The Arabic script has no italic, so `font-style: italic`
+ * makes the browser SYNTHESISE one by shearing the glyphs — Amiri ships no
+ * italic face, so that is exactly what was happening. A sheared Naskh is not
+ * emphasis, it is a font rendering badly, and it breaks the letter joins that
+ * carry the word.
+ *
+ * The emphasis still has to land, because the leaning middle line is most of
+ * what makes this headline read as an editorial. Arabic marks it the way
+ * Arabic actually does: with colour. The line takes the shop's own accent,
+ * which is the same distinction the Latin italic is drawing, in the register
+ * the script has for it.
+ */
+html[lang="ar"] .hero-title em.hero-line,
+html[lang="ar"] .hero-title i {
+  font-style: normal;
+  color: var(--accent);
+}
 html[data-paper="night"] .hero-title em,
 html[data-paper="night"] .hero-title i {
-  font-style: italic;
   font-weight: 400;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   SEARCH SUGGESTIONS
+
+   A shopper on a phone types three letters and wants the thing, not a results
+   page to read. So the header box drops a short list of real products —
+   picture, name, price — and a tap goes straight to one.
+
+   `.search` is already a flex row and is the positioning context; the menu is
+   its last child, absolutely positioned under it, so it follows the box on
+   every layout without a scroll listener. Both skins are covered: the tokens
+   below are the same ones the cards use, so the classic storefront gets a
+   white card on grey paper and the luxe one gets the near-black panel, with no
+   second set of rules and nothing to keep in step.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.search { position: relative; }
+
+.search-menu {
+  position: absolute;
+  inset-inline: 0;
+  top: calc(100% + var(--sp-2));
+  z-index: 70;
+  max-height: 70vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: 0 12px 34px rgba(var(--shadow-rgb), .14);
+  padding: var(--sp-2);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+/* Loses to `display: flex` above without this — the bug that leaves an empty
+   panel hanging under the header on every page of the shop. */
+.search-menu[hidden] { display: none; }
+
+.search-note {
+  margin: 0;
+  padding: var(--sp-3) var(--sp-4) var(--sp-2);
+  font-size: var(--fs-xs);
+  color: var(--ink-3);
+}
+
+.search-item {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  width: 100%;
+  padding: var(--sp-2) var(--sp-3);
+  border: 0;
+  background: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  text-align: start;
+  font: inherit;
+  color: inherit;
+  min-height: var(--tap);
+}
+.search-item.is-active { background: var(--bg-2); }
+
+.search-item-thumb {
+  flex: none;
+  width: 42px;
+  height: 42px;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--photo-well);
+  display: grid;
+  place-items: center;
+}
+.search-item-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+.search-item-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-sm);
+}
+.search-item-price { flex: none; color: var(--ink-2); font-size: var(--fs-sm); }
+
+@media (hover: hover) {
+  .search-item:hover { background: var(--bg-2); }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   THE FIGURES UNDER THE BANNER
+
+   «387+ PRODUCTS · 45+ BRANDS · Free SHIPPING» — a thin band directly under
+   the hero: three facts, separated by vertical hairlines, each a figure over a
+   tracked capital label.
+
+   Written for BOTH templates from the shared tokens, so the classic shop gets
+   the same band on its own paper rather than a second set of rules that would
+   drift. The luxe overrides further down do only what that skin actually
+   changes: the display serif on the figure, and a heavier top hairline where
+   the band meets a full-bleed hero.
+
+   Every number in it is counted from the shop's own catalogue — see `#stats`
+   in StorefrontService and `statsStrip` in views/home.js. This sheet only
+   decides how a fact looks, never what it says.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.stats-strip {
+  border-block: 1px solid var(--line);
+  margin-block: var(--sp-6) 0;
+  background: var(--surface);
+}
+
+.stats-row {
+  display: grid;
+  /* Three across on a desktop, and folding to two then one on a phone rather
+     than shrinking three columns until the labels wrap mid-word. */
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+}
+
+.stat-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-1);
+  padding-block: var(--sp-6);
+  padding-inline: var(--sp-4);
+  /* The hairline is on the START edge and removed from the first cell, so it
+     falls BETWEEN cells — and being logical, it is on the right in Arabic. */
+  border-inline-start: 1px solid var(--line);
+  text-align: center;
+}
+.stat-cell:first-child { border-inline-start: 0; }
+/*
+ * When the grid folds, the cell that starts a new row must not keep a leading
+ * hairline hanging off the edge of the band. There is no CSS selector for
+ * "first in its grid row", so the break points are named — the same widths the
+ * `minmax(200px, …)` above folds at.
+ */
+@media (max-width: 660px) {
+  .stat-cell:nth-child(odd) { border-inline-start: 0; }
+}
+@media (max-width: 430px) {
+  .stat-cell { border-inline-start: 0; }
+  .stat-cell + .stat-cell { border-block-start: 1px solid var(--line); }
+}
+
+.stat-value {
+  font-family: var(--font-display);
+  /* `--fs-title` and not `--fs-xl`: the figure IS the band. At 18px beside a
+     tracked capital label it reads as a caption; the design sets it as a
+     heading, which is also why it takes the display serif. */
+  font-size: var(--fs-title);
+  line-height: 1.1;
+  color: var(--accent-strong);
+  /* Figures are LTR content wherever they appear — a bidi-reordered "1,500"
+     beside an Arabic label is the bug the sales chart already had once. */
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+
+.stat-label {
+  font-size: var(--fs-xs);
+  letter-spacing: .18em;
+  /*
+   * `--ink-2`, not `--ink-3`. The muted ink is built for larger secondary text
+   * and lands at 3.5:1 here — under the 4.5:1 floor that SMALL text is held
+   * to, and this label is 12px tracked capitals, which is about as small as
+   * type on this site gets. The band is a claim the shop is making; a claim
+   * nobody can read is not one worth making.
+   *
+   * The hierarchy the design wants survives anyway: the figure is the display
+   * serif at heading size in the accent, the label is small grey capitals. One
+   * step of grey is not what separates them.
+   */
+  color: var(--ink-2);
+}
+/* Tracked capitals are the design's register in Latin. Arabic has no case and
+   letter-spacing breaks its joins, so it keeps its own natural setting. */
+html:not([lang="ar"]) .stat-label { text-transform: uppercase; }
+html[lang="ar"] .stat-label { letter-spacing: normal; }
+
+/* --- the night skin ------------------------------------------------------ */
+html[data-paper="night"] .stats-strip {
+  background: var(--bg-2);
+  margin-block-start: 0;
+}
+html[data-paper="night"] .stat-value { color: var(--accent); }
+html[data-paper="night"] .stat-cell { padding-block: var(--sp-7); }

@@ -491,12 +491,42 @@ test('the scanner endpoint is untouched and still resolves a code exactly', asyn
 });
 
 test("LIKE's own wildcards are not a user's wildcards", async () => {
-  // A typed '%' is a character in a code, not "match everything". Before the
-  // shared predicate escaped it, this returned the entire catalogue.
+  /*
+   * A typed '%' is a character in a code, not "match everything". Before the
+   * shared predicate escaped it, this returned the entire catalogue.
+   */
   const payload = await api('/api/products?search=%25');
-  assert.equal(payload.total, 0);
-  const underscore = await api('/api/products?search=CH_');
-  assert.equal(underscore.total, 0, '"CH_" must not behave like "CH" + any character');
+  assert.equal(payload.total, 0, 'a typed % matched something');
+  const many = await api('/api/products?search=%25%25%25');
+  assert.equal(many.total, 0, 'a run of wildcards matched something');
+
+  /*
+   * `CH_` USED to return nothing, and this test asserted that. It now returns
+   * exactly what `CH` returns, and that is a deliberate change rather than a
+   * regression — so it is worth saying why, because the line above looks like
+   * the safety property and is not.
+   *
+   * The dangerous behaviour is a typed character matching things that do not
+   * contain it: `_` meaning "any character", `%` meaning "everything". That is
+   * still prevented — both assertions above, and `escaped()` in the search
+   * service, and the ESCAPE clause on every LIKE.
+   *
+   * What changed is that search now compares NORMALISED text: separators are
+   * removed from a token so that `LX-08`, `LX 08` and `lx08` are one code and a
+   * person reading it off a label does not have to reproduce its punctuation.
+   * `_` is a separator like `-`, so `CH_` reduces to `ch`. That is narrower
+   * than a wildcard (it cannot match a row without `ch` in it) and it is what
+   * makes typing a code with the wrong dash work at all.
+   *
+   * The property that still has to hold, and is asserted here: a term with
+   * punctuation in it matches NO MORE than the same term without it.
+   */
+  const withPunctuation = await api('/api/products?search=CH_');
+  const without = await api('/api/products?search=CH');
+  assert.equal(withPunctuation.total, without.total,
+    '"CH_" and "CH" should be the same search');
+  assert.ok(withPunctuation.total < Object.keys(CATALOGUE).length,
+    'a term with an underscore in it pulled back the whole catalogue');
 });
 
 test('a one-character term still searches document numbers and nothing wilder', async () => {

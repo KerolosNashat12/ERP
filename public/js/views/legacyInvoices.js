@@ -36,6 +36,7 @@ import { t, pick } from '../core/i18n.js';
 import { money, number, date } from '../core/format.js';
 import { can, lookup } from '../core/store.js';
 import { proofThumbs, proofPicker, proofUrl, openProof } from '../core/proof.js';
+import { preparePhoto } from '../core/photo.js';
 
 const METHODS = ['cash', 'card', 'transfer', 'wallet', 'cheque'];
 const STATUSES = ['unknown', 'unpaid', 'partial', 'paid'];
@@ -85,9 +86,30 @@ function photoPagePicker() {
   const host = h('div', { class: 'stack' });
   const counter = h('span', { class: 'muted small' });
 
-  const addPage = () => {
-    pickers.push(proofPicker({ hint: t('invoicePhotosHint'), alt: t('invoicePhotos') }));
+  /**
+   * One more page. `file` fills it immediately — that is how several
+   * photographs chosen from the gallery at once become several pages without
+   * the person going back through the picker for each of them.
+   */
+  const addPage = (file = null) => {
+    const picker = proofPicker({
+      hint: t('invoicePhotosHint'),
+      alt: t('invoicePhotos'),
+      // A paper invoice is several pages and they are all in the gallery
+      // together, so the sheet lets him select them in one go.
+      multiple: true,
+      onExtra: async (extras) => {
+        for (const extra of extras) await addPage(extra);
+      },
+    });
+    pickers.push(picker);
     render();
+    if (file) {
+      // Kicked off after the node is on the page, so the "preparing…" line is
+      // visible while a large photograph is being resized.
+      picker.accept(file).then(render);
+    }
+    return picker;
   };
 
   function render() {
@@ -459,7 +481,35 @@ export async function legacyInvoicesView(root, route) {
     const pickerHost = h('div');
 
     const addPage = () => {
-      const picker = proofPicker({ hint: t('invoicePhotosHint'), alt: t('invoicePhotos') });
+      /*
+       * Pages chosen from the gallery beyond the first. They are prepared the
+       * moment they are picked and held here until Save, so the person sees a
+       * count that matches what they selected rather than discovering
+       * afterwards that only one of the four went up.
+       */
+      const extras = [];
+      const extraNote = h('span', { class: 'muted small' });
+
+      const picker = proofPicker({
+        hint: t('invoicePhotosHint'),
+        alt: t('invoicePhotos'),
+        multiple: true,
+        onExtra: async (files) => {
+          for (const file of files) {
+            // eslint-disable-next-line no-await-in-loop -- one canvas at a time
+            // on a phone; four at once is four full-size decodes in memory.
+            const prepared = await preparePhoto(file).catch((error) => {
+              toast(error.message, 'error', 6000);
+              return null;
+            });
+            if (prepared) extras.push(prepared);
+          }
+          extraNote.textContent = extras.length
+            ? photoCountLabel(extras.length + 1)
+            : '';
+        },
+      });
+
       mount(pickerHost, h('div', { class: 'stack' },
         picker.node,
         h('div', { class: 'row-actions' },
@@ -471,13 +521,19 @@ export async function legacyInvoicesView(root, route) {
               if (!photo) { toast(t('invoicePhotoNeeded'), 'warn'); return; }
               event.currentTarget.disabled = true;
               try {
-                await api.post(`/api/attachments/legacy_invoice/${invoice.id}`, photo);
+                // One at a time: each is its own attachment, and a shop's
+                // connection does not thank anybody for four parallel uploads.
+                for (const page of [photo, ...extras]) {
+                  // eslint-disable-next-line no-await-in-loop
+                  await api.post(`/api/attachments/legacy_invoice/${invoice.id}`, page);
+                }
                 toast(t('invoicePhotoAdded'));
                 mount(pickerHost);
                 refresh();
               } catch (error) { toastError(error); event.currentTarget.disabled = false; }
             },
           }, t('save')),
+          extraNote,
           h('button', { class: 'btn sm ghost', onclick: () => mount(pickerHost) }, t('cancel')))));
     };
 

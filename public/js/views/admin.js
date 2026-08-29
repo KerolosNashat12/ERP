@@ -685,13 +685,40 @@ export async function settingsView(root, route) {
   };
 
   const bannerForm = buildForm([
-    { name: 'web.banner_heading_en', label: t('bannerHeadingEn'), disabled: !editable },
-    { name: 'web.banner_heading_ar', label: t('bannerHeadingAr'), disabled: !editable },
+    /*
+     * Textareas, not single-line inputs, and that is the whole feature.
+     *
+     * The storefront leans the SECOND line of the heading — «Accessories /
+     * *That Define* / Your Essence» — which is most of why the banner reads as
+     * an editorial. A shop cannot type a line break into an `<input>`, so the
+     * styling for it existed for months with nothing able to produce it.
+     */
+    {
+      name: 'web.banner_heading_en', label: t('bannerHeadingEn'), type: 'textarea', rows: 3,
+      hint: t('bannerHeadingLinesHint'), disabled: !editable,
+    },
+    {
+      name: 'web.banner_heading_ar', label: t('bannerHeadingAr'), type: 'textarea', rows: 3,
+      hint: t('bannerHeadingLinesHint'), disabled: !editable,
+    },
     { name: 'web.banner_text_en', label: t('bannerTextEn'), type: 'textarea', span: 3, disabled: !editable },
     { name: 'web.banner_text_ar', label: t('bannerTextAr'), type: 'textarea', span: 3, disabled: !editable },
     { name: 'web.banner_cta_label_en', label: t('bannerCtaLabelEn'), disabled: !editable },
     { name: 'web.banner_cta_label_ar', label: t('bannerCtaLabelAr'), disabled: !editable },
     { name: 'web.banner_cta_link', label: t('bannerCtaLink'), hint: t('bannerCtaLinkHint'), disabled: !editable },
+    // The second, quieter button beside the first — "our story" next to
+    // "explore the collection". Leave all three empty for one button.
+    { name: 'web.banner_cta2_label_en', label: t('bannerCta2LabelEn'), disabled: !editable },
+    { name: 'web.banner_cta2_label_ar', label: t('bannerCta2LabelAr'), disabled: !editable },
+    { name: 'web.banner_cta2_link', label: t('bannerCta2Link'), hint: t('bannerCtaLinkHint'), disabled: !editable },
+    {
+      name: 'web.stats_enabled',
+      label: t('statsEnabled'),
+      type: 'select',
+      hint: t('statsEnabledHint'),
+      disabled: !editable,
+      options: [{ value: '0', label: t('no') }, { value: '1', label: t('yes') }],
+    },
     {
       name: 'web.banner_overlay', label: t('bannerOverlay'), type: 'number', min: 0, max: 80,
       hint: t('bannerOverlayHint'), disabled: !editable,
@@ -807,6 +834,7 @@ export async function settingsView(root, route) {
   const BANNER_LIVE_FIELDS = [
     'web.banner_heading_en', 'web.banner_heading_ar', 'web.banner_text_en', 'web.banner_text_ar',
     'web.banner_cta_label_en', 'web.banner_cta_label_ar', 'web.banner_overlay',
+    'web.banner_cta2_label_en', 'web.banner_cta2_label_ar',
     'web.banner_align', 'web.banner_valign', 'web.banner_text_size', 'web.banner_text_color', 'web.banner_box_width',
   ];
   BANNER_LIVE_FIELDS.forEach((name) => {

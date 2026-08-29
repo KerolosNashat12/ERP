@@ -170,6 +170,16 @@ export const api = {
     ? request('/api/shop/products', { query: { ids: ids.join(',') } })
     : Promise.resolve({ rows: [], total: 0, page: 1, pageSize: 0, pages: 1 })),
   product: (id) => request(`/api/shop/products/${encodeURIComponent(id)}`),
+  /**
+   * Suggestions as a shopper types.
+   *
+   * Its own endpoint rather than a small `products()` call, because the two
+   * answer different questions. `products()` returns a PAGE of a filtered
+   * listing; this returns the handful of things a half-typed word could mean,
+   * ranked — and it understands «أحمر» for «احمر», `tobacco` for «توباكو» and
+   * `tabaco` for either. See src/shared/searchText.js.
+   */
+  suggest: (q) => request('/api/shop/suggest', { query: { q } }),
   placeOrder: (body) => request('/api/shop/orders', { method: 'POST', body }),
   trackOrder: (orderNo, phone) => request(`/api/shop/orders/${encodeURIComponent(orderNo)}`, { query: { phone } }),
 };

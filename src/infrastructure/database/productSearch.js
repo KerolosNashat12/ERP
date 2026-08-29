@@ -34,11 +34,14 @@
  * searching `AB_1` would also find `AB-1`, `AB91` and `ABX1`. So the term is
  * escaped and every LIKE declares the escape character.
  */
+import { candidates } from '../../../public/shared/searchText.js';
+
 const ESC = '\\';
 const LIKE = `LIKE ? ESCAPE '${ESC}'`;
 
 /** Columns of a row that carries a variant's denormalised product details. */
 export const VARIANT_DETAIL_ROW = Object.freeze({
+  productId: 'product_id',
   sku: 'sku',
   barcode: 'barcode',
   label: 'variant_label',
@@ -49,6 +52,7 @@ export const VARIANT_DETAIL_ROW = Object.freeze({
 
 /** Columns of a bare `product_variants` row (no product columns of its own). */
 export const VARIANT_ROW = Object.freeze({
+  productId: 'product_id',
   sku: 'sku',
   barcode: 'barcode',
   label: 'variant_label',
@@ -56,6 +60,7 @@ export const VARIANT_ROW = Object.freeze({
 
 /** Columns of a `products` row. */
 export const PRODUCT_ROW = Object.freeze({
+  productId: 'id',
   code: 'sku_prefix',
   nameEn: 'name_en',
   nameAr: 'name_ar',
@@ -78,6 +83,73 @@ const qualify = (alias, column) => (alias ? `${alias}.${column}` : column);
 const searchColumns = (shape) => [shape.sku, shape.barcode, shape.code, shape.nameEn,
   shape.nameAr, shape.label].filter(Boolean);
 
+/* ═══════════════════════ the normalised index, and what it is allowed to do ═
+ *
+ * `product_search` holds every token a product can be found by, reduced by
+ * `shared/searchText.js` — hamza folded, tashkeel stripped, case and
+ * separators gone, Arabic-Indic digits turned Western. SQLite can do none of
+ * that itself, which is why the reduction happens on save and is stored.
+ *
+ * ── Only the two CONFIDENT tiers are wired in here, and that is deliberate ──
+ * The engine offers three readings of a term: the term itself, the term with
+ * the keyboard layout swapped, and the term as a consonant skeleton (which is
+ * how `tobacco` reaches «توباكو»). This module feeds the LIST screens — the
+ * products grid, the stock page, the document lists — and a list shows
+ * everything that matched, unranked and unlimited. Precision is what it needs.
+ *
+ * So the skeleton tier is NOT here. It is a recall tier: it drops vowels, so
+ * `bag` and `big` share a skeleton, and adding it to a grid would answer a
+ * three-letter search with half a catalogue and no way to see why. It lives in
+ * the SUGGEST endpoint instead, where results are ranked, capped at a handful,
+ * and each one can say what it matched on.
+ *
+ * The layout tier IS here, because it is not a guess: `u'v` is «عطر» typed on
+ * an English keyboard, and no product is called `u'v`.
+ */
+
+/**
+ * The index half of a match, as an EXISTS against the row's product.
+ *
+ * Returns null when the term reduces to nothing (a search for punctuation) or
+ * when the caller's shape does not know where its product id is — in both
+ * cases the plain column matching above still stands on its own, so the search
+ * is narrower rather than broken.
+ */
+export function indexMatch(term, productIdExpr) {
+  if (!productIdExpr) return null;
+  const tiers = candidates(term)
+    .filter((c) => (c.kind === 'exact' || c.kind === 'layout') && c.tokens.length);
+  if (!tiers.length) return null;
+  const parts = [];
+  const params = [];
+  for (const tier of tiers) {
+    /*
+     * One LIKE per WORD, ANDed — a row must carry all of them. A term of
+     * several words keyed as one string matches nothing, because the index
+     * deliberately keeps words apart; this is where "tobacco vanille" becomes
+     * two conditions instead of one impossible one.
+     *
+     * The tiers themselves are ORed: any reading may satisfy the row.
+     */
+    parts.push(`(${tier.tokens.map(() => `ps.search_key ${LIKE}`).join(' AND ')})`);
+    for (const token of tier.tokens) {
+      params.push(`%${token.replace(/[\\%_]/g, (c) => ESC + c)}%`);
+    }
+  }
+  return {
+    sql: `EXISTS (SELECT 1 FROM product_search ps
+            WHERE ps.product_id = ${productIdExpr} AND (${parts.join(' OR ')}))`,
+    params,
+  };
+}
+
+/** `{sql, params}` for `a OR b`, skipping whichever is absent. */
+const either = (a, b) => {
+  if (!a) return b;
+  if (!b) return a;
+  return { sql: `(${a.sql} OR ${b.sql})`, params: [...a.params, ...b.params] };
+};
+
 /**
  * The rule against a row that already has the columns — the POS/stock case.
  * @returns {{sql: string, params: any[]}}
@@ -85,10 +157,19 @@ const searchColumns = (shape) => [shape.sku, shape.barcode, shape.code, shape.na
 export function rowMatch(term, alias = '', shape = VARIANT_DETAIL_ROW) {
   const columns = searchColumns(shape);
   const like = likeParam(term);
-  return {
+  const literal = {
     sql: `(${columns.map((c) => `${qualify(alias, c)} ${LIKE}`).join(' OR ')})`,
     params: columns.map(() => like),
   };
+  /*
+   * The literal columns OR the normalised index. Both, not one: the columns
+   * are what a scanned barcode and a pasted SKU match on exactly, and the
+   * index is what «أحمر» matches «احمر» through. Dropping either loses a case
+   * the other cannot cover.
+   */
+  return either(literal, shape.productId
+    ? indexMatch(term, qualify(alias, shape.productId))
+    : null);
 }
 
 /**
@@ -122,8 +203,17 @@ export function rankExpression(exact) {
  * that owns it — in SQL, so the 5,000th product costs the same as the first.
  */
 export function productMatch(term, alias = 'p') {
+  /*
+   * `own` already carries the index tier, because PRODUCT_ROW knows its own id
+   * — so the product's normalised text is searched here and the correlated
+   * subquery below stays about the literal columns of its variants.
+   *
+   * The child shape is stripped of `productId` for exactly that reason: left
+   * on, every product row would run a second, identical EXISTS against the
+   * same index row for no additional matches.
+   */
   const own = rowMatch(term, alias, PRODUCT_ROW);
-  const child = rowMatch(term, 'psv', VARIANT_ROW);
+  const child = rowMatch(term, 'psv', { ...VARIANT_ROW, productId: null });
   return {
     sql: `(${own.sql} OR EXISTS (SELECT 1 FROM product_variants psv
               WHERE psv.product_id = ${alias}.id AND ${child.sql}))`,
@@ -179,7 +269,9 @@ export function lineExact(term, { alias, table, key }) {
 
 /** The variant ids a term matches, as a subquery. */
 export function matchingVariantIds(term) {
-  const onVariant = rowMatch(term, 'psv', VARIANT_ROW);
+  // Same reasoning as productMatch: the product side carries the index tier,
+  // the variant side stays literal so the index is not consulted twice.
+  const onVariant = rowMatch(term, 'psv', { ...VARIANT_ROW, productId: null });
   const onProduct = rowMatch(term, 'psp', PRODUCT_ROW);
   return {
     sql: `SELECT psv.id FROM product_variants psv

@@ -13,6 +13,7 @@ import {
   DEFAULT_GENDER, isGender, isDiscountType, suggestGender, offerPrice,
 } from '../shared/pricing.js';
 import auditService from './AuditService.js';
+import { reindexProduct, removeFromIndex } from './searchIndex.js';
 // The filename → code rule, shared with the browser that shows the result.
 // One rule, imported at both ends: a screen that ticked a file the upload
 // then filed against nothing would be worse than no screen. See that module.
@@ -326,6 +327,13 @@ export class CatalogService {
         if (!Object.keys(diff).length) continue;
 
         await this.products.update(id, diff);
+        /*
+         * A bulk edit can move products between brands and categories, and both
+         * names are in the index. Without this, changing fifty products' brand
+         * leaves fifty rows findable by the brand they used to be under and not
+         * by the one they are.
+         */
+        await reindexProduct(id);
         changed += 1;
         touched.push(before.name_en);
         await this.audit.record({
@@ -507,6 +515,18 @@ export class CatalogService {
       await this.#syncAttributes(product.id, payload.attribute_ids || []);
       await this.#syncVariants(product, payload.variants || [], payload.attribute_ids || []);
 
+      /*
+       * AFTER the variants, because the index carries their SKUs, barcodes and
+       * labels — indexing before them would store the previous set and a newly
+       * added SKU would not be findable until the next save.
+       *
+       * Inside the transaction, so a product and the text it is found by are
+       * committed together. It cannot throw (see searchIndex.js): a product
+       * that saved correctly is not rolled back because its search text could
+       * not be rebuilt.
+       */
+      await reindexProduct(product.id);
+
       const after = await this.products.findAggregate(product.id);
       await this.audit.recordChange(context, {
         action: isUpdate ? 'UPDATE' : 'CREATE',
@@ -668,6 +688,14 @@ export class CatalogService {
       }
 
       await this.products.remove(productId);
+      /*
+       * The FK is `ON DELETE CASCADE` and `PRAGMA foreign_keys = ON` is set, so
+       * this is belt as well as braces — and worth having: a deleted product
+       * that stayed in the index would be offered as a suggestion, clicked, and
+       * open nothing. Cheap insurance against a delete path that reaches the
+       * row some other way.
+       */
+      await removeFromIndex(productId);
       await this.audit.recordChange(context, {
         action: 'DELETE', module: 'products', entityType: 'product', entityId: productId,
         entityLabel: product.name_en, before: product,

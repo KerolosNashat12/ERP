@@ -233,6 +233,10 @@ const SETTING_ENUMS = {
   'web.banner_valign': ['top', 'middle', 'bottom'],
   'web.banner_text_size': ['small', 'medium', 'large'],
   'web.banner_text_color': ['light', 'dark'],
+  // The figures band under the banner. Stored as the string a <select> sends;
+  // the storefront reads it through the same tolerant test it uses for every
+  // other on/off setting, so a hand-edited 'true' still works.
+  'web.stats_enabled': ['0', '1'],
   'shop.delivery_mode': ['flat', 'percent'],
 };
 

@@ -87,6 +87,14 @@ const dictionary = {
     quantity: 'Quantity', qty: 'Qty', price: 'Price', name: 'Name',
     code: 'Code', status: 'Status', date: 'Date', notes: 'Notes', active: 'Active',
     inactive: 'Inactive', loading: 'Loading…', noResults: 'Nothing to show yet',
+    // --- search suggestions. Only the readings a person did NOT knowingly ask
+    // for get a note: "it starts with what you typed" is noise, "your keyboard
+    // was on the wrong language" is the answer to why the box looked broken.
+    suggestLayoutNote: 'Reading this as if your keyboard was on the other language',
+    suggestScriptNote: 'Showing the same names written in the other alphabet',
+    suggestTypoNote: 'Nothing matched exactly — closest spellings',
+    suggestNothing: 'Nothing in the shop matches that',
+    searchEverything: 'Search products, invoices, suppliers…',
     // Stock sitting on a variant nobody sells any more. It is still the shop's
     // money, so it is counted and named rather than quietly left out.
     stoppedVariant: 'Stopped', activeVariant: 'On sale',
@@ -652,6 +660,9 @@ const dictionary = {
     // --- bulk photos. The hint carries a real example on purpose: a person
     // who has to guess the naming rule names the first twenty files wrong,
     // and not retyping is the entire point of the screen.
+    // Shown when several pictures were chosen for a control that holds one.
+    // Saying so beats keeping the first and dropping the rest in silence.
+    onePhotoOnlyHere: 'Only the first picture was kept — this one holds a single photo',
     photoBulkTitle: 'Bulk photos',
     photoBulkHint: 'Name each picture after the product code, then pick them all at once. '
       + 'LX08.jpg goes to product LX08; LX08-2.jpg and LX08-3.jpg are its second and third '
@@ -726,6 +737,18 @@ const dictionary = {
     bannerCtaLabelAr: 'Button label (Arabic)',
     bannerCtaLink: 'Button link',
     bannerCtaLinkHint: 'A path inside the storefront, e.g. "products" — no leading #/',
+    bannerCta2LabelEn: 'Second button label (English)',
+    bannerCta2LabelAr: 'Second button label (Arabic)',
+    bannerCta2Link: 'Second button link',
+    // The heading hint has to say this, or nobody discovers it: the italic
+    // middle line is the single detail that makes the banner read as editorial
+    // rather than as a heading, and it is invisible until somebody presses
+    // Enter in this box.
+    bannerHeadingLinesHint: 'Press Enter for a new line. The SECOND line is shown in italics — '
+      + 'e.g. "Accessories" / "That Define" / "Your Essence".',
+    statsEnabled: 'Show the figures under the banner',
+    statsEnabledHint: 'A thin band with how many products and brands the shop carries and what '
+      + 'delivery costs. All three are counted from your own catalogue — nothing is typed in.',
     bannerOverlay: 'Photo darkening',
     bannerOverlayHint: '0–80% — how much the photo is darkened behind the text',
     bannerPreviewLabel: 'Live preview',
@@ -1067,6 +1090,11 @@ const dictionary = {
     quantity: 'الكمية', qty: 'الكمية', price: 'السعر', name: 'الاسم',
     code: 'الكود', status: 'الحالة', date: 'التاريخ', notes: 'ملاحظات', active: 'مفعّل',
     inactive: 'غير مفعّل', loading: 'جارٍ التحميل…', noResults: 'لا توجد بيانات بعد',
+    suggestLayoutNote: 'بنقرا اللي كتبته كإن الكيبورد كان على اللغة التانية',
+    suggestScriptNote: 'بنعرض نفس الأسماء مكتوبة بالحروف التانية',
+    suggestTypoNote: 'مفيش نتيجة مطابقة بالظبط — دي أقرب الأسماء',
+    suggestNothing: 'مفيش حاجة في المحل بتطابق ده',
+    searchEverything: 'دوّر على منتج أو فاتورة أو مورد…',
     stoppedVariant: 'موقوف', activeVariant: 'للبيع',
     unitsInStock: 'القطع في المخزن', stockedLines: 'صنف بيه رصيد',
     discountKind: 'الخصم بـ', discountValue: 'قيمة الخصم',
@@ -1558,6 +1586,7 @@ const dictionary = {
     allVariants: 'كل المتغيرات',
     preparingPhoto: 'جارٍ تجهيز الصورة…',
     photoAdded: 'تمت إضافة الصورة',
+    onePhotoOnlyHere: 'اتحفظت أول صورة بس — المكان ده بياخد صورة واحدة',
     photoBulkTitle: 'صور بالجملة',
     photoBulkHint: 'سمّي كل صورة باسم كود المنتج، وبعدين اختارهم كلهم مرة واحدة. '
       + 'الملف LX08.jpg بيروح للمنتج LX08، و LX08-2.jpg و LX08-3.jpg بيبقوا الصورة التانية '
@@ -1635,6 +1664,14 @@ const dictionary = {
     bannerCtaLabelAr: 'نص الزر (عربي)',
     bannerCtaLink: 'رابط الزر',
     bannerCtaLinkHint: 'مسار داخل المتجر، مثل "products" — من غير # في الأول',
+    bannerCta2LabelEn: 'زر تاني — الاسم (إنجليزي)',
+    bannerCta2LabelAr: 'زر تاني — الاسم (عربي)',
+    bannerCta2Link: 'زر تاني — الرابط',
+    bannerHeadingLinesHint: 'اضغط Enter لسطر جديد. السطر التاني بيظهر مايل — '
+      + 'يعني «إكسسوارات» / «تُعرّف» / «أسلوبك».',
+    statsEnabled: 'إظهار الأرقام تحت البانر',
+    statsEnabledHint: 'شريط رفيع فيه عدد المنتجات والماركات وتكلفة الشحن. التلاتة بتتحسب من '
+      + 'الكتالوج بتاعك — مفيش رقم متكتوب بالإيد.',
     bannerOverlay: 'تعتيم الصورة',
     bannerOverlayHint: 'من 0 إلى 80% — مقدار تعتيم الصورة خلف النص',
     bannerPreviewLabel: 'معاينة مباشرة',

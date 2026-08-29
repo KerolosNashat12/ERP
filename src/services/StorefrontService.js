@@ -54,6 +54,12 @@ const CONFIG_KEYS = [
   'web.banner_heading_en', 'web.banner_heading_ar',
   'web.banner_text_en', 'web.banner_text_ar',
   'web.banner_cta_label_en', 'web.banner_cta_label_ar', 'web.banner_cta_link',
+  // The second, quieter button — "our story" beside "explore the collection".
+  // Optional: a shop that fills in neither gets the one button it always had.
+  'web.banner_cta2_label_en', 'web.banner_cta2_label_ar', 'web.banner_cta2_link',
+  // The three figures under the banner. Off by default: a shop with eleven
+  // products should not announce that it has eleven products.
+  'web.stats_enabled',
   'web.banner_overlay',
   'web.banner_align', 'web.banner_valign', 'web.banner_text_size',
   'web.banner_text_color', 'web.banner_box_width',
@@ -506,6 +512,9 @@ export class StorefrontService {
     const ctaLabelEn = str('web.banner_cta_label_en');
     const ctaLabelAr = str('web.banner_cta_label_ar');
     const ctaLink = str('web.banner_cta_link');
+    const cta2LabelEn = str('web.banner_cta2_label_en');
+    const cta2LabelAr = str('web.banner_cta2_label_ar');
+    const cta2Link = str('web.banner_cta2_link');
 
     // The shop's own name, and never a literal that belongs to one tenant —
     // see shared/branding.js, which the ERP shell resolves it through too.
@@ -565,6 +574,15 @@ export class StorefrontService {
         cta: (ctaLabelEn || ctaLabelAr || ctaLink)
           ? { label: { en: ctaLabelEn, ar: ctaLabelAr }, link: ctaLink }
           : null,
+        /*
+         * The second button. Same rule as the first — present when the shop
+         * typed ANY of its three fields — so a half-filled pair still produces
+         * a button rather than vanishing and leaving the owner wondering which
+         * of the three fields was the wrong one.
+         */
+        cta2: (cta2LabelEn || cta2LabelAr || cta2Link)
+          ? { label: { en: cta2LabelEn, ar: cta2LabelAr }, link: cta2Link }
+          : null,
         overlay: num('web.banner_overlay', 35),
         align: enumOr(s.get('web.banner_align'), BANNER_ALIGN, 'right'),
         valign: enumOr(s.get('web.banner_valign'), BANNER_VALIGN, 'middle'),
@@ -606,15 +624,28 @@ export class StorefrontService {
 
   /** The landing page in one request; the four reads are independent, so overlap them. */
   async home() {
-    const [newest, featured, categories, brands] = await Promise.all([
+    const [newest, featured, categories, brands, stats] = await Promise.all([
       this.products({ sort: 'newest', pageSize: HOME_SIZE }).then((r) => r.rows),
       this.#featured(HOME_SIZE),
       this.categories(),
       this.brands(),
+      this.#stats(),
     ]);
     return {
       newest,
       featured: featured.rows,
+      /**
+       * The three figures under the banner — REAL, counted now, or absent.
+       *
+       * The design this came from prints "387+ PRODUCTS · 45+ BRANDS · Free
+       * SHIPPING", and the temptation is to treat those as decoration and type
+       * them into the page. They are claims a shop is making to its customers
+       * on its own front page, so they are counted from the catalogue this
+       * shopper is actually looking at.
+       *
+       * `null` when the shop has not switched the strip on — see `#stats`.
+       */
+      stats,
       /**
        * Whether the "best sellers" shelf actually contains a best seller.
        *
@@ -633,6 +664,76 @@ export class StorefrontService {
       featuredFromSales: featured.fromSales,
       categories,
       brands,
+    };
+  }
+
+  /**
+   * The banner's three figures. Counted, never typed — and honest about the
+   * rounding.
+   *
+   * ── Why the numbers are rounded DOWN ────────────────────────────────────
+   * "248 products" is a strange thing to put on a shop front; "240+" is the
+   * register the design is written in. Rounding down and adding "+" keeps it
+   * literally true — a shop with 248 products does have more than 240 — where
+   * rounding to the NEAREST would let a shop with 248 claim 250, which it does
+   * not have. The step scales so the claim never gets vague: under 50 the
+   * exact number is shown, because "40+" from a shop with 44 products throws
+   * away more than it tidies.
+   *
+   * ── Why delivery is a THIRD kind of thing ───────────────────────────────
+   * The reference says "Free SHIPPING", and that is only true of a shop that
+   * gives it. This reports what the shop's OWN delivery settings say, so a
+   * shop that charges says what it charges. Writing "Free shipping" over a
+   * shop that charges 50 EGP is a promise the checkout then breaks, and the
+   * customer finds out at the last screen.
+   *
+   * Returns null when the strip is switched off, which is the DEFAULT: a shop
+   * with eleven products should not announce that it has eleven products.
+   */
+  async #stats() {
+    const row = await this.db
+      .prepare("SELECT value FROM settings WHERE key = 'web.stats_enabled'")
+      .get();
+    const raw = String(row?.value ?? '').trim().toLowerCase();
+    if (!['1', 'true', 'yes', 'on'].includes(raw)) return null;
+
+    const [products, brands, delivery] = await Promise.all([
+      this.db.prepare(`SELECT COUNT(*) AS n FROM products p WHERE ${PUBLISHED_PRODUCT}`).get(),
+      this.db.prepare(`
+        SELECT COUNT(*) AS n FROM brands b
+        WHERE EXISTS (SELECT 1 FROM products p
+                       WHERE p.brand_id = b.id AND ${PUBLISHED_PRODUCT})
+      `).get(),
+      this.db.prepare(`
+        SELECT key, value FROM settings
+        WHERE key IN ('shop.free_delivery_over', 'shop.delivery_fee', 'shop.delivery_mode',
+                      'shop.delivery_percent', 'shop.delivery_min')
+      `).all(),
+    ]);
+
+    const d = new Map(delivery.map((r) => [r.key, r.value]));
+    const freeOver = Number(d.get('shop.free_delivery_over')) || 0;
+    const mode = d.get('shop.delivery_mode') === 'percent' ? 'percent' : 'flat';
+    const flat = Number(d.get('shop.delivery_fee')) || 0;
+    const percent = Number(d.get('shop.delivery_percent')) || 0;
+    const charges = mode === 'percent' ? percent > 0 : flat > 0;
+
+    return {
+      products: Number(products?.n || 0),
+      brands: Number(brands?.n || 0),
+      /*
+       * Everything the page needs to SAY something true about delivery, with
+       * no sentence built here — the wording lives in the storefront's own
+       * dictionary in both languages, and the money goes through its
+       * formatter so it carries this shop's currency.
+       */
+      delivery: {
+        alwaysFree: !charges,
+        freeOver: freeOver > 0 ? freeOver : null,
+        mode,
+        flat,
+        percent,
+      },
     };
   }
 

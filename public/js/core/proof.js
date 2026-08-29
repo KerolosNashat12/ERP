@@ -71,7 +71,7 @@ export function proofThumbs(attachments = [], caption = '') {
  * `label` and `hint` are passed in because the same control photographs a
  * supplier's receipt on one screen and an electricity bill on the next.
  */
-export function proofPicker({ hint = null, alt = null } = {}) {
+export function proofPicker({ hint = null, alt = null, multiple = false, onExtra = null } = {}) {
   let photo = null;
   let busy = false;
 
@@ -79,18 +79,45 @@ export function proofPicker({ hint = null, alt = null } = {}) {
   const input = h('input', {
     type: 'file',
     accept: 'image/*',
-    // On a phone this offers the camera directly, which is what is actually
-    // happening: somebody is standing in front of the bill.
-    capture: 'environment',
+    /*
+     * NO `capture` ATTRIBUTE. It used to say `capture: 'environment'`, on the
+     * reasoning that somebody adding a bill is standing in front of it.
+     *
+     * That reasoning was wrong about how this shop actually works, and the
+     * attribute does not do what it sounds like. On iOS, `capture` does not
+     * "offer the camera first" — it REMOVES every other option: the sheet with
+     * Photo Library on it never appears and the camera opens straight away. A
+     * shop owner who photographed a supplier's invoice this morning, or was
+     * sent one on WhatsApp, had no way to attach it at all. He reported it in
+     * those words: «انا محتاج هنا اضيف صور من الجاليري عادي مش لازم افتح واصور
+     * دلوقتي».
+     *
+     * Without it, iOS shows the normal sheet — Photo Library, Take Photo,
+     * Choose File — so taking one NOW still costs one extra tap and picking an
+     * old one becomes possible at all. Strictly more, never less.
+     */
+    ...(multiple ? { multiple: true } : {}),
     style: { display: 'none' },
     onchange: async (event) => {
-      const file = event.target.files?.[0];
+      const files = [...(event.target.files || [])];
       event.target.value = '';
-      if (!file) return;
+      if (!files.length) return;
       busy = true;
       render();
       try {
-        photo = await preparePhoto(file);
+        photo = await preparePhoto(files[0]);
+        /*
+         * Anything past the first is handed back to whoever owns the list.
+         * A paper invoice is several pages and they are all in the gallery
+         * together — picking them one at a time, through a sheet each time, is
+         * the work this is meant to remove. A picker with nowhere to put the
+         * extras keeps the first and says so rather than dropping them
+         * silently.
+         */
+        if (files.length > 1) {
+          if (onExtra) await onExtra(files.slice(1));
+          else toast(t('onePhotoOnlyHere'), 'warn', 5000);
+        }
       } catch (error) {
         photo = null;
         toast(error.message, 'error', 6000);
@@ -124,6 +151,25 @@ export function proofPicker({ hint = null, alt = null } = {}) {
     value: () => photo,
     isBusy: () => busy,
     clear: () => { photo = null; render(); },
+    /**
+     * Fill this picker from a File the person already chose elsewhere — how a
+     * multi-page list turns one gallery selection into several pages. The
+     * preparation is the same code path as a hand-picked file, so a photo that
+     * arrived this way is resized, rotated and weighed exactly like any other.
+     */
+    accept: async (file) => {
+      busy = true;
+      render();
+      try {
+        photo = await preparePhoto(file);
+      } catch (error) {
+        photo = null;
+        toast(error.message, 'error', 6000);
+      } finally {
+        busy = false;
+        render();
+      }
+    },
   };
 }
 

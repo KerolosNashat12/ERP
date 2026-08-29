@@ -1,17 +1,27 @@
-Two storefront templates, bulk product photos, and three bugs the tests found
+The banner from the reference, and figures that are actually counted
 
-- web.template: 'classic' or 'luxe', chosen per shop in Settings → Appearance.
-  Migration 026 derives it from web.theme_dark so no live shop changes look.
-  SSR stamps data-paper on the first byte, so no flash of the wrong paper.
-- FIX: web.template was missing from StorefrontService.CONFIG_KEYS, so the
-  setting saved, reported success and did nothing.
-- FIX: the stock count sheet silently stopped at 1,000 lines (stockOnHand
-  clamps pageSize). It now pages the whole shop and says so when capped.
-- Bulk photos: drop a folder named by product code / variant SKU / barcode,
-  see what matched before anything uploads, first shot becomes the main photo.
-- FIX: 19 duplicate i18n keys — deleting a PRODUCT photo asked "remove this
-  photo from the invoice?". Fenced by tests/i18n-dictionary.test.js.
-- A bare product now draws what it IS (wallet, watch, bag) instead of always
-  a perfume bottle, sharing the category icon vocabulary.
+BANNER
+- The heading is a textarea now, so a shop can type its own line breaks. The
+  SECOND line leans - "Accessories / That Define / Your Essence" - which is
+  most of why the reference reads as an editorial. The CSS for it had existed
+  for months with nothing able to produce it.
+- A second button beside the first (Explore Collection / Our Story), set in
+  Settings, and both now show over an uploaded photo instead of only over the
+  gradient.
+- FIX: the title clamp was fixed at 2 lines, so a three-line heading came back
+  as "That Defin..." with the third line gone. It now follows what was typed,
+  capped at 3.
+- FIX (Arabic): line-height 1.06 is a Latin display setting and was slicing
+  the tops off tashkeel. And font-style:italic on Arabic makes the browser
+  SHEAR the glyphs, breaking the letter joins - Amiri has no italic face. The
+  Arabic middle line takes the shop's accent colour instead.
 
-npm test 1096 → 1117, all passing.
+THE FIGURES UNDER IT
+Off by default. Switched on in Settings, and every number is counted from the
+shop's own catalogue: published products, brands with something published, and
+what delivery ACTUALLY costs - "Free shipping" is printed only by a shop that
+gives it. Rounded DOWN with a "+" above 50 so the claim stays literally true;
+exact below that. Works in both templates and both languages.
+- FIX: the band's labels were at 3.5:1, under the floor for 12px text.
+
+npm test 1164 -> 1174. Plus tests/hero-stats-ui-check.mjs.

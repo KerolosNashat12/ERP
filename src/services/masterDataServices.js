@@ -8,6 +8,7 @@ import { BusinessRuleError, ValidationError } from '../shared/errors.js';
 import { transaction, getDb } from '../infrastructure/database/connection.js';
 import { likeParam } from '../infrastructure/database/productSearch.js';
 import auditService from './AuditService.js';
+import { reindexWhere } from './searchIndex.js';
 
 export class SupplierService extends CrudService {
   constructor() {
@@ -46,6 +47,24 @@ export class BrandService extends CrudService {
       codePrefix: 'BRD',
       isReferenced: referencedBy('products', 'brand_id'),
     });
+  }
+
+  /**
+   * Renaming a brand rewrites the search text of every product under it.
+   *
+   * The index carries the brand's name so that typing «ديور» finds Dior's
+   * products rather than only the brand row. The cost of that is this hook:
+   * without it, renaming a brand leaves its products findable by the name it
+   * used to have and not by the one it now has — a search failure with no
+   * visible cause, on a screen nobody would think to look at.
+   *
+   * `reindexWhere` never throws, so a rename is not rolled back because the
+   * index could not be rebuilt; `reindexAll()` repairs it.
+   */
+  async update(id, data, context = {}) {
+    const after = await super.update(id, data, context);
+    await reindexWhere('brand_id', id);
+    return after;
   }
 
   async list(query) {
@@ -87,6 +106,13 @@ export class CategoryService extends CrudService {
         referencedBy('categories', 'parent_id'),
       ]),
     });
+  }
+
+  /** The same as BrandService.update, for the same reason — see the note there. */
+  async update(id, data, context = {}) {
+    const after = await super.update(id, data, context);
+    await reindexWhere('category_id', id);
+    return after;
   }
 
   async beforeSave(data, before) {

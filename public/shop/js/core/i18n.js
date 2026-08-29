@@ -31,6 +31,10 @@ const dictionary = {
     // that named a product category is exactly how a clothes shop ended up
     // asking its customers to search for perfume.
     searchPlaceholder: 'Search products…',
+    // Shown above the suggestions only when nothing matched what was typed and
+    // these are the nearest spellings. Silently showing a shopper something
+    // they did not type reads as a broken shop.
+    searchDidYouMean: 'Did you mean…',
     searchClose: 'Close search',
     cart: 'Cart',
     favorites: 'Favourites',
@@ -50,6 +54,14 @@ const dictionary = {
     heroTagline: 'Chosen piece by piece',
     heroBody: 'Everything on this page is in the shop today. Order it and pay the courier in cash when it reaches your door.',
     heroCta: 'Browse the shop',
+    // --- the three figures under the banner. Counted from the catalogue, never
+    // typed: each one is a claim the shop is making on its own front page.
+    statsProducts: 'Products',
+    statsBrands: 'Brands',
+    statsShipping: 'Shipping',
+    statsFree: 'Free',
+    statsFreeOver: 'on orders over {amount}',
+    statsAria: 'What this shop carries',
     shopByCategory: 'Shop by category',
     ourBrands: 'Our brands',
     newArrivals: 'New arrivals',
@@ -310,6 +322,7 @@ const dictionary = {
     home: 'الرئيسية',
     search: 'بحث',
     searchPlaceholder: 'ابحث عن المنتجات…',
+    searchDidYouMean: 'تقصد…',
     searchClose: 'إغلاق البحث',
     cart: 'السلة',
     favorites: 'المفضلة',
@@ -326,6 +339,12 @@ const dictionary = {
     heroTagline: 'مختارة قطعة قطعة',
     heroBody: 'كل اللي في الصفحة دي موجود في المحل النهاردة. اطلبه وادفع كاش للمندوب لما يوصل لحد باب البيت.',
     heroCta: 'اتفرّج على المنتجات',
+    statsProducts: 'منتج',
+    statsBrands: 'ماركة',
+    statsShipping: 'الشحن',
+    statsFree: 'مجاني',
+    statsFreeOver: 'للطلبات فوق {amount}',
+    statsAria: 'اللي المحل بيوفره',
     shopByCategory: 'تسوّق حسب القسم',
     ourBrands: 'ماركاتنا',
     newArrivals: 'وصل حديثًا',

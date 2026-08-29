@@ -3,6 +3,7 @@ import { Router } from 'express';
 import config from '../../config/index.js';
 import {
   asyncHandler, authenticate, requirePermission, requireLookup, sendImage, validate,
+  grantsPermission,
 } from '../middleware/index.js';
 import { crudRouter } from './crudRouter.js';
 import * as v from '../validators.js';
@@ -39,6 +40,7 @@ import repositories from '../../infrastructure/repositories/index.js';
 import purchaseReturnService from '../../services/PurchaseReturnService.js';
 import { currentTenant, supportsFileBackup, driverName } from '../../infrastructure/database/connection.js';
 import { buildBranding, companyNameFrom } from '../../shared/branding.js';
+import searchService from '../../services/SearchService.js';
 import { ForbiddenError, NotFoundError } from '../../shared/errors.js';
 import { deploymentInfo } from '../../shared/deploymentInfo.js';
 
@@ -363,6 +365,28 @@ router.get('/products/lookup', requirePermission('products.view'), asyncHandler(
 
 router.get('/products/scan/:code', requirePermission('products.view'), asyncHandler(async (req, res) => {
   res.json(await catalogService.findByCode(req.params.code));
+}));
+
+/**
+ * THE ONE SEARCH BOX. What could this term mean, anywhere in the shop?
+ *
+ * `products.view` is the floor rather than the whole gate: everyone who can
+ * open a search box in this ERP has it, and every OTHER group the answer can
+ * contain — brands, shelves, suppliers, customers, invoices, purchase orders —
+ * is checked separately inside the service, with `grantsPermission`, which is
+ * the same function the route guards are written in terms of. A cashier gets
+ * products and nothing else, and a shop whose plan excludes a module never
+ * sees that module's rows suggested.
+ *
+ * A GET, because it is a read and a person may share the URL of a result; the
+ * term is a query parameter and nothing about a shop's own catalogue is
+ * secret from the person already signed into it.
+ */
+router.get('/search/suggest', requirePermission('products.view'), asyncHandler(async (req, res) => {
+  res.json(await searchService.suggest(
+    req.query.q,
+    (code) => grantsPermission(req, code),
+  ));
 }));
 
 /**

@@ -11,6 +11,7 @@ import { onScan } from '../core/scanner.js';
 import { navigate } from '../core/router.js';
 import { productDetailsView } from './productDetails.js';
 import { confirmDelete } from './trash.js';
+import { attachSuggest } from '../core/suggest.js';
 // The filename → code rule, imported rather than reimplemented: the server
 // matches with the same module, so what this screen ticks is what gets filed.
 import { codeFromFilename, sequenceOf } from '../../shared/photoFilename.js';
@@ -446,6 +447,14 @@ export async function productsView(root, route) {
     value: state.search,
     oninput: debounce((e) => { state.search = e.target.value; state.page = 1; load(); }, 280),
   });
+  /*
+   * The grid still filters as you type — that is what this box has always done
+   * and what somebody narrowing a list expects. The dropdown is the OTHER
+   * question the same keystrokes answer: "take me to that one". Picking a row
+   * opens the product; ignoring the dropdown and carrying on typing filters the
+   * grid underneath, unchanged.
+   */
+  attachSuggest(searchBox);
 
   /*
    * The dropdowns, kept by key so a card can move one. A card that changes the

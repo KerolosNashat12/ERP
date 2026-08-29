@@ -111,6 +111,25 @@ export const requirePermission = (...codes) => guard(codes, { enforceModule: tru
  */
 export const requireLookup = (...codes) => guard(codes, { enforceModule: false });
 
+/**
+ * Does this request hold this permission, INCLUDING the module gate?
+ *
+ * Exported so a screen that answers several modules at once — the global
+ * search suggestions, which offer products, brands, suppliers and documents
+ * from one box — can decide per group with the same rule the route guards use,
+ * rather than a second hand-written copy of it that would drift.
+ *
+ * `guard()` below is written in terms of this, so the two cannot disagree: a
+ * module disabled for a shop is invisible to the suggestion list on exactly
+ * the request where its routes would 403.
+ */
+export function grantsPermission(req, code) {
+  if (!req?.permissions?.includes(code)) return false;
+  const tenant = currentTenant();
+  if (tenant && !tenant.modules.has(code.split('.')[0])) return false;
+  return true;
+}
+
 function guard(codes, { enforceModule }) {
   return (req, _res, next) => {
   if (!req.permissions) return next(new UnauthorizedError());

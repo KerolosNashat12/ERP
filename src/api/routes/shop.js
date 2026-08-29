@@ -15,6 +15,7 @@ import webAssets, { brandSlot, categorySlot } from '../../services/WebAssetServi
 import { websiteGate } from '../middleware/websiteGate.js';
 import { NotFoundError } from '../../shared/errors.js';
 import { deploymentInfo } from '../../shared/deploymentInfo.js';
+import searchService from '../../services/SearchService.js';
 
 const router = Router();
 
@@ -74,6 +75,21 @@ router.get('/brands', asyncHandler(async (_req, res) => {
  * list. Nothing here validates: an unparseable id is not a bad request from a
  * customer, it is an old entry in somebody's localStorage.
  */
+/**
+ * Suggestions as a shopper types.
+ *
+ * Its own service method rather than a flag on the ERP's — `suggestPublic` has
+ * no code path that can reach an unpublished product, a stopped one, a
+ * supplier, a customer or a document. That is a property of the query, not of
+ * a boolean somebody has to remember to pass correctly on every future call.
+ *
+ * No session, like everything else under `/api/shop`. A shopper searching a
+ * shop is the shop working.
+ */
+router.get('/suggest', asyncHandler(async (req, res) => {
+  res.json(await searchService.suggestPublic(req.query.q));
+}));
+
 router.get('/products', asyncHandler(async (req, res) => {
   res.json(await storefront.products({
     ids: req.query.ids,
