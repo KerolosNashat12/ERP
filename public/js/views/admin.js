@@ -1167,10 +1167,12 @@ export async function settingsView(root, route) {
    * that does not exist.
    */
   function renderThemePreview() {
-    applyTheme(themePreview, {
-      accent: accentInput.value,
-      dark: themeForm.values()['web.theme_dark'] === 1,
-    });
+    const dark = themeForm.values()['web.theme_dark'] === 1;
+    // `night: dark` is not a preference of this preview — it is the line
+    // `applyBranding()` runs on the storefront, copied. The moment the two
+    // disagree the preview is showing a site that does not exist, which is the
+    // one thing a preview must never do.
+    applyTheme(themePreview, { accent: accentInput.value, dark, night: dark });
   }
   for (const [, { input }] of themeForm.inputs) {
     input.addEventListener('input', renderThemePreview);

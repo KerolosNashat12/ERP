@@ -117,13 +117,26 @@ export function contrast(a, b) {
  */
 function shiftUntilReadable(hex, against, minContrast, direction) {
   const hsl = rgbToHsl(hex);
-  const step = direction === 'lighten' ? 0.02 : -0.02;
+  const lighten = direction === 'lighten';
+  const step = lighten ? 0.02 : -0.02;
   let { l } = hsl;
   let candidate = hex;
   for (let i = 0; i < 50; i += 1) {
     if (contrast(candidate, against) >= minContrast) return candidate;
     l += step;
-    if (l <= 0.04 || l >= 0.97) break;
+    /*
+     * Stop at the end of the range this walk is actually walking towards.
+     *
+     * This used to read `if (l <= 0.04 || l >= 0.97) break` — one guard for
+     * both directions, which was invisible while the only direction was
+     * `darken`. The night ground made `lighten` real and the bug with it: a
+     * shop whose accent is pure black starts at l = 0, takes its first step UP
+     * to 0.02, is told 0.02 is too close to the floor, and breaks out holding
+     * the black it started with — so a black-accented shop got a black price
+     * on a black page. Each direction now watches only the end it is
+     * approaching.
+     */
+    if (lighten ? l >= 0.97 : l <= 0.04) break;
     candidate = hslToHex({ ...hsl, l });
   }
   return candidate;
@@ -230,6 +243,113 @@ const NEUTRAL = {
 const gray = (level) => hslToHex({ h: 0, s: 0, l: level / 255 });
 
 /**
+ * THE NIGHT RAMP — the paper for a shop that sells at night.
+ *
+ * A second ramp rather than the first one inverted, because inverting a page
+ * built for white is how a dark mode ends up grey and flat. This one is
+ * measured: the owner sent a published design (see
+ * /home/claude/briefs/storefront-luxe.md) and these are the levels that
+ * reproduce it, to within a couple of units per channel, for HIS accent.
+ *
+ * ── Why this ramp carries hue when the day ramp refuses to ──────────────────
+ * The day ramp had its hue taken away on purpose and the reason still stands:
+ * gold turned and desaturated makes a pale yellow-green PAGE, and the owner
+ * looked at one and asked for grey. But that argument is about a light ground,
+ * where a few percent of saturation is a stain across two thirds of the screen.
+ * At 3.5% lightness it is the opposite — a pure grey black reads as switched-off
+ * television, and every luxury shop in the world warms it. The measured design
+ * is warm: 10/9/8 is not neutral, and neither is its cream.
+ *
+ * So the hue here IS the shop's, and the saturation is held on a short lead:
+ * `NIGHT_TINT_CEILING` caps it, and the test measures the distance from a true
+ * grey at every level so a future edit cannot turn the page into a colour.
+ * A gold shop gets #0A0908; a violet shop gets a violet-black of the same
+ * depth, which is the platform working rather than the platform leaking.
+ *
+ * Each level is {l, s} — lightness and saturation as fractions, at the
+ * accent's own hue. Read them as "how deep, and how much of the shop is in it".
+ */
+const NIGHT_TINT_CEILING = 0.40;
+
+const NIGHT = {
+  // The page. Deepest thing on the site, and the one the eye reads as black.
+  bg: { l: 0.035, s: 0.11 },
+  /*
+   * The second ground — and on night paper it goes UP from the page, which is
+   * the opposite of what its name does in daylight and is worth stating
+   * plainly because it looks like a mistake.
+   *
+   * In daylight `bg-2` recedes: the page is 240 and it drops to 228, because
+   * a thing that has to sit BEHIND a white card has room below it. At 3.5%
+   * lightness there is no room below — every step down from the night page
+   * lands on black, and three grounds that all read as black are one ground.
+   * So it rises instead, by less than a card does, which is exactly what the
+   * measured design does with the band under its hero (#0E0C09 over #0A0908).
+   * The RELATIONSHIP survives — page, then this, then a card — and only the
+   * direction the range allowed has changed.
+   */
+  bg2: { l: 0.046, s: 0.13 },
+  /*
+   * A card, and the one level where the day ramp's own instrument stops
+   * working. In daylight the page-to-card step is stated as a WCAG ratio —
+   * 1.14:1 — and held there because below about 1.10 a card loses its edge on
+   * a phone in daylight. That ratio is useless here: near the bottom of the
+   * range its 0.05 constant swamps both luminances, so page-against-card
+   * measures 1.08:1 no matter how visibly different they are, and the measured
+   * design itself sits at exactly that. What separates two near-blacks is the
+   * LIGHTNESS distance, and this is 4 points of it — which is why the test for
+   * this ramp measures lightness and the test for the day ramp measures
+   * contrast. Same question, two grounds, two right instruments.
+   */
+  surface: { l: 0.075, s: 0.16 },
+  // The well a photo sits in, INSIDE a dark card — LIGHTER than the card, the
+  // mirror of the day ramp's well being lighter than its page. A photograph
+  // with a transparent corner has to land on something, and on night paper
+  // that something has to be a step up or the picture has no edge at all.
+  well: { l: 0.105, s: 0.14 },
+  // Headings and product names. Cream, not white: #fff on near-black rings the
+  // same way #000 rings on white, and the design's own ink is 245/240/232.
+  ink: { l: 0.935, s: 0.35 },
+  // Body copy beside a heading.
+  ink2: { l: 0.735, s: 0.18 },
+  // Muted — a card's brand line, a footer link, a note.
+  ink3: { l: 0.398, s: 0.06 },
+};
+
+/**
+ * A night level, at the shop's own hue, with the tint held under the ceiling
+ * AND scaled by how much colour the shop actually asked for.
+ *
+ * The scaling is the part that is easy to leave out and wrong to. A hue on its
+ * own says nothing about whether a shop wanted colour: `#111111` and `#f5f5f5`
+ * both carry hue 0, which is red, and a table of fixed saturations would hand
+ * a shop that deliberately chose black or white a red-black page — the exact
+ * mistake the day ramp had its hue taken away for. So the tint is multiplied
+ * by the accent's own saturation, normalised against the measured design's
+ * (0.457 for #C9A96E): that shop lands on its measured values unchanged, a
+ * greyscale accent lands on a true grey black, and everything between scales.
+ */
+const NIGHT_TINT_REFERENCE = 0.457;
+
+const night = (hue, level, accentSaturation = NIGHT_TINT_REFERENCE) => {
+  const strength = Math.min(1, Math.max(0, accentSaturation / NIGHT_TINT_REFERENCE));
+  return hslToHex({
+    h: hue, s: Math.min(level.s, NIGHT_TINT_CEILING) * strength, l: level.l,
+  });
+};
+
+/**
+ * The hairline, on night paper: THE ACCENT AT LOW ALPHA, not a grey.
+ *
+ * This is the single measurement that carries the most of the look and it is
+ * the one that would be easiest to miss. Every rule and every card edge in the
+ * design is `rgba(201,169,110,.22)` — the shop's own colour, whispered. A grey
+ * hairline on black reads as a cheap panel; a gold one at 22% reads as a frame
+ * around something expensive, and it costs nothing but this line.
+ */
+const nightLine = (accentRgb, alpha) => `rgba(${accentRgb.join(', ')}, ${alpha})`;
+
+/**
  * Every neutral. No argument but the mode — which is the point.
  *
  * Both modes share the paper and share the cards. That is the whole reason
@@ -245,7 +365,8 @@ const gray = (level) => hslToHex({ h: 0, s: 0, l: level / 255 });
  * sits inside a white `.success` card, and a white band on a white card is
  * not a band.
  */
-function neutrals(dark) {
+function neutrals(dark, nightPaper, accentRaw) {
+  if (nightPaper) return nightNeutrals(accentRaw);
   const ink = gray(NEUTRAL.ink);
   const bg2 = gray(NEUTRAL.bg2);
   const well = gray(NEUTRAL.well);
@@ -288,6 +409,55 @@ function neutrals(dark) {
 }
 
 /**
+ * The night paper's neutrals — same keys, same meanings, different ground.
+ *
+ * Every key `neutrals()` returns is returned here too, and that is the whole
+ * contract: shop.css names these and only these, so a page can change from
+ * daylight to night without a single new property being invented. What changes
+ * is which direction each one moves.
+ *
+ * The bands do NOT invert here. On a white page a band is a dark strip that
+ * separates the footer from the paper; on a black page there is nothing to
+ * separate it FROM, so the band becomes the deepest ground (`bg2`) and the
+ * page's own inks stay on top of it. A near-black band on a near-black page
+ * would be a footer nobody can see the top of.
+ */
+function nightNeutrals(accentRaw) {
+  const { h: hue, s: sat } = rgbToHsl(accentRaw);
+  const accentRgb = toRgb(accentRaw);
+  const bg = night(hue, NIGHT.bg, sat);
+  const bg2 = night(hue, NIGHT.bg2, sat);
+  const ink = night(hue, NIGHT.ink, sat);
+  const ink2 = night(hue, NIGHT.ink2, sat);
+  const ink3 = night(hue, NIGHT.ink3, sat);
+
+  return {
+    bg,
+    bg2,
+    well: night(hue, NIGHT.well, sat),
+    surface: night(hue, NIGHT.surface, sat),
+    ink,
+    ink2,
+    ink3,
+    // The measured 0.22, and a fainter sibling for a rule that only divides.
+    line: nightLine(accentRgb, 0.22),
+    line2: nightLine(accentRgb, 0.12),
+    // A shadow is an absence of light and there is no light here: the design
+    // has not one box-shadow on it, and depth is carried by the hairline and
+    // the card's step instead. The channels stay declared because shop.css
+    // spends them, and pure black is the only honest value on this ground.
+    shadowRgb: '0 0 0',
+    chrome: bg2,
+    onChrome: ink,
+    onChrome2: ink2,
+    onChrome3: ink3,
+    onChrome4: ink3,
+    chromeLine: nightLine(accentRgb, 0.22),
+    chromeLine2: nightLine(accentRgb, 0.12),
+  };
+}
+
+/**
  * Every shade a page needs, from one hex and one mode.
  *
  * The contrast targets are not arbitrary: 2.9 against white is what the
@@ -305,26 +475,41 @@ function neutrals(dark) {
  * name and the value it has always had, because the ERP preview, the favicon
  * and shop.css all read them.
  */
-export function palette(accentInput, dark = true) {
+export function palette(accentInput, dark = true, { night: nightPaper = false } = {}) {
   const accentRaw = normalizeHex(accentInput) || DEFAULT_ACCENT;
+  const accentHsl = rgbToHsl(accentRaw);
+  const ground = nightPaper ? night(accentHsl.h, NIGHT.bg, accentHsl.s) : '#ffffff';
 
-  // On paper: decoration first, then a darker sibling for words.
-  const accent = shiftUntilReadable(accentRaw, '#ffffff', 2.9, 'darken');
-  const strong = shiftUntilReadable(accent, '#ffffff', 4.5, 'darken');
+  /*
+   * Every accent shade is measured against the GROUND IT LANDS ON, and on
+   * night paper that ground is the near-black page — so the two shifts flip
+   * direction. `strong` is the one worth naming: in daylight it is the accent
+   * pushed DARKER until it is legible as words on white; on black it has to go
+   * LIGHTER for exactly the same reason. A palette that kept darkening here
+   * would answer "make this readable" by walking the colour towards the page.
+   */
+  const toward = nightPaper ? 'lighten' : 'darken';
+  const accent = shiftUntilReadable(accentRaw, ground, 2.9, toward);
+  const strong = shiftUntilReadable(accent, ground, 4.5, toward);
   // On the dark chrome band.
   const bright = shiftUntilReadable(accentRaw, CHROME_INK, 5, 'lighten');
-  // A wash for badges and soft panels: the colour itself, mixed into paper
+  // A wash for badges and soft panels: the colour itself, mixed into the paper
   // rather than desaturated — a hue lightened in HSL goes grey, and a grey
-  // wash under a shop's own badge is the one shade that looks like a bug.
-  const soft = mix(accentRaw, '#ffffff', 0.16);
+  // wash under a shop's own badge is the one shade that looks like a bug. On
+  // night paper it mixes into the night, which is what makes a soft badge a
+  // dim ember rather than a bright sticker.
+  const soft = mix(accentRaw, ground, nightPaper ? 0.22 : 0.16);
   // Ink ON a solid fill of the accent. Measured, not assumed: white reads on a
   // deep colour and disappears on a pale one, and both get chosen by shops.
-  const solidInk = contrast('#ffffff', accent) >= 4 ? '#ffffff' : '#10131a';
-  const deep = shiftUntilReadable(accent, '#ffffff', 6, 'darken');
+  // On night paper the dark option is the page itself, so a gold button carries
+  // the page's own black the way the design does.
+  const darkInk = nightPaper ? ground : '#10131a';
+  const solidInk = contrast('#ffffff', accent) >= 4 ? '#ffffff' : darkInk;
+  const deep = shiftUntilReadable(accent, ground, 6, nightPaper ? 'darken' : 'darken');
 
   return {
     accentRaw, accent, strong, bright, soft, solidInk, deep, rgb: toRgb(accent).join(' '),
-    ...neutrals(dark),
+    ...neutrals(dark, nightPaper, accentRaw),
   };
 }
 
@@ -346,8 +531,8 @@ export function palette(accentInput, dark = true) {
  * has to be handed the light band's values or it would get white text on a
  * pale strip.
  */
-export function themeVariables(accentInput, dark = true) {
-  const p = palette(accentInput, dark);
+export function themeVariables(accentInput, dark = true, options = {}) {
+  const p = palette(accentInput, dark, options);
   return {
     '--accent': p.accent,
     '--accent-strong': p.strong,
@@ -386,11 +571,21 @@ export function themeVariables(accentInput, dark = true) {
  * preview uses so a card can wear the shade the owner is dragging towards
  * without the whole back office changing colour).
  */
-export function applyTheme(node, { accent, dark = true } = {}) {
+export function applyTheme(node, { accent, dark = true, night: nightPaper = false } = {}) {
   if (!node) return;
-  const vars = themeVariables(accent, dark);
+  const vars = themeVariables(accent, dark, { night: nightPaper });
   for (const [key, value] of Object.entries(vars)) node.style.setProperty(key, value);
-  if (node.dataset) node.dataset.theme = dark ? 'dark' : 'light';
+  if (node.dataset) {
+    node.dataset.theme = dark ? 'dark' : 'light';
+    /*
+     * A second attribute rather than a third value of `data-theme`, because
+     * the two answer different questions and shop.css asks both: `data-theme`
+     * decides what a BAND is, `data-paper` decides what the PAGE is. Folding
+     * them into one would make every existing `[data-theme="light"]` rule in
+     * the sheet mean something new.
+     */
+    node.dataset.paper = nightPaper ? 'night' : 'day';
+  }
   return vars;
 }
 

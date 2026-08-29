@@ -3313,3 +3313,301 @@ html[dir="rtl"] .switch-input:checked ~ .switch-track .switch-knob { transform: 
   opacity: .9;
 }
 .brand-logo-default { padding: var(--sp-3); }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   NIGHT — the storefront a shop wears when it chose a dark identity.
+
+   Measured off a design the owner sent; the measurements are in
+   /home/claude/briefs/storefront-luxe.md and the palette is DERIVED from the
+   shop's own accent in brandTheme.js, not written here. What is written here
+   is the geometry and the type, because those are the same for every shop.
+
+   ── The rule this section obeys ────────────────────────────────────────────
+   Not one line below changes what anything DOES. Same markup, same filters,
+   same cards, same checkout — the owner's words were "keep our data and
+   functions and filters as it, don't change any functionality", and every
+   selector here already exists above. If a rule needed a new element it does
+   not belong in this section.
+
+   ── Why it is one block at the end ─────────────────────────────────────────
+   So it can be read as one thing and deleted as one thing. A night skin
+   scattered through three thousand lines is a night skin nobody can turn off.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/*
+ * The pre-config fallback, for the platform's default accent — the paint the
+ * page wears for the few hundred milliseconds before /api/shop/config lands
+ * and `applyTheme` sets the real values inline on <html>. These have to be the
+ * night values or the first paint is a white flash followed by a black page,
+ * which is worse than either.
+ */
+html[data-paper="night"] {
+  --bg: #0a0908;
+  --bg-2: #0d0c0a;
+  --surface: #161410;
+  --photo-well: #1c1913;
+  --ink: #f4f0e9;
+  --ink-2: #c8bfaf;
+  --ink-3: #6c675f;
+  --line: rgba(201, 169, 110, .22);
+  --line-2: rgba(201, 169, 110, .12);
+  --shadow-rgb: 0 0 0;
+
+  /* --------------------------------------------------------------------
+     GEOMETRY. The design has no soft corners and no shadows at all: depth
+     is carried by the hairline and by the step from page to card. That is
+     not a saving, it is the reason 4px works — a 20px radius with no shadow
+     reads as a sticker, and a shadow on near-black is invisible anyway.
+     -------------------------------------------------------------------- */
+  --radius: 4px;
+  --radius-sm: 4px;
+  --radius-xs: 4px;
+  --shadow: none;
+  --shadow-sm: none;
+  --shadow-lg: none;
+
+  /* --------------------------------------------------------------------
+     TYPE. One serif for display, one sans for everything else — and the
+     serif is per-language, because Playfair Display has no Arabic letters
+     at all. Amiri is its Arabic partner: classical Naskh, the same high
+     stroke contrast, so an Arabic product name reads the way the English
+     one does instead of looking like a different shop.
+     -------------------------------------------------------------------- */
+  --font-display: "Playfair Display", Georgia, "Times New Roman", serif;
+}
+
+html[data-paper="night"][lang="ar"] {
+  --font-display: "Amiri", "Noto Naskh Arabic", Georgia, serif;
+}
+
+/*
+ * Shadows off, everywhere, in one place rather than by hunting 29 of them.
+ * `--shadow*` above covers every rule that spends a token; this catches the
+ * handful that name their own.
+ */
+html[data-paper="night"] .card,
+html[data-paper="night"] .panel,
+html[data-paper="night"] .sheet,
+html[data-paper="night"] .toast,
+html[data-paper="night"] .header,
+html[data-paper="night"] .btn { box-shadow: none; }
+
+/* --------------------------------------------------------------------------
+   THE CARD. Every part of it already exists; what changes is which colour
+   each part is and how it is set.
+   -------------------------------------------------------------------------- */
+
+/*
+ * Start-aligned, not centred. The design reads its cards as a column of
+ * left-hand facts — brand, then name, then price — and centring them turns a
+ * catalogue into a set of posters. `text-align: start` rather than `left` so
+ * an Arabic shop mirrors it without a second rule.
+ */
+html[data-paper="night"] .card-body { text-align: start; }
+
+/*
+ * The brand line is the shop's own colour here, not a muted grey. It is the
+ * design's smallest and most repeated gesture — 10px, uppercase, 1px of
+ * tracking, gold — and it is what makes a row of cards look like a row of
+ * labels rather than a row of thumbnails.
+ */
+html[data-paper="night"] .card-brand {
+  color: var(--accent);
+  letter-spacing: .1em;
+}
+
+/* Arabic does not take uppercase or tracking — the rule above already exists
+   for daylight and is repeated here only to restore the colour. */
+html[data-paper="night"][lang="ar"] .card-brand { letter-spacing: 0; }
+
+/*
+ * The name in the serif, and lighter than it was. 600 was right for a sans on
+ * white; Playfair at 600 on black is a headline shouting at a price.
+ */
+html[data-paper="night"] .card-name {
+  font-family: var(--font-display);
+  font-weight: 500;
+}
+
+/* The price is the accent, and it is the SANS — the design keeps its numbers
+   in Inter throughout, and a serif figure beside a serif name is one serif
+   too many. */
+html[data-paper="night"] .card-price {
+  color: var(--accent);
+  font-family: var(--font);
+  font-weight: 600;
+}
+html[data-paper="night"][lang="ar"] .card-price { font-family: var(--font-ar); }
+
+/*
+ * The photo well. On white paper a well is a step DOWN from the card; here it
+ * is a step UP, because a photograph with a pale background needs a ground
+ * that is not blacker than the picture.
+ */
+html[data-paper="night"] .card-photo { background: var(--photo-well); }
+
+/* --------------------------------------------------------------------------
+   THE PAGE FURNITURE. Same elements, night colours.
+   -------------------------------------------------------------------------- */
+
+/*
+ * The header stops being a white bar over a grey page and becomes part of the
+ * night, held down by one gold hairline. Its background is the page rather
+ * than the card so that it reads as the top of the paper and not as a panel
+ * floating on it.
+ */
+html[data-paper="night"] .header {
+  background: var(--bg);
+  border-block-end: 1px solid var(--line);
+}
+
+/*
+ * Section titles in the serif — the design sets every one of them that way,
+ * and this is the rule that makes the site feel designed rather than
+ * recoloured. `--font-display` already routes to the right face per language.
+ */
+html[data-paper="night"] .section-title,
+html[data-paper="night"] .page-title { font-weight: 400; }
+
+/*
+ * The design's other signature: a small uppercase label with real tracking
+ * above a section. Ours already exist as `.eyebrow` and `.section-note`; they
+ * only need the letter-spacing and the colour.
+ */
+html[data-paper="night"] .eyebrow {
+  letter-spacing: .2em;
+  color: var(--accent);
+}
+
+/* A filter chip, a tag, a pill: hairline gold, filled gold when it is on. */
+html[data-paper="night"] .chip { border-color: var(--line); }
+
+/*
+ * Photography sits on black now, so the scrim over a hero or a category tile
+ * has to rise from the page's own colour rather than from a generic black —
+ * a violet shop's scrim should be violet-black like the rest of its site.
+ */
+html[data-paper="night"] .hero.has-image::after,
+html[data-paper="night"] .tile-photo::after {
+  background: linear-gradient(to top,
+    rgb(var(--bg-rgb, 10 9 8) / .85) 0%, rgb(var(--bg-rgb, 10 9 8) / 0) 60%);
+}
+
+/* --------------------------------------------------------------------------
+   THE HERO WITH NO PHOTOGRAPH.
+
+   A shop that has not uploaded a banner gets the accent gradient — which on
+   white paper is the design's own blob and on night paper is a floodlit gold
+   slab across the top of a black page, the one thing that looked wrong the
+   first time this was shot. The design's hero is a PHOTOGRAPH under a scrim,
+   and the honest stand-in for a photograph nobody uploaded is not a brighter
+   rectangle; it is the page itself, framed.
+
+   So on night: the deep ground, one gold hairline, gold type, and the two
+   blurred circles turned down from a white wash to a whisper of the shop's
+   own colour — the same composition, lit from behind instead of in front.
+   -------------------------------------------------------------------------- */
+html[data-paper="night"] {
+  --hero-fill:
+    radial-gradient(120% 90% at 78% 12%, rgb(var(--accent-rgb) / .16) 0%, transparent 62%),
+    linear-gradient(160deg, var(--surface) 0%, var(--bg-2) 100%);
+  --hero-fill-ink: var(--ink);
+  --hero-fill-body: var(--ink-2);
+  --hero-fill-accent: var(--accent);
+}
+html[data-paper="night"] .hero:not(.has-image) {
+  border: 1px solid var(--line);
+}
+/* The two circles are the accent now, not white: a white blur on near-black is
+   fog, and the shop's own hue at 10% is a glow. */
+html[data-paper="night"] .hero:not(.has-image)::before {
+  background: rgb(var(--accent-rgb) / .10);
+}
+html[data-paper="night"] .hero:not(.has-image)::after {
+  background: rgb(var(--accent-rgb) / .06);
+}
+
+/*
+ * The button ON that hero.
+ *
+ * `.hero:not(.has-image) .btn-outline` above sets it to `currentColor` — right
+ * on a gold slab, where the ink IS the contrast — but on the night hero
+ * `currentColor` is the cream body ink, and a white-outlined button on a black
+ * panel beside a gold eyebrow is the one element not wearing the shop's
+ * colour. Gold hairline, gold letters: the design's own second button.
+ */
+html[data-paper="night"] .hero:not(.has-image) .btn-outline {
+  border-color: var(--accent);
+  color: var(--accent);
+  border-width: 1px;
+}
+
+/*
+ * The monogram watermark. At the alpha it wears on a gold slab it is a pale
+ * grey shape floating over black — legible as a letterform, which is exactly
+ * what a watermark must not be. Turned down to the shop's own colour at 6%, it
+ * becomes what it was meant to be: a texture in the empty half of the banner.
+ */
+html[data-paper="night"] .hero:not(.has-image) .hero-inner::after {
+  color: rgb(var(--accent-rgb) / .06);
+}
+
+/* --------------------------------------------------------------------------
+   THE SEMANTIC FAMILY, ON NIGHT PAPER.
+
+   `--ok`, `--warn`, `--danger`, `--info` and `--sale-ink` are the one family
+   that deliberately does NOT derive from the shop's accent: in-stock means the
+   same thing in every shop and has to read as in-stock from across a phone.
+   That reasoning is unchanged. What changes is the ground they are read on.
+
+   Each pair is an ink and a soft wash, and the wash was mixed for white paper:
+   `#e8f6ee` under green ink is a mint pill on a card. On near-black the same
+   pill is a bright white lozenge — the loudest object on a page whose whole
+   design is restraint, sitting next to a price that is trying to be the loudest
+   object. So the inks move up to stay legible on black, and the washes become
+   the same hue at low alpha over the page rather than a near-white tint.
+
+   The sale red is the design's own `#8B1A1A`, which is where the measured
+   design puts its SALE badge — a deep red on black, not a bright one.
+   -------------------------------------------------------------------------- */
+html[data-paper="night"] {
+  --ok: #4ec98a;
+  --ok-soft: rgb(78 201 138 / .12);
+  --warn: #e0a44a;
+  --warn-soft: rgb(224 164 74 / .12);
+  --danger: #f2837a;
+  --danger-soft: rgb(242 131 122 / .12);
+  --danger-line: rgb(242 131 122 / .30);
+  --danger-ink: #f2837a;
+  --info: #7aa8f5;
+  --info-soft: rgb(122 168 245 / .12);
+  --sale-ink: #d9534a;
+  --sale-soft: rgb(139 26 26 / .35);
+}
+
+/* --------------------------------------------------------------------------
+   BUTTONS ARE RECTANGLES HERE, NOT PILLS.
+
+   `--radius-pill` stays what it is — chips, the search box, the stepper and
+   the badges are all still round, and turning the whole ladder square would
+   be a different design rather than this one. It is the BUTTON that the
+   reference draws as a rectangle: a 999px gold lozenge reads as an app, and
+   the same fill at 4px reads as a counter in a shop. One selector, and the
+   ladder is left alone.
+   -------------------------------------------------------------------------- */
+html[data-paper="night"] .btn { border-radius: var(--radius); }
+
+/*
+ * The uppercase tracked label the design puts on every button. It is the
+ * single most repeated gesture on the reference — 12px, 1.2px of tracking —
+ * and it is what stops a gold rectangle from looking like a web form.
+ *
+ * Latin only. Arabic has no capitals, and letter-spacing an Arabic word breaks
+ * the joins between its letters — the same reason `.card-brand` already turns
+ * both off for Arabic in daylight.
+ */
+html[data-paper="night"]:not([lang="ar"]) .btn {
+  text-transform: uppercase;
+  letter-spacing: .1em;
+  font-size: var(--fs-sm);
+}

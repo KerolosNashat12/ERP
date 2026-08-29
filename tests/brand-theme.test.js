@@ -414,3 +414,216 @@ test('applyTheme sets the neutrals on a node, not just the accent', () => {
   }
   assert.doesNotThrow(() => applyTheme(null, { accent: '#f07878' }));
 });
+
+/* ═══════════════════════════════ 5. the night paper ═══════════════════════
+ *
+ * A second ground, added when the owner sent a dark design and asked for it
+ * (bloom-brush-28057488.figma.site; the measurements are in
+ * /home/claude/briefs/storefront-luxe.md). Everything above still holds for
+ * daylight and is untouched — these are the questions the night ramp raises
+ * that the day ramp never did.
+ */
+
+/** The design, as measured off the published page in the owner's browser. */
+const MEASURED = {
+  bg: '#0a0908',
+  bg2: '#0e0c09',
+  surface: '#161410',
+  ink: '#f5f0e8',
+  ink2: '#c8bfaf',
+  ink3: '#6b6560',
+  accent: '#c9a96e',
+};
+
+const channels = (hex) => rgb(hex);
+
+test('the night ramp REPRODUCES the design it was measured from', () => {
+  /*
+   * The fence that makes every hex in the brief a fact rather than a taste.
+   *
+   * The ramp is written as lightness/saturation pairs, not as the colours
+   * above — so this test is the only thing tying it to the design the owner
+   * actually chose. Somebody tuning a level "to look better" moves the site
+   * away from what he approved, and this fails when they do.
+   *
+   * Two channels of tolerance, because the ramp goes through HSL and back and
+   * a round trip is not free.
+   */
+  const p = palette(MEASURED.accent, true, { night: true });
+  const drift = [];
+  for (const key of ['bg', 'bg2', 'surface', 'ink', 'ink2', 'ink3']) {
+    const got = channels(p[key]);
+    const want = channels(MEASURED[key]);
+    const off = got.map((c, i) => Math.abs(c - want[i]));
+    if (Math.max(...off) > 2) {
+      drift.push(`${key}: ${p[key]} against the measured ${MEASURED[key]} (off by ${off.join('/')})`);
+    }
+  }
+  assert.deepEqual(drift, [], `the night ramp no longer matches the design:\n${drift.join('\n')}`);
+
+  // And the shop's own colour arrives unshifted: the design's gold already
+  // reads on the design's black, so nothing should be rescuing it.
+  assert.equal(p.accent, MEASURED.accent, 'the accent was moved on a ground it already cleared');
+});
+
+test('daylight is untouched by the night ramp existing', () => {
+  /*
+   * The regression that would be easiest to ship and hardest to notice: a
+   * shop that has NOT chosen a dark identity, and the /kj landing page, both
+   * still call this module the way they always did. Every neutral and every
+   * accent they get back has to be byte-identical to what it was before the
+   * night ground was added — so this compares the default call against the
+   * explicit day call, across the whole spread.
+   */
+  for (const accent of SPREAD) {
+    for (const dark of [true, false]) {
+      const implicit = themeVariables(accent, dark);
+      const explicit = themeVariables(accent, dark, { night: false });
+      assert.deepEqual(implicit, explicit,
+        `${accent} (${dark ? 'dark' : 'light'} bands): asking for day explicitly gave a different palette`);
+      // The one thing that would prove daylight had gone dark.
+      assert.equal(implicit['--surface'], '#ffffff',
+        `${accent}: a daylight card is no longer solid white`);
+    }
+  }
+});
+
+test('a night page is genuinely dark, and its card is a visible step above it', () => {
+  /*
+   * The WCAG ratio is the wrong instrument down here and saying so is the
+   * point of this test: at the bottom of the range its 0.05 constant swamps
+   * both luminances, so the measured design's own page-to-card step scores
+   * 1.08:1 no matter how plainly visible it is. What separates two near-blacks
+   * is LIGHTNESS distance, so that is what is measured — and the floor is set
+   * from the design itself (4 points of 255), not from a number somebody liked.
+   */
+  const lightness = (hex) => rgb(hex).reduce((a, b) => a + b, 0) / 3;
+  for (const accent of SPREAD) {
+    const p = palette(accent, true, { night: true });
+    assert.ok(lightness(p.bg) < 20,
+      `${accent}: the night page is ${lightness(p.bg).toFixed(1)}/255 — that is not night`);
+    const step = lightness(p.surface) - lightness(p.bg);
+    assert.ok(step >= 3,
+      `${accent}: a card is only ${step.toFixed(1)} above the page — the edge disappears`);
+    assert.ok(step <= 14,
+      `${accent}: a card is ${step.toFixed(1)} above the page — that is a panel, not a card`);
+    /*
+     * The second ground rises here rather than falling — see the NIGHT ramp's
+     * own note. What is asserted is the RELATIONSHIP, which is what `--bg-2`
+     * has always meant: it sits between the page and a card, distinct from
+     * both. A refactor that "fixed" it to recede would land it on black and
+     * this catches that as surely as it catches it overshooting the card.
+     */
+    assert.ok(lightness(p.bg2) > lightness(p.bg),
+      `${accent}: --bg-2 collapsed onto the night page`);
+    assert.ok(lightness(p.bg2) < lightness(p.surface),
+      `${accent}: --bg-2 is at or above the card, so there are only two grounds`);
+    // The photo well goes UP: a picture needs a ground, not a hole.
+    assert.ok(lightness(p.well) > lightness(p.surface),
+      `${accent}: the photo well is darker than the card it sits in`);
+  }
+});
+
+test('every ink and every accent can be read on the night page', () => {
+  for (const accent of SPREAD) {
+    const p = palette(accent, true, { night: true });
+    // Measured against the DEEPEST ground each one lands on — which on night
+    // paper is --bg-2, exactly as --bg-2 is the deepest in daylight.
+    assert.ok(contrast(p.ink, p.bg2) >= 10,
+      `${accent}: headings at ${contrast(p.ink, p.bg2).toFixed(2)}:1`);
+    assert.ok(contrast(p.ink2, p.bg2) >= 7,
+      `${accent}: body copy at ${contrast(p.ink2, p.bg2).toFixed(2)}:1`);
+    // Muted ink is never a sentence somebody has to read; the day ramp allows
+    // it 2.94 and this holds it to the same figure on the card it sits on.
+    assert.ok(contrast(p.ink3, p.surface) >= 2.9,
+      `${accent}: muted ink at ${contrast(p.ink3, p.surface).toFixed(2)}:1 on a card`);
+    // A price is the accent, and a price has to be readable.
+    assert.ok(contrast(p.strong, p.bg) >= 4.5,
+      `${accent}: the accent as words is ${contrast(p.strong, p.bg).toFixed(2)}:1 on the page`);
+    // And ink on a solid accent fill — the gold button.
+    assert.ok(contrast(p.solidInk, p.accent) >= 4.5,
+      `${accent}: ink on a filled button is ${contrast(p.solidInk, p.accent).toFixed(2)}:1`);
+  }
+});
+
+test('a night neutral carries only as much of the shop as the shop asked for', () => {
+  /*
+   * The night ramp is the one place a neutral is allowed hue at all, and the
+   * licence is narrow: warm at 3.5% lightness is how every dark shop on earth
+   * looks, and a pure grey black reads as a switched-off screen. What must not
+   * happen is the failure the DAY ramp had its hue removed for — a page that
+   * is visibly a colour.
+   *
+   * Two guards. The tint is capped, and it scales with the accent's own
+   * saturation, so a shop that chose black, white or grey gets a true grey
+   * night rather than a red-black one (hue 0 is red, and every greyscale hex
+   * carries it).
+   */
+  const spreadOfChannels = (hex) => {
+    const [r, g, b] = rgb(hex);
+    return Math.max(r, g, b) - Math.min(r, g, b);
+  };
+
+  // Greyscale only. `#111827` is NOT in this list on purpose: it looks black
+  // and is a navy, and asserting it has no hue would be asserting a bug.
+  for (const accent of ['#000000', '#ffffff', '#808080', '#0a0a0a', '#3f3f3f']) {
+    const p = palette(accent, true, { night: true });
+    for (const key of ['bg', 'bg2', 'surface', 'ink', 'ink2', 'ink3']) {
+      const seen = spreadOfChannels(p[key]);
+      const grey = /^#(0[0-9a-f]|[0-9a-f]{2})$/.test('') || seen === 0;
+      assert.ok(grey || seen <= 1,
+        `${accent} is a greyscale accent but ${key} came back as ${p[key]} — ${seen} points of colour`);
+    }
+  }
+
+  // And for a strongly coloured accent the tint is present but restrained:
+  // visible as warmth, never as a colour field.
+  for (const accent of ['#ff0000', '#00ff00', '#0000ff', '#ff00ff']) {
+    const p = palette(accent, true, { night: true });
+    assert.ok(spreadOfChannels(p.bg) <= 6,
+      `${accent}: the night page is ${p.bg} — ${spreadOfChannels(p.bg)} points of colour is a coloured page`);
+    assert.ok(spreadOfChannels(p.ink) <= 34,
+      `${accent}: the night ink is ${p.ink} — that is a tinted heading, not a warm white`);
+  }
+});
+
+test('the night hairline is the shop\'s own colour, not a grey', () => {
+  /*
+   * The single measurement that carries the most of the look, and the one a
+   * refactor would most easily flatten back into a grey: every card edge and
+   * every divider in the design is the accent at 22%.
+   */
+  for (const accent of SPREAD) {
+    const p = palette(accent, true, { night: true });
+    const [r, g, b] = rgb(p.accentRaw);
+    assert.equal(p.line, `rgba(${r}, ${g}, ${b}, 0.22)`,
+      `${accent}: the night hairline is ${p.line}`);
+    assert.equal(p.line2, `rgba(${r}, ${g}, ${b}, 0.12)`);
+  }
+});
+
+test('applyTheme marks the paper so the sheet can tell the two apart', () => {
+  const set = {};
+  const node = { style: { setProperty(k, v) { set[k] = v; } }, dataset: {} };
+
+  applyTheme(node, { accent: DEFAULT_ACCENT, dark: true, night: true });
+  assert.equal(node.dataset.paper, 'night');
+  /*
+   * And the properties themselves, because the attribute alone would be a
+   * label on an unchanged palette. This is the path the ERP's live preview
+   * takes — it calls applyTheme on ONE node rather than on <html> — so if the
+   * night values did not reach a node, the preview would show a shop owner a
+   * white storefront that no longer exists.
+   */
+  assert.ok(set['--bg'].startsWith('#0'), `the night page came back as ${set['--bg']}`);
+  assert.notEqual(set['--surface'], '#ffffff', 'a night card is still solid white');
+  assert.match(set['--line'], /^rgba\(/, 'the night hairline is not the accent at alpha');
+  assert.equal(node.dataset.theme, 'dark', 'the band attribute must survive alongside it');
+
+  // The landing page and a light shop both call this without `night`, and both
+  // must keep their paper. A default that flipped would take /kj with it.
+  applyTheme(node, { accent: DEFAULT_ACCENT, dark: true });
+  assert.equal(node.dataset.paper, 'day', 'omitting `night` turned the paper dark');
+  applyTheme(node, { accent: DEFAULT_ACCENT, dark: false });
+  assert.equal(node.dataset.paper, 'day');
+});

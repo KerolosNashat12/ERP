@@ -33,7 +33,39 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <!--
+    The two display faces, and the first webfonts this storefront has ever
+    loaded. That is a reversal of a deliberate decision — shop.css says "a
+    webfont would be a third-party request on the critical path of a shop most
+    of whose customers are on mobile data" — so it is worth saying why it
+    changed and what it costs.
+
+    The night skin the owner chose IS its serif. Playfair Display sets every
+    product name and every section title in the design he sent; without it the
+    page is the same black rectangle with the same system sans on it, which is
+    a recolour rather than the design. Amiri is its Arabic partner, and it is
+    not optional either: Playfair has no Arabic glyphs at all, so an Arabic
+    shop would silently fall back to the body sans for every heading and the
+    two languages would look like two different shops.
+
+    What it costs, and how that cost is contained:
+      · `display=swap` — the text paints immediately in the fallback and
+        re-paints when the face arrives. Nothing is ever invisible waiting.
+      · Only the weights the sheet actually spends: 400 and 500, plus one
+        italic for the hero. Not a family, four files.
+      · `preconnect` on both hosts, so the handshake overlaps the CSS.
+      · The stylesheet link is NOT render-blocking for the shop's own CSS,
+        which is above it and loads from our own origin.
+      · The daylight storefront does not use either face, so a shop that has
+        not chosen a dark identity pays the download and nothing else — and
+        `--font-display` falls back to Georgia and Noto Naskh, both of which
+        ship with the phones this shop actually sells to.
+  -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="/shop/shop.css">
+  <link rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;1,400&family=Amiri:wght@400;700&display=swap">
   <!--MM-SEO-START-->
   <title>المتجر</title>
   <meta name="description" content="">
