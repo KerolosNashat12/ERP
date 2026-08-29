@@ -597,13 +597,24 @@ test('a supplier swap: one item goes back and a different one comes in', async (
   assert.equal(await onHand(shop.variants.amber50.id) - amberBefore, 5, 'the replacement never arrived');
 
   /*
-   * A swap of equal counts for a DIFFERENT item is not free: what went back was
-   * worth 47.50 each after the flat discount, and what came in is worth 120.
-   * The balance must move, because the shop now holds more value than it
-   * ordered.
+   * A swap of equal COUNTS for a different item is not a swap of equal VALUE,
+   * and the money has to say so. Five musks went back worth 47.50 each after
+   * their share of the flat 250 discount — 237.50 — and five ambers came in at
+   * 120 each, 600. The shop is holding 362.50 more than it ordered, so it owes
+   * 362.50 more, not 237.50 less.
+   *
+   * This assertion used to read `Number.isFinite(balance.outstanding)`, which
+   * is to say it asserted nothing, and the bug it was standing in front of was
+   * that `replacement_amount` was written on every swap and read by nothing.
    */
   const balance = await ok(`/api/purchases/${order.id}/balance`);
-  assert.ok(Number.isFinite(Number(balance.outstanding)), 'the swapped order has no balance');
+  assert.equal(round2(balance.returned_amount), 237.5, 'five musks at 47.50 went back');
+  assert.equal(round2(balance.replacement_amount), 600, 'five ambers at 120 came in');
+  assert.equal(round2(balance.credit_amount), -362.5,
+    'the swap is worth nothing off the order — the shop received more than it sent');
+  assert.equal(round2(balance.net_amount), round2(950 + 362.5),
+    `the order should cost 362.50 more, not less: ${balance.net_amount}`);
+  assert.equal(round2(balance.owed_by_supplier), 0, 'the shop owes him here, not the reverse');
 });
 
 test('a sale is voided and everything it moved comes back', async () => {
@@ -782,7 +793,7 @@ test('INVARIANT — every sale totals its own lines', async () => {
   assert.deepEqual(wrong, [], `a sale does not add up:\n${wrong.join('\n')}`);
 });
 
-test('INVARIANT — every purchase order balance is total minus paid minus returned', async () => {
+test('INVARIANT — every purchase order balance is total minus its credit minus what was paid', async () => {
   const orders = await getDb().prepare(
     "SELECT id, po_number, total_amount FROM purchase_orders WHERE status != 'cancelled'",
   ).all();
@@ -791,11 +802,21 @@ test('INVARIANT — every purchase order balance is total minus paid minus retur
   const wrong = [];
   for (const order of orders) {
     const reported = await ok(`/api/purchases/${order.id}/balance`);
-    const expected = round2(
-      Number(reported.total_amount) - Number(reported.returned_amount || 0) - Number(reported.paid_amount || 0),
-    );
+    /*
+     * total − (what went back − what came back instead) − what was paid.
+     *
+     * The middle bracket is the whole point: a return credits the order, a
+     * REPLACEMENT against that return takes the credit away again, and an
+     * invariant written as `total − returned − paid` would bless the bug where
+     * an even swap wiped money off a debt the shop still owed.
+     */
+    const credit = round2(Number(reported.returned_amount || 0) - Number(reported.replacement_amount || 0));
+    if (round2(reported.credit_amount) !== credit) {
+      wrong.push(`${order.po_number}: credit ${reported.credit_amount}, returned-replaced is ${credit}`);
+    }
+    const expected = round2(Number(reported.total_amount) - credit - Number(reported.paid_amount || 0));
     if (round2(reported.outstanding) !== expected) {
-      wrong.push(`${order.po_number}: says ${reported.outstanding}, total-returned-paid is ${expected}`);
+      wrong.push(`${order.po_number}: says ${reported.outstanding}, total-credit-paid is ${expected}`);
     }
     // And the words are not an opinion: they are the sign of the number.
     const shouldBeOwed = round2(reported.outstanding) < 0 ? round2(-reported.outstanding) : 0;

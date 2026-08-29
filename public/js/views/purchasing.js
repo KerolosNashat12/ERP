@@ -422,13 +422,27 @@ async function purchaseFormView(root, route) {
     if (!existing) return;
     try {
       const balance = await api.get(`/api/purchases/${existing.id}/balance`);
-      if (!balance.returned_amount && !balance.owed_by_supplier) { mount(balanceHost); return; }
+      if (!balance.returned_amount && !balance.replacement_amount && !balance.owed_by_supplier) {
+        mount(balanceHost); return;
+      }
       const cell = (label, value, cls = '') => h('div', { class: `kpi ${cls}` },
         h('div', { class: 'label' }, label),
         h('div', { class: 'value' }, value));
+      /*
+       * Both halves of a swap, and only then the net. A strip that showed
+       * "sent back 300" and jumped straight to a total is how somebody
+       * reconciling a supplier's statement concludes he is owed 300 for
+       * bottles the supplier already replaced.
+       */
       mount(balanceHost, h('div', { class: 'kpis summary-cards' },
         cell(t('total'), money(balance.total_amount)),
         cell(t('returnedToSupplier'), money(balance.returned_amount)),
+        balance.replacement_amount
+          ? cell(t('replacedBySupplier'), money(balance.replacement_amount))
+          : null,
+        balance.replacement_amount
+          ? cell(t('returnCredit'), money(balance.credit_amount))
+          : null,
         cell(t('orderTotalNet'), money(balance.net_amount)),
         cell(t('paid'), money(balance.paid_amount)),
         balance.owed_by_supplier

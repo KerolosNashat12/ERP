@@ -643,6 +643,87 @@ test('returning goods to a supplier', async (t) => {
     assert.equal(balance.net_amount, 250, 'the shop still owes the shipping');
   });
 
+  /*
+   * ── The three shapes of a swap, and what each does to the money ──────────
+   *
+   * These three exist because the version before them did not, and the bug that
+   * slipped through was the worst kind: silent, on the most ordinary case, on a
+   * screen that looked completely normal.
+   *
+   * `replacement_amount` was computed correctly, written on every return
+   * document, and then read by NOTHING. The balance subtracted what went out
+   * and never added what came back — so a supplier replacing three faulty
+   * bottles with three identical ones took 300 off a debt the shop still owed
+   * in full. The test that should have caught it was named "a cheaper swap
+   * leaves the difference owing to the shop" and then asserted the document and
+   * the shelf and never once looked at the balance. A test named after the
+   * money has to look at the money.
+   */
+
+  await t.test('an EVEN swap moves no money at all', async () => {
+    /*
+     * The ordinary case, and the one that was wrong. Three faulty bottles go
+     * back, three identical ones come in. The shop holds what it held and owes
+     * what it owed; nothing about this order has changed except that three
+     * bottles on the shelf are now ones that work.
+     */
+    const variant = await product(100);
+    const po = await order([{ variant, quantity: 10, cost: 100 }]);
+    const before = await ok(`/api/purchases/${po.id}/balance`);
+    assert.equal(before.outstanding, 1000);
+
+    const swap = await ok('/api/purchase-returns', {
+      method: 'POST',
+      body: {
+        purchase_order_id: po.id,
+        settlement: 'replace',
+        lines: [{ po_line_id: po.lines[0].id, quantity: 3, replacement_quantity: 3 }],
+      },
+    });
+    assert.equal(swap.total_amount, 300, 'three bottles went back');
+    assert.equal(swap.replacement_amount, 300, 'three came in against them');
+
+    const after = await ok(`/api/purchases/${po.id}/balance`);
+    assert.equal(after.returned_amount, 300, 'the goods that went back are still a fact worth showing');
+    assert.equal(after.replacement_amount, 300, 'and so are the ones that came in');
+    assert.equal(after.credit_amount, 0, 'an even swap is worth nothing off the order');
+    assert.equal(after.net_amount, 1000, 'the order still costs what it cost');
+    assert.equal(after.outstanding, 1000,
+      'an even swap wiped part of a debt the shop still owes in full');
+    assert.equal(after.owed_by_supplier, 0);
+    assert.equal(await onHand(variant.id), 10, 'the shelf holds what it held');
+  });
+
+  await t.test('a swap for something DEARER makes the shop owe the difference', async () => {
+    const ordinary = await product(100);
+    const better = await product(150);
+    const po = await order([{ variant: ordinary, quantity: 10, cost: 100 }]);
+
+    const swap = await ok('/api/purchase-returns', {
+      method: 'POST',
+      body: {
+        purchase_order_id: po.id,
+        settlement: 'replace',
+        lines: [{
+          po_line_id: po.lines[0].id,
+          quantity: 2,
+          replacement_quantity: 2,
+          replacement_variant_id: better.id,
+          replacement_unit_cost: 150,
+        }],
+      },
+    });
+    assert.equal(swap.total_amount, 200, 'two ordinary ones went back');
+    assert.equal(swap.replacement_amount, 300, 'two better ones came in');
+
+    const balance = await ok(`/api/purchases/${po.id}/balance`);
+    // 200 of goods left, 300 of goods arrived: the shop is 100 further in.
+    assert.equal(balance.credit_amount, -100, 'the shop received more than it sent');
+    assert.equal(balance.net_amount, 1100, 'the order should now cost 100 more, not 200 less');
+    assert.equal(balance.outstanding, 1100);
+    assert.equal(balance.owed_by_supplier, 0, 'the shop owes HIM here, not the other way round');
+  });
+
   await t.test('a cheaper swap leaves the difference owing to the shop', async () => {
     const dear = await product(500);
     const cheap = await product(200);
@@ -666,6 +747,51 @@ test('returning goods to a supplier', async (t) => {
     assert.equal(swap.replacement_amount, 400, 'two cheap ones came in');
     assert.equal(await onHand(dear.id), 2);
     assert.equal(await onHand(cheap.id), 2);
+
+    // 1000 of goods left, 400 arrived: 600 comes off the order and no more.
+    const balance = await ok(`/api/purchases/${po.id}/balance`);
+    assert.equal(balance.credit_amount, 600, 'the credit is the difference, not the whole return');
+    assert.equal(balance.net_amount, 1400, '2000 less a 600 credit');
+    assert.equal(balance.outstanding, 1400);
+
+    // And once it is paid in full, the same swap makes the supplier the debtor.
+    await ok(`/api/purchases/${po.id}/payment`, { method: 'POST', body: { amount: 2000, method: 'cash' } });
+    const paid = await ok(`/api/purchases/${po.id}/balance`);
+    assert.equal(paid.outstanding, -600);
+    assert.equal(paid.owed_by_supplier, 600,
+      'paid 2000 for 1400 of goods — the supplier is holding 600 of the shop\'s money');
+  });
+
+  await t.test('undoing a swap gives back the money as well as the goods', async () => {
+    const variant = await product(100);
+    const instead = await product(250);
+    const po = await order([{ variant, quantity: 8, cost: 100 }]);
+
+    const swap = await ok('/api/purchase-returns', {
+      method: 'POST',
+      body: {
+        purchase_order_id: po.id,
+        settlement: 'replace',
+        lines: [{
+          po_line_id: po.lines[0].id,
+          quantity: 4,
+          replacement_quantity: 4,
+          replacement_variant_id: instead.id,
+          replacement_unit_cost: 250,
+        }],
+      },
+    });
+    const during = await ok(`/api/purchases/${po.id}/balance`);
+    assert.equal(during.net_amount, 1400, '400 out, 1000 in');
+
+    await ok(`/api/purchase-returns/${swap.id}/reverse`, { method: 'POST', body: { reason: 'wrong line' } });
+    const after = await ok(`/api/purchases/${po.id}/balance`);
+    assert.equal(after.returned_amount, 0);
+    assert.equal(after.replacement_amount, 0, 'a reversed swap must drop BOTH halves, not just one');
+    assert.equal(after.credit_amount, 0);
+    assert.equal(after.net_amount, 800, 'the order is exactly what it was before the swap');
+    assert.equal(await onHand(variant.id), 8);
+    assert.equal(await onHand(instead.id), 0);
   });
 
   await t.test('awkward costs stay to the piastre', async () => {

@@ -151,29 +151,69 @@ export class PurchaseReturnService {
   }
 
   /**
-   * What this order still owes, after everything that has gone back.
+   * What this order still owes, after everything that has gone back AND
+   * everything that came back in exchange.
    *
-   * Negative means the supplier owes the shop. That happens the moment goods go
-   * back on an order that was already paid in full, which is the single most
-   * common shape of this whole feature and the one the owner asked for by name.
+   * ── Why the replacements are in here ────────────────────────────────────
+   * A return and a swap are not the same event, and for a while this function
+   * treated them as if they were: it subtracted what went OUT and never looked
+   * at what came IN, because `replacement_amount` was written on every return
+   * document and then read by nobody.
+   *
+   * The result was wrong in the most ordinary case there is. A supplier
+   * replaces three faulty bottles with three identical ones: nothing has
+   * changed — the shop holds what it held and owes what it owed — but the order
+   * dropped the value of three bottles off the debt. On a 1,000 order that is
+   * 300 the shop stops owing for goods it is still holding. The uneven case was
+   * worse in the other direction: send back 200 of goods, receive 300 of a
+   * better item, and the debt went DOWN by 200 when it should have gone UP by
+   * 100. The shop lost 300 on a single swap, silently, on a screen that looked
+   * completely normal.
+   *
+   * So the credit a return is worth is what LEFT minus what CAME BACK:
+   *
+   *   an ordinary return   300 out,   0 back  ->  300 credit
+   *   an even swap         300 out, 300 back  ->    0 credit, debt unmoved
+   *   a swap for better    200 out, 300 back  ->  -100, the shop owes the extra
+   *   a swap for cheaper   300 out, 200 back  ->  100 credit for the difference
+   *
+   * Both halves are reported, not just the net, because "we sent back 300 worth"
+   * and "we owe 100 less" are two different facts and a shopkeeper reconciling a
+   * supplier's statement needs to see both.
+   *
+   * Negative `outstanding` means the SUPPLIER owes the shop. That happens the
+   * moment goods go back on an order already paid in full — the shape the owner
+   * asked for by name — and it is reported in words as `owed_by_supplier`
+   * rather than left as a minus sign for a screen to interpret.
    */
   async balance(orderId) {
     const row = await this.db.prepare(`
       SELECT po.total_amount, po.paid_amount,
              COALESCE((SELECT SUM(total_amount) FROM purchase_returns
-                        WHERE purchase_order_id = po.id AND status = 'completed'), 0) AS returned
+                        WHERE purchase_order_id = po.id AND status = 'completed'), 0) AS returned,
+             COALESCE((SELECT SUM(replacement_amount) FROM purchase_returns
+                        WHERE purchase_order_id = po.id AND status = 'completed'), 0) AS replaced
         FROM purchase_orders po WHERE po.id = ?
     `).get(Number(orderId));
     if (!row) throw new NotFoundError('Purchase order', orderId);
-    const net = round2(Number(row.total_amount) - Number(row.returned));
+
+    const returned = round2(Number(row.returned));
+    const replaced = round2(Number(row.replaced));
+    // What the returns are actually worth as money off this order.
+    const credit = round2(returned - replaced);
+    const net = round2(Number(row.total_amount) - credit);
     const outstanding = round2(net - Number(row.paid_amount));
     return {
       total_amount: round2(Number(row.total_amount)),
-      returned_amount: round2(Number(row.returned)),
+      // The goods, at what the shop paid for them.
+      returned_amount: returned,
+      // What the supplier sent in their place, at what it is worth.
+      replacement_amount: replaced,
+      // The two of them netted: the money this order actually comes down by.
+      credit_amount: credit,
       net_amount: net,
       paid_amount: round2(Number(row.paid_amount)),
       outstanding,
-      // Said in words rather than left as a sign for a screen to interpret.
       owed_by_supplier: outstanding < -0.009 ? round2(-outstanding) : 0,
     };
   }

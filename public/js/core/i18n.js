@@ -112,6 +112,9 @@ const dictionary = {
     replacementQty: 'Coming back', supplierOwesUs: 'The supplier owes us',
     weOweSupplier: 'We still owe', orderTotalNet: 'After returns',
     returnedToSupplier: 'Sent back', reverseReturn: 'Undo this return',
+    // The two halves of a swap, and what they net to. Both are shown, because
+    // "we sent back 300 worth" and "we owe 100 less" are different facts.
+    replacedBySupplier: 'Came back instead', returnCredit: 'Credit on this order',
     reverseReturnReason: 'Why is this being undone?', nothingReturnable: 'Nothing on this order can go back',
     errPrOrderCancelled: 'This order was cancelled — there is nothing to send back',
     errPrNothingReceived: 'Nothing has been received on this order yet',
@@ -1033,6 +1036,7 @@ const dictionary = {
     replacementQty: 'الراجع', supplierOwesUs: 'المورد ليه عندنا',
     weOweSupplier: 'لسه علينا', orderTotalNet: 'بعد المرتجعات',
     returnedToSupplier: 'اترجع', reverseReturn: 'إلغاء المرتجع',
+    replacedBySupplier: 'جه بدله', returnCredit: 'رصيد على الفاتورة',
     reverseReturnReason: 'ليه بيتلغي؟', nothingReturnable: 'مفيش حاجة في الأمر ده تقدر ترجع',
     errPrOrderCancelled: 'الأمر ده اتلغى — مفيش حاجة ترجّعها',
     errPrNothingReceived: 'لسه مااستلمتش حاجة على الأمر ده',

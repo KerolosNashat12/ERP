@@ -268,10 +268,63 @@ else {
     if (!row.includes(order.swapSku)) fail(`the chosen item is not shown on the row: ${row}`);
   }
 }
+/*
+ * And now the half the owner asked about out loud: «لو في فلوس ليا عند المورد
+ * او هو ليه فرق فلوس؟» — so the swap is actually SENT, and the strip is read.
+ *
+ * Two of the four bottles that went back are replaced by two at 150 against
+ * bottles that cost 100, so the shop has received 100 MORE than it sent and
+ * owes 100 more. The version this replaced credited the shop for the 200 that
+ * went out and ignored the 300 that came in, on a screen that looked entirely
+ * normal.
+ */
+// What the order said before the swap, so the swap is measured as a CHANGE —
+// this order already carries the 3-bottle return from the first half of this
+// file, and an absolute figure here would be asserting both at once.
+const beforeSwap = await page.evaluate(async (id) => (await (await fetch(`/api/purchases/${id}/balance`)).json()), order.id);
+
 await page.evaluate(() => {
-  const close = [...document.querySelectorAll('#modal-root button')].find((n) => /^(×|✕|Close)$/.test((n.textContent || '').trim()));
-  if (close) close.click();
+  const node = [...document.querySelectorAll('#modal-root > *')]
+    .find((n) => /Swap with the supplier|استبدال من المورد/.test(n.querySelector('.modal-head h3')?.textContent || ''));
+  const boxes = [...(node?.querySelectorAll('tbody tr input[type="number"]') || [])];
+  // First box is what goes back, second is what comes in against it.
+  if (boxes[0]) { boxes[0].value = '2'; boxes[0].dispatchEvent(new Event('change', { bubbles: true })); }
 });
+await page.waitForTimeout(700);
+const sent = await page.evaluate(() => {
+  const node = [...document.querySelectorAll('#modal-root > *')]
+    .find((n) => /Swap with the supplier|استبدال من المورد/.test(n.querySelector('.modal-head h3')?.textContent || ''));
+  const boxes = [...(node?.querySelectorAll('tbody tr input[type="number"]') || [])];
+  if (boxes[1]) { boxes[1].value = '2'; boxes[1].dispatchEvent(new Event('change', { bubbles: true })); }
+  const go = [...(node?.querySelectorAll('.modal-foot button') || [])][0];
+  if (!go) return false;
+  go.click();
+  return true;
+});
+if (!sent) fail('the swap dialog has no button to send it');
+await page.waitForTimeout(3000);
+
+await page.goto(`${BASE}/app.html#/purchases/${order.id}`);
+await page.waitForTimeout(2200);
+const swapStrip = await page.evaluate(() => document.querySelector('.summary-cards')?.innerText.replace(/\n/g, ' | ') || '');
+console.log('strip after the swap:', swapStrip);
+if (!/Came back instead|جه بدله/i.test(swapStrip)) {
+  fail(`the strip does not say what came back in exchange: ${swapStrip}`);
+}
+if (!/300/.test(swapStrip)) fail(`the 300 that came in is not on the strip: ${swapStrip}`);
+
+// And the number itself, asked of the server rather than read off a card.
+const money = await page.evaluate(async (id) => (await (await fetch(`/api/purchases/${id}/balance`)).json()), order.id);
+console.log('balance after the swap:', JSON.stringify(money));
+const moved = (key) => Math.round((money[key] - beforeSwap[key]) * 100) / 100;
+if (moved('returned_amount') !== 200) fail(`the swap sent back ${moved('returned_amount')}, expected 200`);
+if (moved('replacement_amount') !== 300) fail(`${moved('replacement_amount')} came back instead, expected 300`);
+if (moved('credit_amount') !== -100) {
+  fail(`the swap moved the credit by ${moved('credit_amount')}; 200 went out and 300 came in, so it is worth −100`);
+}
+if (moved('net_amount') !== 100) {
+  fail(`the order moved by ${moved('net_amount')}; the shop received 100 more than it sent, so it owes 100 more`);
+}
 
 // And the return is on the list.
 await page.goto(`${BASE}/app.html#/supplier-returns`);
