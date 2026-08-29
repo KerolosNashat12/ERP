@@ -121,6 +121,16 @@ for (const template of ['classic', 'luxe']) {
        * amount of looking at it would show that.
        */
       const live = await page.evaluate(async () => (await (await fetch('/api/shop/home')).json()).stats);
+      /*
+       * Rounding down is allowed; rounding down HARD is not. A shop with 248
+       * products showing "200+" is telling the truth and giving away
+       * forty-eight products of it, which is the opposite of what a confidence
+       * band is for. Within 10% of the real figure, or exact.
+       */
+      const suffixed = Number((text.match(/(\d[\d,]*)\s*\+/) || [])[1]?.replace(/,/g, '') || 0);
+      if (suffixed && suffixed < live.products * 0.9) {
+        fail(`[${tag}] the band rounds ${live.products} products down to ${suffixed}`);
+      }
       if (!text.includes(String(live.products)) && live.products >= 50) {
         // Above 50 the figure is rounded down and suffixed, so an exact match
         // is not expected — only that it is not larger than the truth.

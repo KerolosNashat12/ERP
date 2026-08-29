@@ -204,7 +204,14 @@ function statsStrip(stats) {
    */
   const approx = (n) => {
     if (n < 50) return number(n);
-    const step = n < 200 ? 10 : (n < 1000 ? 50 : 100);
+    /*
+     * The step is the smallest one that still reads as round, because rounding
+     * down costs the shop real products and there is no reason to charge it
+     * more than the tidying is worth. The first ladder here jumped to 50s at
+     * 200, which turned a shop with 248 products into "200+" — literally true,
+     * and forty-eight products of false modesty on its own front page.
+     */
+    const step = n < 1000 ? 10 : (n < 5000 ? 50 : 100);
     return `${number(Math.floor(n / step) * step)}+`;
   };
 

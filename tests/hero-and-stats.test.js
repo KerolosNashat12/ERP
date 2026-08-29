@@ -258,3 +258,84 @@ test('the heading is split into lines, and cannot carry markup', async () => {
   const dom = fs.readFileSync(path.join(here, '..', 'public/shop/js/core/dom.js'), 'utf8');
   assert.match(dom, /createTextNode/, 'el() no longer appends children as text');
 });
+
+/* ════════════════ the default that made him ask "where are the statistics?" ══ */
+
+test('a shop with a real catalogue gets the figures without being told to', async (t) => {
+  /*
+   * 028 defaulted the band to off. The reasoning was about the platform — a
+   * band announcing a product count reads as an apology at 11 — and it was
+   * wrong about the person who ASKED for the band: he published the release
+   * containing it and the feature was invisible.
+   *
+   * 029 derives the value instead: a shop with something to say gets it, a
+   * nearly-empty shop does not, and neither has to know the setting exists.
+   * Both directions are tested, plus the case that matters on a second run —
+   * a shop that has already chosen keeps its choice.
+   */
+  const { openConnection } = await import('../src/infrastructure/database/connection.js');
+  const migration = (await import('../src/infrastructure/database/migrations/029-stats-on-for-real-catalogues.js')).default;
+  const bigShop = path.join(here, '..', 'data', 'stats-default-test');
+  fs.rmSync(bigShop, { recursive: true, force: true });
+  fs.mkdirSync(bigShop, { recursive: true });
+  t.after(() => fs.rmSync(bigShop, { recursive: true, force: true }));
+
+  /** A shop with `products` published products spread over `brands` brands. */
+  const shopWith = async (name, products, brands, stored = '0') => {
+    const connection = await openConnection({ driver: 'node', file: path.join(bigShop, `${name}.db`) });
+    await connection.applySchema();
+    const db = connection.facade;
+    await db.prepare(`
+      INSERT INTO settings (key, value, value_type, group_name)
+      VALUES ('web.stats_enabled', ?, 'string', 'website')
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value
+    `).run(stored);
+    for (let i = 0; i < brands; i += 1) {
+      // eslint-disable-next-line no-await-in-loop
+      await db.prepare('INSERT INTO brands (code, name_en, name_ar) VALUES (?, ?, ?)')
+        .run(`B${i}`, `Brand ${i}`, `ماركة ${i}`);
+    }
+    for (let i = 0; i < products; i += 1) {
+      // eslint-disable-next-line no-await-in-loop
+      await db.prepare(`
+        INSERT INTO products (sku_prefix, name_en, brand_id, is_active, is_published)
+        VALUES (?, ?, ?, 1, 1)
+      `).run(`P-${name}-${i}`, `Product ${i}`, brands ? (i % brands) + 1 : null);
+    }
+    return { connection, db };
+  };
+  const valueAfter = async (shop) => {
+    await migration.up({ getDb: () => shop.db, hasTable: async () => true });
+    const row = await shop.db.prepare("SELECT value FROM settings WHERE key = 'web.stats_enabled'").get();
+    shop.connection.close();
+    return row?.value;
+  };
+
+  await t.test('a shop with a catalogue gets the band', async () => {
+    assert.equal(await valueAfter(await shopWith('big', 40, 5)), '1');
+  });
+
+  await t.test('a shop with almost nothing on the shelves does not', async () => {
+    // "11 PRODUCTS · 2 BRANDS" is not confidence, it is an apology.
+    assert.equal(await valueAfter(await shopWith('small', 11, 2)), '0');
+  });
+
+  await t.test('a big shop that stocks one brand does not get a "1 BRANDS" cell', async () => {
+    assert.equal(await valueAfter(await shopWith('onebrand', 200, 1)), '0');
+  });
+
+  await t.test('a shop that already switched it on is left alone', async () => {
+    assert.equal(await valueAfter(await shopWith('already', 40, 5, '1')), '1');
+  });
+
+  await t.test('a shop that switched it OFF deliberately keeps it off', async () => {
+    /*
+     * The one that stops this being an overrule. A value of '0' is the only
+     * thing this migration touches — but it has already run by the time
+     * anybody could have chosen '0' themselves, and a migration that has run
+     * never runs again. The check here is on the OTHER shape: anything that is
+     * not exactly '0' is untouched, so a shop storing 'false' or 'no' is safe.
+     */
+    assert.equal(await valueAfter(await shopWith('explicit', 40, 5, 'false')), 'false');
+  });
+});
