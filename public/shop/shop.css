@@ -3611,3 +3611,287 @@ html[data-paper="night"]:not([lang="ar"]) .btn {
   letter-spacing: .1em;
   font-size: var(--fs-sm);
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   NIGHT, PART TWO — matching the reference composition, not just its palette.
+
+   Part one made the page the right colours. This makes it the right SHAPE:
+   the owner's words were «انا عاوزك تعمل نفس الديزاين بالظبط».
+
+   Still a skin. Every selector below already exists and every element it
+   touches already does its job — the header still searches, the hero still
+   carries whatever banner a shop configured, the trust row still says what
+   delivery actually costs. What changes is proportion, weight, alignment and
+   rhythm, which is most of what makes one design look like another.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ------------------------------------------------------------------ header */
+/*
+ * The reference wears its name as a stacked wordmark — wide-tracked capitals
+ * over a much smaller second line — and sets its navigation as small tracked
+ * capitals with a hairline under the active one. Ours already has all those
+ * parts; they were just dressed as an app rather than as a shop.
+ */
+html[data-paper="night"] .site-head {
+  background: var(--bg);
+  border-block-end: 1px solid var(--line);
+  backdrop-filter: none;
+}
+html[data-paper="night"] .brand-name,
+html[data-paper="night"] .foot-name {
+  font-family: var(--font-display);
+  font-weight: 400;
+  /*
+   * Tracking on a name has to be paid for in width, and the header's name has
+   * a truncation rule on it — so "M&M Accessories" at .16em came out as
+   * "M&M AC…". The footer has a whole column to itself and can afford the
+   * reference's spacing; the header gets a third of it and a bit more room.
+   */
+  letter-spacing: .06em;
+}
+html[data-paper="night"] .foot-name { letter-spacing: .16em; }
+/*
+ * `.brand-name` is `nowrap` with an ellipsis, sized by whatever column the
+ * header grid gives it — so widening the letters alone just moved the ellipsis
+ * earlier. It needs the room too.
+ */
+html[data-paper="night"] .brand-name {
+  max-inline-size: none;
+  font-size: var(--fs-lg);
+}
+@media (max-width: 900px) {
+  html[data-paper="night"] .brand-name { font-size: var(--fs-base); }
+}
+html[data-paper="night"]:not([lang="ar"]) .brand-name,
+html[data-paper="night"]:not([lang="ar"]) .foot-name { text-transform: uppercase; }
+/* The tagline under it, at a fraction of the size and heavily tracked — the
+   "ATELIER" line of the reference's mark. */
+html[data-paper="night"] .brand-tagline {
+  font-size: 9px;
+  letter-spacing: .42em;
+  color: var(--ink-3);
+}
+html[data-paper="night"]:not([lang="ar"]) .brand-tagline { text-transform: uppercase; }
+
+/*
+ * Navigation and header actions as tracked capitals. The icons stay — they
+ * are what makes a phone header usable — but the words beside them stop being
+ * sentence-case links and become the reference's own micro-labels.
+ */
+html[data-paper="night"]:not([lang="ar"]) .head-actions a,
+html[data-paper="night"]:not([lang="ar"]) .head-actions button,
+html[data-paper="night"]:not([lang="ar"]) .chips a {
+  text-transform: uppercase;
+  letter-spacing: .12em;
+  font-size: var(--fs-sm);
+  font-weight: 500;
+}
+/* The search box: a line under the words, not a filled pill. The reference has
+   no filled input anywhere on its chrome. */
+html[data-paper="night"] .head-search input,
+html[data-paper="night"] .search-box input {
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+/* -------------------------------------------------------------------- hero */
+/*
+ * Full width, and tall. The reference's hero is the first thing on the page
+ * and it runs edge to edge under a fixed header; ours was a rounded block
+ * floating inside the page's own column with air above it, which reads as a
+ * banner ad rather than as the top of a shop.
+ */
+html[data-paper="night"] .hero-wrap {
+  padding-block-start: 0;
+  max-inline-size: none;
+  padding-inline: 0;
+}
+html[data-paper="night"] .hero {
+  border-radius: 0;
+  aspect-ratio: auto;
+  min-block-size: clamp(420px, 58vh, 620px);
+}
+html[data-paper="night"] .hero-frame {
+  padding-inline: clamp(var(--sp-5), 6vw, 92px);
+}
+html[data-paper="night"] .hero-inner { max-inline-size: 46ch; }
+
+/*
+ * The eyebrow: gold, tiny, and tracked further than anything else on the page.
+ * On the reference this is "NEW COLLECTION 2025" and it is the element that
+ * announces the whole typographic system before the headline arrives.
+ */
+html[data-paper="night"] .hero-eyebrow {
+  color: var(--accent);
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  letter-spacing: .34em;
+}
+html[data-paper="night"]:not([lang="ar"]) .hero-eyebrow { text-transform: uppercase; }
+html[data-paper="night"][lang="ar"] .hero-eyebrow { letter-spacing: .1em; }
+
+/*
+ * The headline. Big, light, and serif — the reference sets it around 72px at
+ * weight 400 with tight leading, which is what makes it read as a magazine
+ * rather than as a heading tag.
+ */
+html[data-paper="night"] .hero-title {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: clamp(38px, 6.2vw, 76px);
+  line-height: 1.06;
+  letter-spacing: -0.01em;
+}
+html[data-paper="night"] .hero-body {
+  color: var(--ink-2);
+  max-inline-size: 44ch;
+  font-size: var(--fs-lg);
+  line-height: 1.75;
+}
+html[data-paper="night"] .hero-actions { gap: var(--sp-4); margin-block-start: var(--sp-3); }
+
+/* ------------------------------------------------------- the numbers strip */
+/*
+ * The reference runs a thin band under its hero: three facts, separated by
+ * vertical hairlines, each a serif figure over a tracked capital label.
+ *
+ * Ours is the trust row, and it says the same KIND of thing — what delivery
+ * costs, that payment is on delivery, when it is free — so it becomes that
+ * band rather than three floating cards. The sentences stay: a shop's real
+ * promise is worth more than a round number, and inventing "45+ BRANDS" to
+ * match a mock-up would be putting a decoration where a fact goes.
+ */
+html[data-paper="night"] .trust-row {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0;
+  border-block: 1px solid var(--line);
+}
+html[data-paper="night"] .trust-card {
+  background: transparent;
+  border-radius: 0;
+  border-inline-start: 1px solid var(--line);
+  padding-block: var(--sp-7);
+}
+html[data-paper="night"] .trust-card:first-child { border-inline-start: 0; }
+html[data-paper="night"] .trust-icon {
+  background: transparent;
+  color: var(--accent);
+  inline-size: auto;
+  block-size: auto;
+  margin-block-end: var(--sp-3);
+}
+html[data-paper="night"] .trust-title {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: var(--fs-xl);
+}
+html[data-paper="night"] .trust-note { color: var(--ink-3); font-size: var(--fs-sm); }
+
+/* --------------------------------------------------------- section rhythm */
+/*
+ * "JUST IN", "OUR MAISONS" — the reference labels a shelf with a small tracked
+ * capital, never with a large heading. The heading survives for a screen
+ * reader and for a shop whose section names are long; it is simply set at the
+ * size the design gives it.
+ */
+html[data-paper="night"] .section-title {
+  font-family: var(--font-display);
+  font-weight: 400;
+  letter-spacing: .02em;
+}
+html[data-paper="night"] .section-note {
+  font-size: var(--fs-xs);
+  letter-spacing: .2em;
+  color: var(--ink-3);
+}
+html[data-paper="night"]:not([lang="ar"]) .section-note { text-transform: uppercase; }
+html[data-paper="night"] .link-more {
+  color: var(--accent);
+  font-size: var(--fs-xs);
+  letter-spacing: .16em;
+  font-weight: 500;
+}
+html[data-paper="night"]:not([lang="ar"]) .link-more { text-transform: uppercase; }
+
+/* ------------------------------------------------------------ the maisons */
+/*
+ * Brands as WORDS, in a quiet row — the reference's "OUR MAISONS" strip is
+ * eleven names in tracked serif capitals and nothing else: no cards, no
+ * circles, no logos. A shop that has uploaded a brand logo still shows it;
+ * everything else stops being a badge and becomes a name.
+ */
+html[data-paper="night"] .brand-card {
+  background: transparent;
+  border: 0;
+  padding-block: var(--sp-5);
+}
+html[data-paper="night"] .brand-card-face:not(.has-logo) {
+  background: transparent;
+  box-shadow: none;
+  inline-size: auto;
+  block-size: auto;
+  color: var(--accent);
+}
+html[data-paper="night"] .brand-card-name {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: var(--fs-lg);
+  letter-spacing: .14em;
+  color: var(--ink-2);
+}
+html[data-paper="night"]:not([lang="ar"]) .brand-card-name { text-transform: uppercase; }
+html[data-paper="night"] .brand-card-count {
+  font-size: 10px;
+  letter-spacing: .2em;
+  color: var(--ink-3);
+}
+
+/* ------------------------------------------------------------- the footer */
+html[data-paper="night"] .foot-col h3 {
+  color: var(--accent);
+  font-size: var(--fs-xs);
+  letter-spacing: .22em;
+  font-weight: 500;
+}
+html[data-paper="night"]:not([lang="ar"]) .foot-col h3 { text-transform: uppercase; }
+html[data-paper="night"] .foot-col a { color: var(--ink-3); }
+html[data-paper="night"] .foot-col a:hover { color: var(--ink); }
+html[data-paper="night"] .foot-base { border-block-start: 1px solid var(--line); }
+
+/* -------------------------------------------------------------- the tiles */
+/*
+ * Category tiles: the reference draws a thin gold line-icon over a serif name
+ * over a gold count, on a panel with a hairline. Ours has the same three
+ * parts — the badge becomes the icon, and stops being a filled disc.
+ */
+/*
+ * The class is `.tile-badge`, not `.tile-face` — the first pass guessed and
+ * styled nothing, which is why the discs were still filled. It shares its rule
+ * with `.brand-card-face`, so both are named here.
+ *
+ * A ring rather than a filled disc, and the letter inside it in the shop's own
+ * colour: the reference draws a thin gold outline around its category marks.
+ */
+html[data-paper="night"] .tile-badge,
+html[data-paper="night"] .brand-card-face:not(.has-logo) {
+  background: transparent;
+  color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--line);
+  font-weight: 400;
+}
+html[data-paper="night"] .tile-name {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: var(--fs-lg);
+}
+html[data-paper="night"] .tile-name {
+  font-family: var(--font-display);
+  font-weight: 400;
+}
+html[data-paper="night"] .tile-count {
+  color: var(--accent);
+  font-size: 10px;
+  letter-spacing: .2em;
+}
+html[data-paper="night"]:not([lang="ar"]) .tile-count { text-transform: uppercase; }
