@@ -484,6 +484,10 @@ async function startApp() {
     exchanges: screen(() => import('./views/exchange.js')),
     'web-orders': screen(() => import('./views/webOrders.js'), 'webOrdersView'),
     products: screen(() => import('./views/catalog.js'), 'productsView'),
+    // Its own route rather than a sub-path of `products`, because it is a
+    // different job: the products screen is a table you search, this is a
+    // queue you walk on a phone with a camera in your other hand.
+    shoot: screen(() => import('./views/shoot.js'), 'shootView'),
     brands: screen(() => import('./views/masterData.js'), 'brandsView'),
     categories: screen(() => import('./views/masterData.js'), 'categoriesView'),
     attributes: screen(() => import('./views/masterData.js'), 'attributesView'),
@@ -521,11 +525,27 @@ async function startApp() {
     },
   });
 
+  /*
+   * The topbar title comes from the sidebar entry for the route — which leaves
+   * every screen that ISN'T in the sidebar reading "Dashboard". There are two
+   * of those, both reached by a button on another screen rather than by
+   * navigation, and both were mislabelled: shoot mode said "Dashboard" over a
+   * photo session, and the cost-categories screen said it too.
+   *
+   * Named rather than derived from the route, because a route name is a URL
+   * segment and a title is a sentence in two languages.
+   */
+  const OFF_NAV_TITLES = {
+    shoot: 'shootTitle',
+    'cost-categories': 'costCategories',
+  };
+
   window.addEventListener('route:changed', (event) => {
     renderNav();
     const item = NAV.flatMap((s) => s.items).find((i) => i.path === event.detail.path);
+    const offNav = OFF_NAV_TITLES[event.detail.path];
     const title = document.getElementById('page-title');
-    if (title) title.textContent = item ? t(item.label) : t('dashboard');
+    if (title) title.textContent = item ? t(item.label) : (offNav ? t(offNav) : t('dashboard'));
   });
 
   // Pending password resets are the one thing an admin has to notice without

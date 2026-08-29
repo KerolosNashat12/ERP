@@ -1,22 +1,31 @@
-The figures band turns itself on for a shop that has something to say
+Shoot mode - photograph a catalogue without losing your place
 
-The band shipped defaulted to OFF, on the reasoning that "12 PRODUCTS" reads
-as an apology. That was right about the platform and wrong about the person
-who asked for it: he published the release and the feature was invisible.
+The owner asked four times for product photographs to be downloaded from the
+internet. They cannot be: pictures of a named product belong to whoever shot
+them, and a generic stock bottle on a product page is worse than an empty
+frame - a customer orders the thing in the picture and returns the thing in
+the box. Three open-licensed sources were tried and all three are unreachable.
 
-Migration 029 derives the value instead of imposing one, the same shape as
-026: a shop with 20+ published products across 3+ brands gets the band; a
-nearly-empty shop does not; and a shop that has already chosen keeps its
-choice. Nobody has to know the setting exists to get the sensible answer.
+So the answer is to make HIS photographs cheap. The cost was never the
+shooting, it was the navigation: find a bare product, open it, scroll to the
+photo card, upload, go back, remember where you were, two hundred times.
 
-Also: the rounding ladder jumped to 50s at 200, which turned a shop with 248
-products into "200+" - true, and 48 products of false modesty on its own front
-page. It now steps in 10s up to 1000, so 248 reads as "240+". The browser
-check now fails if the band rounds more than 10% off the real figure.
+Products -> Photo session. One product on the screen, a button, and the next
+one, ordered by BRAND so the walk follows the shelves instead of scattering
+one supplier through the list. Skipping moves on without marking anything
+done, so a skipped product is offered again next time. The counter is the
+whole job, not the page.
 
-And tests/photo-input.test.js now strips comments before scanning. It was
-reading raw source, so the comment explaining why the camera attribute was
-removed - which quotes the attribute - could have failed the test on a correct
-file. It passed only because a backtick happened to precede that occurrence.
+ALSO:
+- The figures band now turns itself on for a shop with a real catalogue
+  (migration 029), instead of shipping off and making the person who asked for
+  it go hunting for a switch.
+- The rounding jumped to 50s at 200, turning 248 products into "200+" - true,
+  and 48 products of false modesty. Now "240+".
+- Screens not in the sidebar showed "Dashboard" as their title. Two of them.
+- FIX in a test: the camera-attribute fence stripped comments with a regex, and
+  "image/*" contains a comment opening - so it deleted the rest of every file
+  it checked and went green on a broken one. It is a real scanner now, with a
+  control for exactly that string. Found by a reversion check.
 
-npm test 1175 -> 1181.
+npm test 1181 -> 1189. Plus tests/shoot-ui-check.mjs.

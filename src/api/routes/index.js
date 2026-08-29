@@ -399,6 +399,22 @@ router.get('/search/suggest', requirePermission('products.view'), asyncHandler(a
  * this is. Uploading the photographs afterwards goes through
  * `POST /products/:id/images`, which requires `products.update`.
  */
+/**
+ * The products that still have no photograph, in shelf order.
+ *
+ * `products.view` — it names products and nothing else, which is the same
+ * secret as opening the catalogue. Adding the photographs afterwards goes
+ * through `POST /products/:id/images`, which requires `products.update`, so a
+ * seat that may look at the shop but not change it can see what is missing
+ * without being able to fill it in.
+ */
+router.get('/products/without-photos', requirePermission('products.view'), asyncHandler(async (req, res) => {
+  res.json(await catalogService.withoutPhotos({
+    brandId: req.query.brandId || null,
+    limit: req.query.limit,
+  }));
+}));
+
 router.post('/products/photo-match', requirePermission('products.view'), asyncHandler(async (req, res) => {
   res.json(await catalogService.matchPhotoFilenames(req.body?.filenames || []));
 }));

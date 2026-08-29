@@ -482,6 +482,9 @@ export async function productsView(root, route) {
       can('products.update') ? h('button', { class: 'btn', onclick: () => openGenderReview(load) }, t('genderReview')) : null,
       can('products.update') ? h('button', { class: 'btn', onclick: () => openBulkPrice(load) }, t('bulkPrice')) : null,
     can('products.update') ? h('button', { class: 'btn', onclick: () => openBulkPhotos(load) }, t('photoBulkTitle')) : null,
+    can('products.update')
+      ? h('button', { class: 'btn', onclick: () => navigate('shoot') }, `📷 ${t('shootStart')}`)
+      : null,
       can('products.create') ? h('button', { class: 'btn primary', onclick: () => navigate('products/new') }, '＋ ' + t('newProduct')) : null),
     h('div', { class: 'card' },
       h('div', { class: 'filters' },

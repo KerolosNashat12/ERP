@@ -871,6 +871,74 @@ export class CatalogService {
     };
   }
 
+  /**
+   * THE SHOOT LIST — the products that still have no photograph, in the order
+   * somebody would actually walk a shop photographing them.
+   *
+   * ── Why the ORDER is the feature ────────────────────────────────────────
+   * A list of 200 bare products sorted by id is a list nobody finishes: the
+   * Diors are scattered through it, so photographing them means walking back
+   * to the same shelf eleven times. Ordered by brand and then by name, the
+   * list follows the shop — everything from one supplier together, in the
+   * order it sits on the shelf — and the job becomes one pass instead of two
+   * hundred round trips.
+   *
+   * ── Why it is its own endpoint and not a filter on the products list ─────
+   * That list is paged, sorted by whatever the screen last asked for, and
+   * shaped for a table. This is a QUEUE: it is walked once, from the top, on a
+   * phone, and it has to stay stable while photographs are being added to it.
+   * Sharing the products query would mean a row vanishing from under the
+   * person's thumb every time one succeeded.
+   *
+   * Inactive products are excluded. A product nobody sells is not worth
+   * standing in front of with a camera, and the whole point of the ordering is
+   * that the list is short enough to finish.
+   */
+  async withoutPhotos({ brandId = null, limit = 500 } = {}) {
+    const params = [];
+    let where = 'p.is_active = 1';
+    if (brandId) { where += ' AND p.brand_id = ?'; params.push(Number(brandId)); }
+
+    const rows = await this.products.db.prepare(`
+      SELECT p.id                AS id,
+             p.sku_prefix        AS code,
+             p.name_en           AS name_en,
+             p.name_ar           AS name_ar,
+             p.is_published      AS is_published,
+             b.id                AS brand_id,
+             b.name_en           AS brand_en,
+             b.name_ar           AS brand_ar,
+             c.name_en           AS category_en,
+             c.name_ar           AS category_ar
+      FROM products p
+      LEFT JOIN brands b     ON b.id = p.brand_id
+      LEFT JOIN categories c ON c.id = p.category_id
+      WHERE ${where}
+        AND NOT EXISTS (SELECT 1 FROM product_images pi WHERE pi.product_id = p.id)
+      /*
+       * Brand first, and the ones WITH a brand before the ones without: a
+       * product filed under no brand cannot be grouped with anything, so it
+       * belongs at the end where it does not break the walk.
+       */
+      ORDER BY (b.id IS NULL), COALESCE(b.name_en, ''), p.name_en, p.id
+      LIMIT ?
+    `).all(...params, Math.min(Math.max(Number(limit) || 500, 1), 2000));
+
+    /*
+     * `remaining` is the whole job, not the page — so the screen can say "12
+     * of 248" honestly even though it only holds the first few hundred. A
+     * progress figure that counted only what was loaded would climb to 100%
+     * and then start again, which is worse than no figure.
+     */
+    const total = await this.products.db.prepare(`
+      SELECT COUNT(*) AS n FROM products p
+      WHERE p.is_active = 1
+        AND NOT EXISTS (SELECT 1 FROM product_images pi WHERE pi.product_id = p.id)
+    `).get();
+
+    return { rows, remaining: Number(total?.n || 0) };
+  }
+
   async lookup(term, warehouseId) {
     if (!term || String(term).length < 1) return [];
     return this.variants.lookup(String(term).trim(), 25, warehouseId || null);

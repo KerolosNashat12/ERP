@@ -64,9 +64,57 @@ test('there are front-end files to check — the control', () => {
  * A test that can be broken by prose is a test people learn to ignore. So the
  * prose goes first, and what is left is code.
  */
-const codeOnly = (source) => source
-  .replace(/\/\*[\s\S]*?\*\//g, '')
-  .replace(/^[^\n]*?\/\/[^\n]*$/gm, '');
+const codeOnly = (source) => {
+  /*
+   * Walked character by character rather than done with two regexes, because
+   * the regex version was WORSE THAN NOTHING and this file is the proof.
+   *
+   * A regex for "slash-star, anything, star-slash" finds a comment opening
+   * inside a STRING literal. Every file input in this ERP declares an accept
+   * of image-slash-star — and that value contains a slash followed by a star.
+   * So the stripper treated the rest of the file as one long
+   * comment and deleted it, including the `capture:` line sitting two rows
+   * below. The test went green on a file that forced the camera, which is the
+   * exact failure it exists to prevent, and it was introduced by "hardening"
+   * it. Only the reversion check caught it.
+   *
+   * So: strings and template literals are skipped as strings, comments are
+   * skipped as comments, and neither can start inside the other.
+   */
+  let out = '';
+  for (let i = 0; i < source.length;) {
+    const ch = source[i];
+    const next = source[i + 1];
+
+    if (ch === '/' && next === '*') {
+      const end = source.indexOf('*/', i + 2);
+      i = end === -1 ? source.length : end + 2;
+      continue;
+    }
+    if (ch === '/' && next === '/') {
+      const end = source.indexOf('\n', i);
+      i = end === -1 ? source.length : end;
+      continue;
+    }
+    if (ch === '\'' || ch === '"' || ch === '`') {
+      const quote = ch;
+      out += ch;
+      i += 1;
+      while (i < source.length && source[i] !== quote) {
+        // A backslash escapes the next character, including the quote.
+        if (source[i] === '\\') { out += source.slice(i, i + 2); i += 2; continue; }
+        out += source[i];
+        i += 1;
+      }
+      out += source[i] ?? '';
+      i += 1;
+      continue;
+    }
+    out += ch;
+    i += 1;
+  }
+  return out;
+};
 
 test('no file input forces the camera', () => {
   /*
@@ -99,6 +147,21 @@ test('stripping the comments does not blind the check — the control', () => {
 
   const real = "const input = h('input', {\n  type: 'file',\n  capture: 'environment',\n});";
   assert.match(codeOnly(real), /capture\s*:/, 'a real attribute was stripped away with the comments');
+
+  /*
+   * THE ONE THAT MATTERED. Every file input in this ERP says
+   * `accept: 'image/*'`, and `image/*` contains a comment opening. A stripper
+   * that does not know it is inside a string swallows the rest of the file
+   * from there — which silently included the `capture:` line on the line
+   * below, and turned this whole test green on a broken file.
+   */
+  const afterGlob = "h('input', {\n  accept: 'image/*',\n  capture: 'environment',\n});";
+  assert.match(codeOnly(afterGlob), /capture\s*:/,
+    'a slash-star inside a string swallows the code after it — the stripper is blind');
+
+  // …and a template literal does the same thing if it is not handled.
+  const inTemplate = 'const a = `image/*`;\nconst b = { capture: "environment" };';
+  assert.match(codeOnly(inTemplate), /capture\s*:/, 'a template literal blinds the stripper');
 
   const lineComment = "// capture: 'environment' used to be here\nconst b = 2;";
   assert.ok(!/capture\s*:/.test(codeOnly(lineComment)), 'a // comment still trips the scan');
