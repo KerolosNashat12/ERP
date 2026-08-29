@@ -1,9 +1,9 @@
 /** Product cards, availability badges and the grids they live in. */
 import { el, icon, chevron, ICONS } from '../core/dom.js';
-import { imageUrl, brandLogoUrl } from '../core/api.js';
+import { imageUrl, brandLogoUrl, categoryImageUrl } from '../core/api.js';
 import { t, pick, isRtl } from '../core/i18n.js';
 import { monogramText } from '../core/branding.js';
-import { defaultProductImage, defaultBrandImage } from './placeholders.js';
+import { defaultProductImage, defaultBrandImage, categoryArt } from './placeholders.js';
 import { priceRange } from '../core/format.js';
 import { href } from '../core/router.js';
 import { routePath, slugFor } from '../../../shared/shopUrls.js';
@@ -298,13 +298,48 @@ export function productGrid(cards, { eagerCount = 4 } = {}) {
 const categoryLetter = (name) => Array.from(String(name).trim())[0] || monogramText();
 
 /**
+ * What a shelf wears above its name: a photograph, or a drawn icon.
+ *
+ * The owner's instruction, in both halves: «ممكن تبقي صور ونضيف صور للفئات
+ * وانت خلي الـdefault من عندك ايقونات لو الادمين مضفش صور». So:
+ *
+ *   the shop uploaded a picture   → that picture, filling the frame
+ *   it did not                    → a line icon guessed from the name
+ *                                   (see categoryArt in ui/placeholders.js)
+ *
+ * The letter-in-a-circle it used to draw is gone from the category path. It
+ * survives for BRANDS with no logo, because a brand's mark is a wordmark and
+ * there is no icon that means "Dior" — a letter is the honest stand-in there
+ * and a drawn bottle would not be.
+ *
+ * `has_image` decides it, not a failed image load: asking for a picture that
+ * is not there costs a 404 per tile on every visit, and a broken-image glyph
+ * for however long it takes to fail.
+ */
+function tileMark(row, kind, name) {
+  if (kind === 'category') {
+    if (row.has_image) {
+      return el('span.tile-badge.has-photo',
+        el('img.tile-photo', {
+          src: categoryImageUrl(row.id),
+          alt: '',
+          loading: 'lazy',
+          decoding: 'async',
+        }));
+    }
+    return el('span.tile-badge.is-icon', { 'aria-hidden': 'true' }, categoryArt(row));
+  }
+  return el('span.tile-badge', { 'aria-hidden': 'true' }, categoryLetter(name));
+}
+
+/**
  * A category or brand card — same record shape from both endpoints: a round
  * badge, the name, how many pieces are in it, and a way in.
  */
 export function taxonomyTile(row, kind) {
   const name = pick(row, 'name');
   return el('a.tile', { href: href(routePath(kind, { id: row.id, slug: slugFor(row) })) },
-    el('span.tile-badge', { 'aria-hidden': 'true' }, categoryLetter(name)),
+    tileMark(row, kind, name),
     el('span.tile-name', name),
     el('span.tile-count', t('itemsCount', Number(row.product_count || 0))),
     el('span.tile-more', t('viewAll'), chevron(14)));

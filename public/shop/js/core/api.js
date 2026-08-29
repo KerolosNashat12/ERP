@@ -187,6 +187,13 @@ export const imageUrl = (id) => (id ? `${apiBase()}/api/shop/images/${id}` : nul
  * rather than the year a product photo gets.
  */
 export const brandLogoUrl = (brandId) => `${apiBase()}/api/shop/brands/${Number(brandId)}/logo`;
+/**
+ * A category's own picture, on the same terms as a brand's logo above: public,
+ * and a 404 when the shop has not uploaded one — which is the ordinary case,
+ * so every caller has to have a fallback ready rather than treating it as an
+ * error. See `categoryArt()` in ui/placeholders.js.
+ */
+export const categoryImageUrl = (categoryId) => `${apiBase()}/api/shop/categories/${Number(categoryId)}/image`;
 
 /**
  * A root-relative asset path from `/api/shop/config` (`branding.logo`,

@@ -3996,3 +3996,168 @@ html[data-paper="night"] .card-add {
   cursor: pointer;
   text-decoration: none;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   NIGHT, PART THREE — the reference's own measurements.
+
+   Read off the published page rather than estimated: 1280px page with 24px of
+   side padding, a four-column grid of 296px cards with a 16px gap, a 1:1 photo,
+   and 80px of air above and below each shelf. 4 × 296 + 3 × 16 = 1232, which is
+   1280 less its padding — the numbers close, which is how you know they are the
+   design's and not somebody's guess.
+   ═══════════════════════════════════════════════════════════════════════════ */
+html[data-paper="night"] {
+  --wrap: 1280px;
+  /* Inter for everything that is not a heading. The reference sets its body,
+     its prices and every tracked micro-label in it, and the system stack we
+     were using is a different voice on every machine that opens the shop. */
+  --font: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+}
+html[data-paper="night"] .wrap { padding-inline: var(--sp-5); }
+
+/*
+ * The grid. `auto-fill` with a 260px floor rather than a hard `repeat(4, …)`:
+ * at the reference's own width it resolves to exactly four 296px columns — the
+ * arithmetic above — and below it the shelf reflows instead of overflowing,
+ * which a fixed four-up would do on every phone in Egypt.
+ */
+html[data-paper="night"] .grid {
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: var(--sp-4);
+}
+@media (max-width: 700px) {
+  html[data-paper="night"] .grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+}
+/*
+ * The all-products page is five across in the reference — a denser shelf for
+ * the page whose whole job is to show everything.
+ *
+ * The container is `.listing-results`, not `.listing`: the products sit beside
+ * a filter panel, so the grid's width is the page minus that panel and a floor
+ * sized for the full page would resolve to three columns here. Measured
+ * against what this column actually gets, not against the viewport.
+ */
+html[data-paper="night"] .listing-results .grid {
+  grid-template-columns: repeat(auto-fill, minmax(186px, 1fr));
+}
+@media (max-width: 700px) {
+  html[data-paper="night"] .listing-results .grid {
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  }
+}
+html[data-paper="night"] .section { gap: var(--sp-6); }
+html[data-paper="night"] .section + .section { margin-block-start: var(--sp-8); }
+
+/* ---------------------------------------------------- the announcement bar */
+/*
+ * Gold ground, black tracked capitals — the first thing on the reference page
+ * and the loudest gold on it. Ours was a quiet tinted strip.
+ */
+html[data-paper="night"] .announce {
+  background: var(--accent);
+  color: var(--accent-ink);
+  border: 0;
+}
+html[data-paper="night"] .announce p {
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  letter-spacing: .16em;
+  text-align: center;
+}
+html[data-paper="night"]:not([lang="ar"]) .announce p { text-transform: uppercase; }
+html[data-paper="night"][lang="ar"] .announce p { letter-spacing: .04em; }
+
+/* ------------------------------------------------------- the category tiles */
+/*
+ * A panel with a picture or an icon in it, a serif name and a gold count —
+ * and a gold border on hover, which is the reference's only hover state on
+ * these. Wider than they are tall, like the design's.
+ */
+html[data-paper="night"] .tile {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: var(--sp-7) var(--sp-5);
+  transition: border-color .3s cubic-bezier(.4, 0, .2, 1);
+}
+@media (hover: hover) {
+  html[data-paper="night"] .tile:hover { border-color: var(--accent); }
+  html[data-paper="night"] .tile:hover .tile-badge.is-icon { color: var(--ink); }
+}
+/*
+ * Two kinds of mark, one box. The icon draws at its own size on nothing; the
+ * photograph fills a fixed frame and is cropped to it, so twelve categories
+ * whose pictures a shop uploaded at twelve different shapes still line up.
+ */
+html[data-paper="night"] .tile-badge.is-icon {
+  inline-size: auto;
+  block-size: auto;
+  background: transparent;
+  box-shadow: none;
+  color: var(--accent);
+  transition: color .3s cubic-bezier(.4, 0, .2, 1);
+}
+html[data-paper="night"] .tile-badge.has-photo {
+  inline-size: min(100%, 220px);
+  block-size: auto;
+  aspect-ratio: 16 / 10;
+  border-radius: var(--radius);
+  background: var(--photo-well);
+  box-shadow: inset 0 0 0 1px var(--line);
+  overflow: hidden;
+  padding: 0;
+}
+html[data-paper="night"] .tile-photo {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* ----------------------------------------------- brand logos, one shape */
+/*
+ * «consider all brands photos aspect ratio». A shop uploads whatever it has —
+ * a wide wordmark, a square emblem, a tall monogram — and the rail was letting
+ * each one set its own height, so a row of brands stepped up and down like a
+ * skyline. One frame for all of them, and the logo is CONTAINED rather than
+ * cropped: cutting the edge off a brand's mark is worse than leaving air
+ * around it.
+ */
+html[data-paper="night"] .brand-card-face.has-logo {
+  inline-size: min(100%, 150px);
+  block-size: auto;
+  aspect-ratio: 3 / 2;
+  border-radius: var(--radius);
+  background: transparent;
+  box-shadow: none;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  padding: var(--sp-3);
+}
+html[data-paper="night"] .brand-card-face.has-logo img,
+html[data-paper="night"] .brand-logo-img {
+  max-inline-size: 100%;
+  max-block-size: 100%;
+  inline-size: auto;
+  block-size: auto;
+  object-fit: contain;
+  /* A colour logo on near-black usually arrives on a white plate. Nothing can
+     be done about that from here, but the frame at least does not add a
+     second edge around it. */
+}
+
+/* ------------------------------------------------------ the hero's second line */
+/*
+ * "Accessories / *That Define* / Your Essence" — the reference italicises the
+ * middle line, and that one detail is most of why the headline reads as an
+ * editorial rather than as a heading. A shop writes its own banner copy, so
+ * this cannot be hard-coded: the SECOND line of whatever was typed is the one
+ * that leans, which is the pattern the design uses and degrades to nothing on
+ * a one-line heading.
+ */
+html[data-paper="night"] .hero-title em,
+html[data-paper="night"] .hero-title i {
+  font-style: italic;
+  font-weight: 400;
+}

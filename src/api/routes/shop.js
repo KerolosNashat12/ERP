@@ -11,7 +11,7 @@ import { Router } from 'express';
 import { asyncHandler, sendImage } from '../middleware/index.js';
 import storefront from '../../services/StorefrontService.js';
 import images from '../../services/ImageService.js';
-import webAssets, { brandSlot } from '../../services/WebAssetService.js';
+import webAssets, { brandSlot, categorySlot } from '../../services/WebAssetService.js';
 import { websiteGate } from '../middleware/websiteGate.js';
 import { NotFoundError } from '../../shared/errors.js';
 import { deploymentInfo } from '../../shared/deploymentInfo.js';
@@ -186,6 +186,18 @@ router.get('/logo', asyncHandler(async (req, res) => {
 router.get('/brands/:id/logo', asyncHandler(async (req, res) => {
   const image = await webAssets.bytes(brandSlot(req.params.id));
   if (!image) throw new NotFoundError('Brand logo', req.params.id);
+  sendImage(req, res, { ...image, created_at: image.updated_at }, { cacheControl: 'public, max-age=300' });
+}));
+
+/**
+ * A category's picture, on the same terms as a brand's logo directly above:
+ * public, five-minute cache because the address carries no version, and a 404
+ * for a category that has none — which is not an error on this site, it is the
+ * ordinary case, and the storefront draws its own icon instead.
+ */
+router.get('/categories/:id/image', asyncHandler(async (req, res) => {
+  const image = await webAssets.bytes(categorySlot(req.params.id));
+  if (!image) throw new NotFoundError('Category picture', req.params.id);
   sendImage(req, res, { ...image, created_at: image.updated_at }, { cacheControl: 'public, max-age=300' });
 }));
 

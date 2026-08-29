@@ -27,7 +27,7 @@ import labelService from '../../services/LabelService.js';
 import auditService from '../../services/AuditService.js';
 import { userService, settingsService, backupService } from '../../services/AdminService.js';
 import dataExportService from '../../services/DataExportService.js';
-import webAssetService, { brandSlot } from '../../services/WebAssetService.js';
+import webAssetService, { brandSlot, categorySlot } from '../../services/WebAssetService.js';
 import trashService from '../../services/trash/TrashService.js';
 import passwordResetService from '../../services/PasswordResetService.js';
 import webOrderService from '../../services/WebOrderService.js';
@@ -253,6 +253,42 @@ router.use('/brands', crudRouter({
 
 router.use('/categories', crudRouter({
   service: categoryService,
+  /**
+   * A category's own picture — the same arrangement a brand's logo has, for
+   * the same reason and through the same service. See the brand block above;
+   * the only differences are the slot name and a larger ceiling, both decided
+   * in WebAssetService rather than here.
+   *
+   * `categories.update` is the right permission: this is editing the category,
+   * not changing a website setting, and whoever may rename it may give it a
+   * picture.
+   */
+  extend: (r, { perm }) => {
+    const slotOf = async (req) => {
+      // 404 before anything else, so an id that is not a category cannot be
+      // used to probe or to occupy a slot.
+      await categoryService.get(Number(req.params.id));
+      return categorySlot(req.params.id);
+    };
+
+    r.get('/:id/image', perm('view'), asyncHandler(async (req, res) => {
+      res.json(await webAssetService.get(await slotOf(req)));
+    }));
+
+    r.get('/:id/image/raw', perm('view'), asyncHandler(async (req, res) => {
+      const image = await webAssetService.bytes(await slotOf(req));
+      if (!image) throw new NotFoundError('Category picture', req.params.id);
+      sendImage(req, res, { ...image, created_at: image.updated_at }, { cacheControl: 'private, no-cache' });
+    }));
+
+    r.put('/:id/image', perm('update'), validate(v.websiteLogoSchema), asyncHandler(async (req, res) => {
+      res.json(await webAssetService.set(req.body.dataUrl, req.context, await slotOf(req)));
+    }));
+
+    r.delete('/:id/image', perm('update'), asyncHandler(async (req, res) => {
+      res.json(await webAssetService.clear(req.context, await slotOf(req)));
+    }));
+  },
   module: 'categories',
   schema: v.categorySchema,
   extend: (r, { perm }) => {

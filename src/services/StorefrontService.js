@@ -677,6 +677,11 @@ export class StorefrontService {
              c.name_en   AS name_en,
              c.name_ar   AS name_ar,
              c.parent_id AS parent_id,
+             -- Whether this shop uploaded a picture for it. The bytes are NOT
+             -- sent here - the tile asks for them by URL, the same way a brand
+             -- logo works - and a category with none is the ordinary case, not
+             -- a gap: the storefront draws its own icon instead.
+             EXISTS (SELECT 1 FROM web_assets w WHERE w.slot = 'category:' || c.id) AS has_image,
              (SELECT COUNT(*) FROM products p
                WHERE p.category_id = c.id AND ${PUBLISHED_PRODUCT}) AS product_count
       FROM categories c

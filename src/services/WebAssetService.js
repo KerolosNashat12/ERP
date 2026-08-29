@@ -53,9 +53,32 @@ const SLOTS = {
 const BRAND_SLOT = /^brand:([1-9][0-9]*)$/;
 export const brandSlot = (brandId) => `brand:${Number(brandId)}`;
 
+/**
+ * A category's own picture, as a slot per category: `category:3`.
+ *
+ * The same argument as the brand slot above, one screen further out. The
+ * storefront draws a shelf of categories on its front page and had nothing to
+ * draw them WITH — a letter in a circle, which is what "no artwork" looks like
+ * when it is pretending not to be. The owner asked for real pictures with a
+ * sensible default: «ممكن تبقي صور ونضيف صور للفئات وانت خلي الـdefault من
+ * عندك ايقونات لو الادمين مضفش صور».
+ *
+ * So a category gets the same BLOB, the same sniffing, the same audit trail —
+ * no new table and no second mechanism — and the storefront falls back to a
+ * drawn icon when a shop has not uploaded one. See `categoryArt()` in
+ * public/shop/js/ui/placeholders.js for the fallback.
+ *
+ * The ceiling is larger than a brand's. A brand mark is a logo drawn at 64px
+ * in a rail; a category picture is a photograph filling a tile that is a third
+ * of the page wide, and squeezing it into a logo's budget would show.
+ */
+const CATEGORY_SLOT = /^category:([1-9][0-9]*)$/;
+export const categorySlot = (categoryId) => `category:${Number(categoryId)}`;
+
 /** A slot name always comes from this codebase; an unknown one is a bug, not a shop's typo. */
 function rulesFor(slot) {
   if (BRAND_SLOT.test(slot)) return { maxBytes: 250 * 1024, label: 'brand logo' };
+  if (CATEGORY_SLOT.test(slot)) return { maxBytes: 400 * 1024, label: 'category picture' };
   const rules = SLOTS[slot];
   if (!rules) throw new ValidationError(`Unknown website image slot "${slot}"`);
   return rules;

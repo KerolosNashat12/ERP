@@ -90,3 +90,122 @@ export function defaultBrandImage(label = '') {
     decoding: 'async',
   });
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   CATEGORY ARTWORK — the icon a shelf wears when nobody uploaded a photograph.
+
+   The owner asked for both halves: «ممكن تبقي صور ونضيف صور للفئات وانت خلي
+   الـdefault من عندك ايقونات لو الادمين مضفش صور». So a category shows the
+   picture the shop uploaded, and a shop that has uploaded none gets a drawn
+   line icon — not the letter in a circle it used to get, which is what "no
+   artwork" looks like when it is pretending not to be.
+
+   ── Why the icon is guessed from the NAME ──────────────────────────────────
+   The alternative is a picker in the ERP with thirty icons in it, and a shop
+   owner adding a category at the counter is not going to open it. Guessing
+   from the name is right almost always and costs nothing when it is wrong: the
+   fallback is a neutral tag, and the shop can upload a real photograph the
+   moment it cares. The keywords are Arabic AND English because this shop's
+   categories are named in Arabic and the platform's other shops may not be.
+
+   ── Why line art and not emoji ─────────────────────────────────────────────
+   An emoji is a different drawing on every Android in Egypt, and half of them
+   are full colour cartoons that would sit on a page whose whole design is one
+   gold line on black. These are stroked paths in the shop's own accent.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * The icon vocabulary. Each entry is a set of words that mean it — in both
+ * languages, unvowelled, and matched as substrings so «العطور» finds «عطر».
+ *
+ * Paths are drawn on a 24×24 grid, stroked, never filled: they are set at
+ * 40-56px inside a tile and a filled glyph at that size reads as a blob.
+ */
+const CATEGORY_ICONS = [
+  {
+    key: 'perfume',
+    words: ['عطر', 'عطور', 'برفان', 'بارفان', 'فوم', 'كولون', 'كولونيا', 'مسك', 'عود',
+      'perfume', 'fragrance', 'parfum', 'cologne', 'scent', 'edp', 'edt', 'oud', 'musk'],
+    path: 'M10 3h4v3h-4zM9 6h6a3 3 0 0 1 3 3v9a3 3 0 0 1-3 3H9a3 3 0 0 1-3-3V9a3 3 0 0 1 3-3zM10 11h4',
+  },
+  {
+    key: 'wallet',
+    words: ['محفظ', 'محافظ', 'wallet', 'purse', 'cardholder'],
+    path: 'M3 7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2zM16 11h5v4h-5a2 2 0 0 1 0-4z',
+  },
+  {
+    key: 'watch',
+    words: ['ساع', 'ساعات', 'watch', 'timepiece', 'clock'],
+    path: 'M12 7a5 5 0 1 1 0 10 5 5 0 0 1 0-10zM12 9.5V12l1.8 1.2M9.5 7l.5-4h4l.5 4M9.5 17l.5 4h4l.5-4',
+  },
+  {
+    key: 'glasses',
+    words: ['نظار', 'نضار', 'شمس', 'glass', 'eyewear', 'sunglass', 'optic'],
+    path: 'M2 12h4M18 12h4M6 12a3 3 0 1 0 6 0 3 3 0 0 0-6 0zM12 12a3 3 0 1 0 6 0 3 3 0 0 0-6 0z',
+  },
+  {
+    key: 'bag',
+    /*
+     * «حقائب» is here as well as «حقيب» and that is not redundancy: Arabic
+     * broken plurals do not share a stem with their singular — حقيبة becomes
+     * حقائب, not حقيبات — so a substring match on the singular finds nothing.
+     * The test caught this one; every family below that has a broken plural
+     * carries both forms for the same reason.
+     */
+    words: ['شنط', 'شنطة', 'حقيب', 'حقائب', 'كلتش', 'bag', 'handbag', 'clutch', 'tote', 'backpack'],
+    path: 'M5 8h14l-1 12H6zM9 8V6a3 3 0 0 1 6 0v2',
+  },
+  {
+    key: 'jewellery',
+    words: ['مجوهر', 'اكسسوار', 'إكسسوار', 'سلسل', 'سلاسل', 'خاتم', 'خواتم', 'انسيال', 'اسور', 'أسور',
+      'jewel', 'accessor', 'necklace', 'ring', 'bracelet'],
+    path: 'M12 4l3 4-3 12-3-12zM9 8h6M7 4h10',
+  },
+  {
+    key: 'lipstick',
+    words: ['مكياج', 'ميك اب', 'روج', 'احمر شفاه', 'makeup', 'lipstick', 'cosmetic', 'beauty'],
+    path: 'M9 21h6V10H9zM10 10V5a2 2 0 0 1 4 0v5',
+  },
+  {
+    key: 'care',
+    words: ['عناي', 'كريم', 'لوشن', 'بادي', 'سبراي', 'care', 'lotion', 'cream', 'spray', 'body', 'splash', 'mist'],
+    path: 'M9 9h6a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2zM10 9V6h4v3M10 3h4',
+  },
+];
+
+/** The neutral one: a shop tag, for a category none of the words above matched. */
+const CATEGORY_FALLBACK = 'M4 12.5 12.5 4H20v7.5L11.5 20zM16.5 7.5h.01';
+
+/**
+ * Which icon a category's name means. Matched on BOTH names, so an English
+ * category on an Arabic shop and the reverse both find their icon.
+ */
+export function categoryIconPath(row) {
+  const haystack = `${row?.name_ar || ''} ${row?.name_en || ''}`.toLowerCase();
+  const hit = CATEGORY_ICONS.find((entry) => entry.words.some((word) => haystack.includes(word)));
+  return hit ? hit.path : CATEGORY_FALLBACK;
+}
+
+/**
+ * The drawn icon itself, as an inline SVG element in the shop's own accent.
+ *
+ * `currentColor` rather than a resolved hex: the tile already sets its colour,
+ * and inheriting means a hover that changes the tile's colour changes the icon
+ * with it for free.
+ */
+export function categoryArt(row, { size = 46 } = {}) {
+  const node = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  node.setAttribute('viewBox', '0 0 24 24');
+  node.setAttribute('width', String(size));
+  node.setAttribute('height', String(size));
+  node.setAttribute('fill', 'none');
+  node.setAttribute('stroke', 'currentColor');
+  node.setAttribute('stroke-width', '1.1');
+  node.setAttribute('stroke-linecap', 'round');
+  node.setAttribute('stroke-linejoin', 'round');
+  node.setAttribute('aria-hidden', 'true');
+  const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  path.setAttribute('d', categoryIconPath(row));
+  node.append(path);
+  return node;
+}
