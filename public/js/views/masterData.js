@@ -1,5 +1,5 @@
 /** Suppliers, brands, categories, clients and attributes screens. */
-import api from '../core/api.js';
+import api, { brandLogoUrl } from '../core/api.js';
 import { resourceView, toOptions } from './resource.js';
 import {
   h, mount, tag, dataTable, modal, toast, toastError, buildForm, confirmDialog, spinner,
@@ -173,7 +173,7 @@ function openBrandLogo(row, refresh) {
       current?.hasImage
         // A cache-buster: the address has no id in it, so a replaced logo would
         // otherwise be answered from the browser's own copy of the old one.
-        ? h('img', { class: 'brand-logo-shot', src: `/api/brands/${row.id}/logo/raw?v=${encodeURIComponent(current.updatedAt || '')}`, alt: '' })
+        ? h('img', { class: 'brand-logo-shot', src: brandLogoUrl(row.id, current.updatedAt || ''), alt: '' })
         : h('div', { class: 'empty' }, h('span', { class: 'ico' }, '◍'), h('div', {}, t('noPhotosYet'))),
       h('div', { class: 'row', style: { gap: '8px', marginTop: '10px' } },
         h('button', { class: 'btn sm', type: 'button', onclick: () => input.click() },
@@ -216,7 +216,7 @@ export const brandsView = resourceView({
         // The mark first, because on this screen it is the thing being checked:
         // "which of my brands still has no picture on the website".
         r.has_logo
-          ? h('img', { class: 'brand-logo-chip', src: `/api/brands/${r.id}/logo/raw`, alt: '', loading: 'lazy' })
+          ? h('img', { class: 'brand-logo-chip', src: brandLogoUrl(r.id), alt: '', loading: 'lazy' })
           : h('span', { class: 'brand-logo-chip is-empty' }, String(pick(r, 'name') || '?').trim().charAt(0)),
         h('span', { class: 'strong' }, pick(r, 'name'))),
     },

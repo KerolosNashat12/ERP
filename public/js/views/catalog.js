@@ -1,5 +1,5 @@
 /** Product catalogue: list, and the create/edit screen with the variant matrix. */
-import api from '../core/api.js';
+import api, { productImageUrl } from '../core/api.js';
 import {
   h, mount, dataTable, pager, spinner, toast, toastError, confirmDialog, debounce,
   textInput, selectInput, numberInput, field, tag, modal, buildForm, summaryCards,
@@ -1021,7 +1021,7 @@ function photosCard(productId, productVariants = []) {
       },
     },
     h('img', {
-      src: `/api/products/${productId}/images/${image.id}/raw`,
+      src: productImageUrl(productId, image.id),
       alt: pick(image, 'alt') || '',
       loading: 'lazy',
     }),

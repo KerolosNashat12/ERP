@@ -41,6 +41,48 @@ export function apiBase() {
   return match ? `/t/${match[1]}` : '';
 }
 
+/* ------------------------------------------------ addresses for pictures
+
+An `<img src>` is a request like any other, and it needs the tenant prefix
+exactly as much as a `fetch` does — but it does NOT go through this module's
+request door, so it is the one kind of API call a view can build by hand
+without noticing. It did: the brands screen and the product photo editor
+each wrote `/api/…/raw` as a literal, which is correct on the single-shop
+build and 404 on `/t/<slug>/`, so every brand logo and every product
+photograph rendered as a broken-image icon for any shop on the multi-tenant
+build. The symptom is silent — no console error a shop owner would see, no
+failed request in the UI, just a little torn page where a logo should be.
+
+So picture addresses are NAMED here, next to `apiBase()`, the way the
+storefront's own `api.js` already names `imageUrl`, `brandLogoUrl` and
+`categoryImageUrl`. A view asks for the address of a thing; it does not
+assemble one. `tests/asset-urls.test.js` fails if a literal `/api/…` ever
+appears as a `src`, `href` or `url()` under `public/js/` again.
+*/
+
+/** Any server path, made absolute for THIS tenant. The escape hatch, named. */
+export const assetUrl = (path) => (path ? apiBase() + path : null);
+
+/**
+ * A brand's mark. `version` busts the cache after a replacement — the address
+ * carries no id of its own, so without it a replaced logo keeps showing the
+ * old bytes until a hard reload.
+ */
+export const brandLogoUrl = (brandId, version) => {
+  const base = `${apiBase()}/api/brands/${Number(brandId)}/logo/raw`;
+  return version ? `${base}?v=${encodeURIComponent(version)}` : base;
+};
+
+/** One of a product's photographs, in the ERP's own editor. */
+export const productImageUrl = (productId, imageId) =>
+  `${apiBase()}/api/products/${Number(productId)}/images/${Number(imageId)}/raw`;
+
+/** A category's picture — same arrangement as a brand's logo, same reason. */
+export const categoryImageUrl = (categoryId, version) => {
+  const base = `${apiBase()}/api/categories/${Number(categoryId)}/image/raw`;
+  return version ? `${base}?v=${encodeURIComponent(version)}` : base;
+};
+
 class ApiError extends Error {
   constructor(message, status, code, details) {
     super(message);
