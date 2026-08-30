@@ -1,39 +1,47 @@
-Shoot mode, and a profit report that was saying zero
+Brand rail: one frame for every logo, whatever shape it arrives in
 
-COSTING (found by the owner's question about buying the same product twice)
-This ERP values stock at MOVING WEIGHTED AVERAGE: one piece at 250 and one at
-300 make two pieces at 275, and a sale costs 275. There are no purchase layers
-to draw down, so "which PO is deducted first" has no answer - and does not
-need one.
+THE BUG (from the owner's screenshot of «ماركاتنا»)
+The rail was a skyline, then two overlapping rows with a black rectangle
+hanging out of the second one. Two causes, both in public/shop/shop.css:
 
-But asking it exposed a real bug. Each sale LINE stored the variant's standard
-cost, which receiving a purchase order overwrites with the latest price, while
-the sale HEADER stored the true average. On exactly his numbers:
-  sales_summary     profit 25  (header)
-  profit_and_costs  profit 25  (header)
-  sales_by_product  profit  0  (line)   <- wrong
-The report a shop opens to ask what a product earns was the one saying zero.
-The line now carries the cost the stock movement actually took out, so all
-three agree. Same shape as the 682-vs-673 disagreement found before.
+1. TWO FACE SIZES. A brand WITH a logo got its own 150x100 box; a brand
+   without one collapsed to the size of the little drawn ring, because the
+   night skin set that face to inline-size: auto. Two face sizes make two
+   card heights, and a flex row of mismatched cards wraps.
+2. A MARK BIGGER THAN ITS FRAME. The logo was held inside the frame by
+   max-inline-size / max-block-size: 100%. Those never resolved: the face
+   is a grid with place-items: center, so the item's area is content-sized,
+   the percentage is indefinite, and the browser ignores the cap. The drawn
+   fallback rendered at its intrinsic 150x150 inside an 88px frame and was
+   sliced off top and bottom by overflow: hidden. Percentage caps were tried
+   twice before this was measured properly.
 
-Checked and CORRECT already, now pinned by tests: a void puts the piece back
-at what it left at rather than at today's average; a customer return re-enters
-at what it was sold at; issuing stock does not move the average; receiving a
-dearer batch updates the standard cost and NEVER the shelf price.
+THE FIX
+The frame is declared once, for every state at once - .has-logo, the drawn
+fallback and the plain letter - as two custom properties on .brand-card-face.
+Absolute lengths always resolve, and they inherit, so everything inside the
+frame is sized from the same two numbers. A skin changes those two numbers
+and the mark follows: classic keeps the 104px circle, luxe uses a 132x88
+rounded rectangle so a wordmark is readable. Nothing below may set the width
+or height of a face again. A logo is CONTAINED, never cropped - cutting the
+edge off somebody's trademark is worse than leaving air around it. A square
+logo gets 16px of padding so the classic circle does not clip its corners.
+Two duplicate copies of the same night selector, which disagreed about the
+hairline ring, are now one.
 
-SHOOT MODE
-Products -> Photo session. One product, a button, the next one, ordered by
-brand so the walk follows the shelves. Skipping does not mark anything done.
-Built because product photographs cannot be downloaded: three open-licensed
-sources were tried and all three are unreachable, and a generic stock bottle
-on a product page is worse than an empty frame.
+HOW IT IS PINNED
+tests/brand-rail-ui-check.mjs uploads deliberately hostile logos - 900x200,
+200x900 and 500x500 - and measures the real page in a browser across classic
+and luxe, Arabic and English, desktop and phone: one face size, one card
+size, one row, and no mark larger than its frame. Putting the original CSS
+back fails it six times, with both symptoms named.
 
 ALSO
-- The figures band turns itself on for a shop with a real catalogue (029).
-- 248 products rounded to "200+"; now "240+".
-- Two screens outside the sidebar were titled "Dashboard".
-- FIX in a test: the camera-attribute fence stripped comments with a regex,
-  and image-slash-star contains a comment opening, so it deleted the rest of
-  every file and went green on a broken one. Found by a reversion check.
+- The stylesheet had the shared .tile-badge, .brand-card-face selector list
+  split by a comment sitting between its two selectors. Valid CSS, but it
+  hid the rule from the check that keeps a category tile and a brand face
+  the same object. Comment moved above the list; the check now also asserts
+  the face takes its width and height FROM the shared frame rather than
+  hard-coding them, so the next skin cannot leave one face behind.
 
-npm test 1189 -> 1197.
+npm test 1197 passing.

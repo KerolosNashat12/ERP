@@ -284,10 +284,29 @@ test('the home page is one design, not three', async (ctx) => {
     const rule = ruleFor('.tile,\n.brand-card');
     assert.match(rule, /border:\s*1px solid var\(--line\)/);
     assert.match(rule, /border-radius:\s*var\(--radius\)/);
+    /*
+     * The frame is declared once, as custom properties, so that a skin can move
+     * both numbers together and everything inside the frame follows. So the
+     * check is in two parts: the shared frame is still 104px square, and the
+     * face's own width and height are still taken FROM that frame rather than
+     * set independently — the moment one of them is hard-coded again, a skin
+     * that changes the frame leaves a face at the old size, which is the exact
+     * shape of the bug that made the brand rail wrap into two rows.
+     */
+    const face = ruleFor('.tile-badge,\n.brand-card-face');
     assert.match(
-      ruleFor('.tile-badge,\n.brand-card-face'), /inline-size:\s*104px/,
+      face, /--brand-face-w:\s*104px/,
       'the two faces are different sizes again, which is what made the same page '
       + 'look like two designs.',
+    );
+    assert.match(face, /--brand-face-h:\s*104px/, 'the shared frame is no longer square.');
+    assert.match(
+      face, /inline-size:\s*var\(--brand-face-w\)/,
+      'the face sets its own width instead of taking the shared frame.',
+    );
+    assert.match(
+      face, /block-size:\s*var\(--brand-face-h\)/,
+      'the face sets its own height instead of taking the shared frame.',
     );
   });
 

@@ -1211,10 +1211,42 @@ html[lang="ar"] .hero-title.is-lined { max-width: 28ch; }
   text-align: center;
   box-shadow: var(--shadow);
 }
+/*
+ * ONE FRAME FOR EVERY BRAND, whatever it has in it.
+ *
+ * The rail was a skyline. A brand WITH a logo got a 150×100 box; a brand
+ * without one collapsed to the size of the little drawn ring, because the night
+ * skin set its face to `inline-size: auto`. Two different face sizes make two
+ * different card heights, and a flex row of mismatched cards wraps — which is
+ * why «ماركاتنا» came back as two overlapping rows with one black rectangle
+ * hanging out of it.
+ *
+ * So the size is fixed HERE, once, for every state: `.has-logo`, the drawn
+ * fallback, and the plain letter. Nothing below may set the width or height of
+ * a face again — only its colour and its corner. What goes inside is contained,
+ * never cropped: cutting the edge off somebody's trademark is worse than
+ * leaving air around it.
+ */
 .tile-badge,
 .brand-card-face {
-  inline-size: 104px;
-  block-size: 104px;
+  /*
+   * The frame's size as CUSTOM PROPERTIES, not just as width and height.
+   *
+   * A mark inside the frame cannot size itself with `100%`: the face is a grid
+   * with `place-items: center`, so its item's area is content-sized, the
+   * percentage is indefinite, and the browser ignores it. The drawn fallback
+   * duly rendered at its intrinsic 150×150 inside an 88px frame and was sliced
+   * off top and bottom. Percentages and `max-*` caps both failed for the same
+   * reason, twice, before this was measured properly.
+   *
+   * Absolute values inherit and always resolve. A skin that changes the frame
+   * changes these two, and everything inside follows.
+   */
+  --brand-face-w: 104px;
+  --brand-face-h: 104px;
+  inline-size: var(--brand-face-w);
+  block-size: var(--brand-face-h);
+  flex: none;
   border-radius: 50%;
   background: var(--accent-soft);
   color: var(--accent-strong);
@@ -1291,6 +1323,14 @@ html[lang="ar"] .hero-title.is-lined { max-width: 28ch; }
 .rail-bleed .rail-next { inset-inline-end: var(--sp-3); }
 .rail-track {
   display: flex;
+  /*
+   * A rail is ONE row. Flex does not wrap by default, but saying so is worth
+   * one line here: the whole failure mode this rail had was a card growing
+   * taller than its neighbours and the row breaking into two overlapping
+   * lines. A belt to go with the braces above.
+   */
+  flex-wrap: nowrap;
+  align-items: stretch;
   gap: var(--sp-4);
   overflow-x: auto;
   /*
@@ -1358,7 +1398,31 @@ html[dir="rtl"] .rail-next svg { transform: rotate(180deg); }
   line-height: 1;
 }
 .brand-mark-badge[hidden] { display: none; }
-.brand-logo-img { inline-size: 100%; block-size: 100%; object-fit: contain; padding: var(--sp-2); }
+/*
+ * Both kinds of mark — an uploaded logo and the drawn fallback — fill the frame
+ * and are CONTAINED in it. Contained, never cropped: cutting the edge off
+ * somebody's trademark to make it fit is worse than leaving air around it, and
+ * a wordmark cropped to a square is unreadable rather than merely small.
+ */
+.brand-logo-img,
+.brand-logo-default {
+  inline-size: var(--brand-face-w);
+  block-size: var(--brand-face-h);
+  object-fit: contain;
+}
+/*
+ * A ROUND frame needs more inset than a rectangular one, and the arithmetic is
+ * the reason: the largest square that fits inside a circle of diameter d has a
+ * side of d ÷ √2, about 0.71d. A square logo contained in a 104px box is 104px
+ * across, so a circular frame with `overflow: hidden` cuts all four of its
+ * corners off — which is what a square emblem looked like here, clipped into an
+ * octagon.
+ *
+ * 16px each side leaves 72px for the picture, just inside the 73.5px the
+ * geometry allows. The luxe skin's frame is a rounded rectangle and needs no
+ * such allowance, so it sets its own smaller padding.
+ */
+.brand-logo-img { padding: var(--sp-5); }
 /* Two lines, then an ellipsis: a long name must not make its card taller than
    the one beside it. */
 .tile-name,
@@ -3860,11 +3924,28 @@ html[data-paper="night"] .brand-card {
   border: 0;
   padding-block: var(--sp-5);
 }
+/*
+ * ONE SHAPE AS WELL AS ONE SIZE.
+ *
+ * Fixing the height left a second inconsistency: a brand with a logo sat in a
+ * rounded square while a brand without one sat in a circle, so the row read as
+ * two designs. And a circle is the wrong frame for a wordmark — "SMART
+ * COLLECTION" is four and a half times wider than it is tall, and contained
+ * inside a circle it shrinks to a smear to keep its corners inside the curve.
+ *
+ * So every face in this skin is the same landscape frame: wide enough for a
+ * wordmark to be read, and a perfectly reasonable place to centre two letters.
+ * `--brand-face-w/h` are declared once here so nothing can set half of the
+ * pair — which is how the last mismatch happened.
+ */
+html[data-paper="night"] .brand-card-face {
+  --brand-face-w: 132px;
+  --brand-face-h: 88px;
+  border-radius: var(--radius-sm);
+}
 html[data-paper="night"] .brand-card-face:not(.has-logo) {
   background: transparent;
   box-shadow: none;
-  inline-size: auto;
-  block-size: auto;
   color: var(--accent);
 }
 html[data-paper="night"] .brand-card-name {
@@ -3908,6 +3989,12 @@ html[data-paper="night"] .foot-base { border-block-start: 1px solid var(--line);
  * colour: the reference draws a thin gold outline around its category marks.
  */
 html[data-paper="night"] .tile-badge,
+/*
+ * The same selector appeared twice with different shadows, so which ring a
+ * brand got depended on which block the browser read last. One of them said
+ * `box-shadow: none` and this one draws the hairline ring — the ring is the
+ * intended look, so it wins and the earlier one no longer fights it.
+ */
 html[data-paper="night"] .brand-card-face:not(.has-logo) {
   background: transparent;
   color: var(--accent);
@@ -4158,27 +4245,36 @@ html[data-paper="night"] .tile-photo {
  * around it.
  */
 html[data-paper="night"] .brand-card-face.has-logo {
-  inline-size: min(100%, 150px);
-  block-size: auto;
-  aspect-ratio: 3 / 2;
-  border-radius: var(--radius);
+  /*
+   * NO width, height, aspect-ratio or corner here. This used to declare its
+   * own 3:2 box, which is exactly what made a brand with a logo a different
+   * height from a brand without one. Everything about the FRAME is decided
+   * above, for every face at once; this block only says what goes on inside it.
+   */
   background: transparent;
   box-shadow: none;
-  display: grid;
-  place-items: center;
-  overflow: hidden;
-  padding: var(--sp-3);
+  padding: var(--sp-2);
 }
-html[data-paper="night"] .brand-card-face.has-logo img,
-html[data-paper="night"] .brand-logo-img {
-  max-inline-size: 100%;
-  max-block-size: 100%;
-  inline-size: auto;
-  block-size: auto;
+/*
+ * EVERY mark in a brand face, sized the same way: fill the frame, and let
+ * `object-fit: contain` letterbox whatever shape it is.
+ *
+ * This used to say `inline-size: auto; block-size: auto` with `max-*: 100%`,
+ * relying on the percentage caps to hold an intrinsically-sized image inside
+ * the frame. `max-block-size: 100%` never resolved — the face is a grid whose
+ * row is content-sized, so the percentage is indefinite and the cap is
+ * ignored — and the drawn fallback rendered at 132×132 inside an 88px frame
+ * and was sliced off top and bottom by `overflow: hidden`.
+ *
+ * 100% × 100% plus `contain` has no such dependency: the box is the frame, and
+ * the picture is fitted inside it whatever its aspect ratio. A colour logo on
+ * near-black usually arrives on its own white plate; nothing can be done about
+ * that from here, but the frame at least does not add a second edge around it.
+ */
+html[data-paper="night"] .brand-card-face img {
+  inline-size: var(--brand-face-w);
+  block-size: var(--brand-face-h);
   object-fit: contain;
-  /* A colour logo on near-black usually arrives on a white plate. Nothing can
-     be done about that from here, but the frame at least does not add a
-     second edge around it. */
 }
 
 /* ------------------------------------------------------ the hero's second line */
