@@ -27,6 +27,40 @@ import { session, can, lookup, invalidate } from '../core/store.js';
 import { proofThumbs, proofPicker } from '../core/proof.js';
 import { resourceView } from './resource.js';
 import { confirmDelete } from './trash.js';
+/*
+ * The repeat vocabulary comes from the same module the server's engine and its
+ * validator read. A picker with its own hard-coded list is how a browser ends
+ * up offering a frequency the engine has never heard of.
+ */
+import { FREQUENCIES, DEFAULT_FREQUENCY, normalizeFrequency } from '../../shared/recurrence.js';
+
+/** The word for each frequency. The list is theirs; only the words are ours. */
+const FREQUENCY_WORD = {
+  daily: 'freqDaily', weekly: 'freqWeekly', monthly: 'freqMonthly', yearly: 'freqYearly',
+};
+
+/**
+ * What a template's schedule says, in one line, in the reader's language.
+ *
+ * The column used to be «كل شهر يوم» with a bare number under it, which stops
+ * being true the moment a template is weekly. Each frequency says the thing
+ * that actually identifies it and nothing else.
+ */
+function repeatSummary(row) {
+  const frequency = normalizeFrequency(row.frequency);
+  if (frequency === 'daily') return t('everyDayLabel');
+  if (frequency === 'weekly') {
+    const day = Number.isInteger(Number(row.day_of_week))
+      ? Number(row.day_of_week)
+      : new Date(`${row.starts_on}T00:00:00Z`).getUTCDay();
+    return `${t('everyWeekOn')} ${t(`wd${day}`)}`;
+  }
+  if (frequency === 'yearly') {
+    const month = Number(row.month_of_year) || Number(String(row.starts_on).slice(5, 7)) || 1;
+    return `${t('everyYearOn')} ${number(row.day_of_month)} ${t(`mo${month}`)}`;
+  }
+  return `${t('everyMonthOn')} ${number(row.day_of_month)}`;
+}
 
 const METHODS = ['cash', 'card', 'transfer', 'wallet', 'cheque'];
 
@@ -366,9 +400,9 @@ export async function costsView(root, route) {
               h('small', { class: 'muted' }, `${pick(row, 'category_name')} · ${pick(row, 'branch_name')}`)),
           },
           {
-            key: 'day_of_month',
-            label: t('everyMonthOn'),
-            render: (row) => number(row.day_of_month),
+            key: 'frequency',
+            label: t('repeatsColumn'),
+            render: (row) => repeatSummary(row),
           },
           { key: 'amount', label: t('costAmount'), type: 'money', render: (row) => money(row.amount) },
           {
@@ -460,6 +494,38 @@ export async function costsView(root, route) {
       },
       { name: 'amount', label: t('costAmount'), type: 'number', required: true },
       {
+        name: 'frequency',
+        label: t('repeatEvery'),
+        type: 'select',
+        required: true,
+        options: FREQUENCIES.map((value) => ({ value, label: t(FREQUENCY_WORD[value]) })),
+      },
+      /*
+       * The three fields below pin the repeat to a calendar, and WHICH of them
+       * applies is the frequency's business: a weekly cost has a weekday and
+       * no day of the month, a yearly one has both a month and a day, a daily
+       * one has neither. They are all built and then shown or hidden by
+       * `applyFrequency()` rather than the form being rebuilt, so a half-typed
+       * amount survives changing your mind about how often it repeats.
+       */
+      {
+        name: 'day_of_week',
+        label: t('dayOfWeek'),
+        type: 'select',
+        required: true,
+        hint: t('dayOfWeekHint'),
+        // Saturday first: that is where the week starts here, and a list that
+        // starts on Sunday is a list an Egyptian shopkeeper reads twice.
+        options: [6, 0, 1, 2, 3, 4, 5].map((value) => ({ value, label: t(`wd${value}`) })),
+      },
+      {
+        name: 'month_of_year',
+        label: t('monthOfYear'),
+        type: 'select',
+        required: true,
+        options: Array.from({ length: 12 }, (_, i) => ({ value: i + 1, label: t(`mo${i + 1}`) })),
+      },
+      {
         name: 'day_of_month',
         label: t('dayOfMonth'),
         type: 'number',
@@ -483,7 +549,49 @@ export async function costsView(root, route) {
         type: 'select',
         options: METHODS.map((m) => ({ value: m, label: t(m) })),
       },
-    ], record || { starts_on: isoDate(), day_of_month: 1, payment_method: 'cash' }, { columns: 2 });
+    ], record || {
+      starts_on: isoDate(),
+      // Monthly, because rent and the bills are what most of these are, and
+      // because it is what every template made before today already is.
+      frequency: DEFAULT_FREQUENCY,
+      day_of_month: 1,
+      day_of_week: new Date().getDay(),
+      month_of_year: new Date().getMonth() + 1,
+      payment_method: 'cash',
+    }, { columns: 2 });
+
+    /*
+     * Show only the fields this frequency actually uses.
+     *
+     * `holder.hidden` rather than removing the field: the value stays in the
+     * form, so switching weekly → monthly → weekly gives back the weekday that
+     * was chosen rather than silently resetting it, and `buildForm.validate()`
+     * skips hidden fields so nothing can demand an answer to a question that
+     * is not on screen.
+     *
+     * The server does not trust any of this. `CostService.saveRecurring`
+     * stores NULL for the fields the chosen frequency does not use, so a
+     * weekday left over from a change of mind is never written and can never
+     * be read back by mistake.
+     */
+    const show = (name, on) => {
+      const entry = form.inputs.get(name);
+      if (entry) entry.holder.hidden = !on;
+    };
+    const dayOfMonthHint = form.inputs.get('day_of_month')?.holder.querySelector('.hint');
+    function applyFrequency() {
+      const frequency = form.inputs.get('frequency').input.value || DEFAULT_FREQUENCY;
+      show('day_of_week', frequency === 'weekly');
+      show('month_of_year', frequency === 'yearly');
+      show('day_of_month', frequency === 'monthly' || frequency === 'yearly');
+      // On a yearly repeat the number means "the day of THAT month", which is
+      // a different sentence from the monthly one.
+      if (dayOfMonthHint) {
+        dayOfMonthHint.textContent = frequency === 'yearly' ? t('dayOfMonthYearHint') : t('dayOfMonthHint');
+      }
+    }
+    form.inputs.get('frequency').input.addEventListener('change', applyFrequency);
+    applyFrequency();
 
     const dialog = modal({
       title: record ? t('editRepeatingCost') : t('newRepeatingCost'),
@@ -501,7 +609,13 @@ export async function costsView(root, route) {
             const payload = {
               category_id: Number(values.category_id),
               amount: Number(values.amount),
-              day_of_month: Number(values.day_of_month),
+              frequency: values.frequency || DEFAULT_FREQUENCY,
+              day_of_month: Number(values.day_of_month) || 1,
+              // Sent as typed; the server decides which of the two it keeps
+              // and nulls the other, so the row can never carry a weekday it
+              // does not use.
+              day_of_week: values.day_of_week === null ? null : Number(values.day_of_week),
+              month_of_year: values.month_of_year === null ? null : Number(values.month_of_year),
               starts_on: values.starts_on,
               ends_on: values.ends_on || null,
               warehouse_id: values.warehouse_id ? Number(values.warehouse_id) : null,

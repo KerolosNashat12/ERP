@@ -53,7 +53,7 @@ rem Build this version as a normal commit on top of what is already there,
 rem so nothing is force-pushed and no history is lost.
 git reset --soft FETCH_HEAD
 git add -A
-git commit -m "Fix: brand logos and product photos 404 on hosted shops - img src had no tenant prefix"
+git commit -m "Repeating costs: daily, weekly, monthly and yearly - and three bugs found building it"
 if errorlevel 1 (
   echo.
   echo   Nothing changed compared to GitHub - already up to date.

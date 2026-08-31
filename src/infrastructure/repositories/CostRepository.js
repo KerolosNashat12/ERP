@@ -184,11 +184,22 @@ export class RecurringCostRepository extends BaseRepository {
       table: 'recurring_costs',
       columns: [
         'category_id', 'warehouse_id', 'description', 'amount', 'payment_method',
-        'day_of_month', 'starts_on', 'ends_on', 'is_active', 'stopped_at', 'stopped_by',
+        // `frequency`, `day_of_week` and `month_of_year` say WHEN this repeats;
+        // `day_of_month` is shared by monthly and yearly. A column missing from
+        // this list is a field the form can set and the repository silently
+        // drops, so all four belong here together.
+        'frequency', 'day_of_month', 'day_of_week', 'month_of_year',
+        'starts_on', 'ends_on', 'is_active', 'stopped_at', 'stopped_by',
         'created_by',
       ],
       searchable: ['description'],
-      defaultSort: 'is_active DESC, day_of_month ASC, id DESC',
+      /*
+       * Ordered by WHAT it is, then when — day-of-month alone stopped being a
+       * sort key the moment a weekly template stopped having one. Active
+       * first, then daily/weekly/monthly/yearly by how often they come round,
+       * which is the order a person reads a list of repeats in.
+       */
+      defaultSort: 'is_active DESC, id DESC',
     });
   }
 
@@ -202,7 +213,10 @@ export class RecurringCostRepository extends BaseRepository {
       JOIN cost_categories c ON c.id = r.category_id
       JOIN warehouses w ON w.id = r.warehouse_id
       ${activeOnly ? 'WHERE r.is_active = 1' : ''}
-      ORDER BY r.is_active DESC, r.day_of_month ASC, r.id DESC
+      ORDER BY r.is_active DESC,
+               CASE r.frequency WHEN 'daily' THEN 0 WHEN 'weekly' THEN 1
+                                WHEN 'monthly' THEN 2 ELSE 3 END,
+               r.day_of_month ASC, r.id DESC
     `).all();
   }
 }

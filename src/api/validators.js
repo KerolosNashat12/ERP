@@ -1,5 +1,9 @@
 /** Request schemas. Kept in one place so the API contract is easy to review. */
 import { z } from 'zod';
+// The repeat vocabulary is defined once, in the module the engine and the
+// browser's picker also read. Spelling the list again here is how two of them
+// end up disagreeing about what 'weekly' means.
+import { FREQUENCIES, DEFAULT_FREQUENCY, PERIOD_KEY_PATTERN } from '../../public/shared/recurrence.js';
 
 const optionalString = z.string().trim().max(500).optional().nullable();
 
@@ -517,16 +521,37 @@ export const recurringCostSchema = z.object({
   description: optionalString,
   amount: z.coerce.number().positive('A repeating cost must be greater than zero'),
   payment_method: z.string().trim().default('cash'),
+  /*
+   * HOW OFTEN. The list is `FREQUENCIES` in src/shared/costs.js rather than
+   * spelled again here — the same module the browser's picker and the engine
+   * read, so the three cannot disagree about what is a valid repeat. There is
+   * no CHECK constraint in the database on purpose (see migration 030), which
+   * makes this schema the place an unknown value is stopped.
+   */
+  frequency: z.enum(FREQUENCIES).default(DEFAULT_FREQUENCY),
   // 1–31, clamped to the length of each month when the date is computed — a
   // "31st" template lands on the 28th of February rather than being skipped.
+  // Read by monthly and yearly; ignored by the other two.
   day_of_month: z.coerce.number().int().min(1).max(31).default(1),
+  // Weekly only, 0 Sunday … 6 Saturday. Optional because the service derives
+  // it from the start date when it is not sent.
+  day_of_week: z.coerce.number().int().min(0).max(6).optional().nullable(),
+  // Yearly only, 1–12. Derived from the start date the same way.
+  month_of_year: z.coerce.number().int().min(1).max(12).optional().nullable(),
   starts_on: isoDay,
   ends_on: isoDay.optional().nullable(),
 });
 
 /** Confirming one waiting month. The amount may differ from the template's. */
 export const recurringPostSchema = z.object({
-  period_key: z.string().trim().regex(/^\d{4}-\d{2}$/, 'Use a YYYY-MM month'),
+  /*
+   * The key's SHAPE follows the template's frequency — 'YYYY-MM-DD' for a
+   * daily or weekly repeat, 'YYYY-MM' for a monthly one, 'YYYY' for a yearly
+   * one. This only rejects something that is no shape at all; whether the key
+   * is genuinely due on THAT template is decided by the service against the
+   * occurrences it computes, which is the check that actually matters.
+   */
+  period_key: z.string().trim().regex(PERIOD_KEY_PATTERN, 'Use a YYYY, YYYY-MM or YYYY-MM-DD key'),
   amount: z.coerce.number().positive().optional().nullable(),
   spent_on: isoDay.optional().nullable(),
 });

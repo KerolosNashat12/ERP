@@ -90,3 +90,64 @@ test('no migration sends a statement a hosted database refuses', async (ctx) => 
     }
   });
 });
+
+/**
+ * A SEMICOLON INSIDE A SQL COMMENT SILENTLY CUTS A TABLE IN HALF.
+ *
+ * `shared/costs.js`, `shared/attachments.js` and friends hold one SQL string
+ * that BOTH `schema.js` and a migration apply, and the migration applies it by
+ * splitting on `;` and running each piece. That splitter cannot see comments.
+ * So a `--` line containing a semicolon — an ordinary English one, in a
+ * sentence explaining the column above it — ends the statement early: the
+ * first half of the CREATE TABLE is executed, fails as `incomplete input`, and
+ * the migration aborts inside its transaction.
+ *
+ * This has now happened, while adding `frequency` to `recurring_costs` with
+ * the note "Used by MONTHLY and YEARLY; ignored by the other two". It is the
+ * same family as the backtick that cannot appear in a `schema.js` comment
+ * because the file is a template literal: prose that lands inside a string is
+ * not prose, it is syntax, and the failure is at BOOT for every shop.
+ *
+ * Rather than ask everyone to remember, this reads every shared SQL string the
+ * way the splitter does and asserts each piece is a statement.
+ */
+test('a shared SQL string survives being split on semicolons', async (ctx) => {
+  const shared = path.join(here, '..', 'src', 'shared');
+  const modules = fs.readdirSync(shared).filter((name) => name.endsWith('.js'));
+
+  const strings = [];
+  for (const name of modules) {
+    // eslint-disable-next-line no-await-in-loop
+    const mod = await import(`../src/shared/${name}`);
+    for (const [key, value] of Object.entries(mod)) {
+      if (typeof value === 'string' && /CREATE\s+TABLE/i.test(value)) {
+        strings.push({ where: `${name}#${key}`, sql: value });
+      }
+    }
+  }
+
+  await ctx.test('there are shared SQL strings to check — the control', () => {
+    // The assertion below is "nothing was malformed", which an empty list
+    // would satisfy just as happily.
+    assert.ok(strings.length >= 2, `only found ${strings.length}: ${strings.map((s) => s.where)}`);
+    assert.ok(strings.some((s) => s.where.startsWith('costs.js')), 'costs.js was not reached');
+  });
+
+  await ctx.test('every piece of every one of them is a statement', () => {
+    for (const { where, sql } of strings) {
+      const pieces = sql.split(';').map((piece) => piece.trim()).filter(Boolean);
+      for (const [index, piece] of pieces.entries()) {
+        // Leading `--` lines belong to the statement that follows them, which
+        // is legal and common; what is checked is what comes after them.
+        const body = piece.replace(/^(\s*--[^\n]*\n)+/, '').trim();
+        assert.match(
+          body, /^(CREATE|INSERT|ALTER|DROP|PRAGMA|UPDATE|DELETE)\b/i,
+          `${where}: piece ${index} is not a statement. A semicolon inside a `
+          + 'SQL comment has cut the previous one in half — the migration that '
+          + 'splits this string on ";" will run the fragment and fail at BOOT '
+          + `with "incomplete input". It begins: ${body.slice(0, 90)}`,
+        );
+      }
+    }
+  });
+});

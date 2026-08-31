@@ -251,6 +251,17 @@ export function buildForm(fields, initial = {}, { columns = 2 } = {}) {
       for (const [, { input, spec, holder }] of inputs) {
         holder.classList.remove('error');
         holder.querySelector('.error-text')?.remove();
+        /*
+         * A HIDDEN FIELD IS NOT REQUIRED.
+         *
+         * Some forms show a field only when another answer makes it relevant —
+         * a repeating cost asks which weekday only when it repeats weekly. If
+         * validate() still demanded those, the save button would refuse with a
+         * red "required" attached to a field nobody can see and no way to
+         * satisfy it: a dead end with no visible cause. `holder.hidden` is the
+         * one way this form hides a field, so it is the one thing to check.
+         */
+        if (holder.hidden) continue;
         if (!spec.required) continue;
         const raw = spec.type === 'checkbox' ? true : input.value;
         if (raw === '' || raw === null) {

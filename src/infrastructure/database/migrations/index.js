@@ -49,6 +49,7 @@ import migration026 from './026-website-template.js';
 import migration027 from './027-product-search.js';
 import migration028 from './028-banner-second-button-and-stats.js';
 import migration029 from './029-stats-on-for-real-catalogues.js';
+import migration030 from './030-recurring-cost-frequency.js';
 
 /** Ordered. Append only. */
 const MIGRATIONS = [
@@ -81,6 +82,7 @@ const MIGRATIONS = [
   migration027,
   migration028,
   migration029,
+  migration030,
 ];
 
 async function ensureRegistry() {

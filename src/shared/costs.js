@@ -95,9 +95,23 @@ CREATE TABLE IF NOT EXISTS recurring_costs (
   description   TEXT,
   amount        REAL    NOT NULL CHECK (amount > 0),
   payment_method TEXT   NOT NULL DEFAULT 'cash',
+  -- How often this repeats: daily, weekly, monthly or yearly. Deliberately NO
+  -- CHECK constraint - a CHECK on a live table cannot gain a new value without
+  -- rebuilding the table under a trading shop, and a fifth frequency should be
+  -- one line rather than an afternoon. FREQUENCIES and normalizeFrequency
+  -- below are the guard, and an old row with no value reads as monthly.
+  -- Added to existing databases by migration 030.
+  frequency     TEXT    NOT NULL DEFAULT 'monthly',
   -- 1–31, clamped to the length of each month when the date is computed, so a
   -- rent due "on the 31st" lands on the 28th of February rather than nowhere.
+  -- Used by MONTHLY and by YEARLY. The other two ignore it.
   day_of_month  INTEGER NOT NULL DEFAULT 1 CHECK (day_of_month BETWEEN 1 AND 31),
+  -- WEEKLY only: 0 Sunday … 6 Saturday. NULL elsewhere, and NULL on a weekly
+  -- template reads as the weekday of its own start date.
+  day_of_week   INTEGER,
+  -- YEARLY only: 1–12, the month it falls in. NULL elsewhere, and NULL on a
+  -- yearly template reads as the month of its own start date.
+  month_of_year INTEGER,
   starts_on     TEXT    NOT NULL,
   ends_on       TEXT,
   is_active     INTEGER NOT NULL DEFAULT 1,
@@ -121,10 +135,13 @@ CREATE TABLE IF NOT EXISTS costs (
   source         TEXT    NOT NULL DEFAULT 'manual'
                  CHECK (source IN ('manual','recurring','salary')),
   recurring_id   INTEGER REFERENCES recurring_costs(id) ON DELETE SET NULL,
-  -- 'YYYY-MM': which month of the template this row IS. Paired with the unique
-  -- index below, this is what makes generating twice produce one row and not
-  -- two — the database refuses the second, so no amount of retrying, no second
-  -- tab and no overlapping request can post the same month again.
+  -- WHICH OCCURRENCE of the template this row IS. Its shape follows the
+  -- template's frequency and is minted by periodKeyFor(): 'YYYY-MM-DD' for a
+  -- daily or weekly one, 'YYYY-MM' for a monthly one, 'YYYY' for a yearly one.
+  -- Paired with the unique index below, this is what makes generating twice
+  -- produce one row and not two — the database refuses the second, so no
+  -- amount of retrying, no second tab and no overlapping request can post the
+  -- same occurrence again.
   period_key     TEXT,
   -- A salary payment is a cost row. These three say whose, and for when.
   employee_id    INTEGER REFERENCES employees(id),
@@ -175,87 +192,30 @@ export const COST_CATEGORY_SEED = [
 /** The one category payroll writes into. */
 export const SALARY_CATEGORY_CODE = 'SALARIES';
 
-// ---------------------------------------------------------------- recurrence
-
-/** 'YYYY-MM' — the identity of one occurrence of a monthly template. */
-export const monthKey = (iso) => String(iso || '').slice(0, 7);
-
-/** Days in a given month, so a "31st" template survives February. */
-export const daysInMonth = (key) => {
-  const [year, month] = String(key).split('-').map(Number);
-  return new Date(Date.UTC(year, month, 0)).getUTCDate();
-};
-
-/** The day a template falls due in one month, clamped to that month's length. */
-export const occurrenceDate = (key, dayOfMonth) => {
-  const day = Math.min(Math.max(Number(dayOfMonth) || 1, 1), daysInMonth(key));
-  return `${key}-${String(day).padStart(2, '0')}`;
-};
-
-/** The month after `key`. */
-export const nextMonthKey = (key) => {
-  const [year, month] = String(key).split('-').map(Number);
-  return month === 12 ? `${year + 1}-01` : `${year}-${String(month + 1).padStart(2, '0')}`;
-};
-
-/**
- * How far back a template will ever look, in months.
- *
- * Nobody away for six weeks meets this. It is the guard against a template
- * dated three years ago that nobody generated: the answer to that is not 36
- * rows dumped into the ledger at once, it is the oldest 24 offered, posted,
- * and the rest offered on the next pass — a list a person can still read.
+/*
+ * The recurrence engine lives in `public/shared/recurrence.js` so the browser
+ * can read the same rules — see the note at the top of that file. It is
+ * re-exported here because everything on the server that thinks about costs
+ * imports this module, and there is no reason to make each of them know where
+ * the arithmetic happens to live.
  */
-export const MAX_CATCH_UP_MONTHS = 24;
+export {
+  FREQUENCIES,
+  DEFAULT_FREQUENCY,
+  normalizeFrequency,
+  CATCH_UP,
+  MAX_CATCH_UP_MONTHS,
+  monthKey,
+  daysInMonth,
+  occurrenceDate,
+  nextMonthKey,
+  weekdayOf,
+  monthOf,
+  periodKeyFor,
+  PERIOD_KEY_PATTERN,
+  firstDueOn,
+  nextDueOn,
+  dueOccurrences,
+} from '../../public/shared/recurrence.js';
 
-/**
- * The months this template owes an entry for and has not been given one.
- *
- * Pure: it reads a template, a date and the set of months already posted, and
- * returns what is missing. It never writes, and NOTHING in this system writes
- * a cost off a template without a person pressing something — see
- * CostService.generate. A recurring cost that quietly invents entries nobody
- * checked is worse than typing rent in every month.
- *
- * Six weeks away therefore looks like this: the shop opens the costs screen
- * and the months it missed are waiting at the top, each with its date and the
- * amount the template currently says, to confirm one at a time or all at once.
- * Nothing was posted while nobody was looking, and nothing was skipped either.
- *
- * @param {object} template   a recurring_costs row
- * @param {object} options
- * @param {string} options.asOf      today, YYYY-MM-DD
- * @param {Iterable<string>} options.posted  period_keys this template already has
- */
-export function dueOccurrences(template, { asOf, posted = [], maxMonths = MAX_CATCH_UP_MONTHS } = {}) {
-  if (!template || !template.is_active) return [];
-  const already = new Set(posted);
-  const today = String(asOf || new Date().toISOString().slice(0, 10));
-  const out = [];
-
-  let key = monthKey(template.starts_on);
-  const lastKey = monthKey(template.ends_on && template.ends_on < today ? template.ends_on : today);
-
-  // A bounded walk: at most one iteration per month between the start and
-  // today, and it stops at `maxMonths` findings.
-  let guard = 0;
-  while (key <= lastKey && out.length < maxMonths && guard < 600) {
-    guard += 1;
-    const dueOn = occurrenceDate(key, template.day_of_month);
-    const withinWindow = dueOn >= String(template.starts_on)
-      && (!template.ends_on || dueOn <= String(template.ends_on))
-      && dueOn <= today;
-    if (withinWindow && !already.has(key)) {
-      out.push({
-        recurring_id: template.id,
-        period_key: key,
-        due_on: dueOn,
-        amount: Number(template.amount),
-      });
-    }
-    key = nextMonthKey(key);
-  }
-  return out;
-}
-
-export default { COSTS_SQL, COST_CATEGORY_SEED, SALARY_CATEGORY_CODE, dueOccurrences };
+export default { COSTS_SQL, COST_CATEGORY_SEED, SALARY_CATEGORY_CODE };

@@ -31,7 +31,9 @@ import repositories from '../infrastructure/repositories/index.js';
 import { transaction } from '../infrastructure/database/connection.js';
 import { BusinessRuleError, NotFoundError, ValidationError } from '../shared/errors.js';
 import { round2 } from '../shared/money.js';
-import { dueOccurrences, MAX_CATCH_UP_MONTHS } from '../shared/costs.js';
+import {
+  dueOccurrences, CATCH_UP, normalizeFrequency,
+} from '../shared/costs.js';
 import auditService from './AuditService.js';
 import attachmentService from './AttachmentService.js';
 
@@ -57,6 +59,24 @@ attachmentService.registerOwner('cost', {
     return `${row.category_name_en} — ${row.amount} (${row.spent_on})`;
   },
 });
+
+/**
+ * A whole number inside a range, or the fallback.
+ *
+ * `Number(undefined)` is NaN and `Number('')` is 0, and both would sail past a
+ * plain `||` into a stored 0 that means Sunday. Anything that is not an
+ * integer in range is the caller not having said, which is what the fallback
+ * is for.
+ */
+const clampInt = (value, min, max, fallback) => {
+  // Absence is tested BEFORE coercion. `Number(null)` and `Number('')` are
+  // both 0, and 0 is a real weekday — coercing first would store a confident
+  // Sunday for a caller who simply did not say which day.
+  if (value === null || value === undefined || value === '') return fallback;
+  const n = Number(value);
+  if (!Number.isInteger(n) || n < min || n > max) return fallback;
+  return n;
+};
 
 export class CostService {
   constructor(deps = {}) {
@@ -288,10 +308,32 @@ export class CostService {
         description: payload.description || null,
         amount,
         payment_method: payload.payment_method || 'cash',
-        day_of_month: Math.min(Math.max(Number(payload.day_of_month) || 1, 1), 31),
         starts_on: payload.starts_on || today(),
         ends_on: payload.ends_on || null,
       };
+
+      /*
+       * WHEN it repeats, DERIVED rather than demanded.
+       *
+       * A weekly template needs a weekday and a yearly one needs a month, and
+       * the form sends both — but an API caller, or a template saved before
+       * this existed, may send only a frequency and a start date. Rather than
+       * refuse, the missing piece is taken from the start date itself, which
+       * is what the person who typed that date meant anyway. The fields that
+       * do not apply are stored as NULL instead of as a stale leftover, so a
+       * template switched from weekly to monthly does not keep a weekday
+       * nothing reads and everybody misreads.
+       */
+      data.frequency = normalizeFrequency(payload.frequency);
+      data.day_of_month = data.frequency === 'daily' || data.frequency === 'weekly'
+        ? 1
+        : Math.min(Math.max(Number(payload.day_of_month) || 1, 1), 31);
+      data.day_of_week = data.frequency === 'weekly'
+        ? clampInt(payload.day_of_week, 0, 6, new Date(`${data.starts_on}T00:00:00Z`).getUTCDay())
+        : null;
+      data.month_of_year = data.frequency === 'yearly'
+        ? clampInt(payload.month_of_year, 1, 12, Number(String(data.starts_on).slice(5, 7)) || 1)
+        : null;
       if (data.ends_on && data.ends_on < data.starts_on) {
         throw new ValidationError('A repeating cost cannot end before it starts');
       }
@@ -303,7 +345,7 @@ export class CostService {
 
       await this.audit.recordChange(context, {
         action: id ? 'UPDATE' : 'CREATE', module: 'costs', entityType: 'recurring_cost',
-        entityId: row.id, entityLabel: `${category.name_en} — ${amount} / month`, before, after: row,
+        entityId: row.id, entityLabel: `${category.name_en} — ${amount} / ${data.frequency}`, before, after: row,
       });
       return row;
     });
@@ -381,7 +423,10 @@ export class CostService {
       }
     }
     rows.sort((a, b) => (a.due_on < b.due_on ? -1 : 1));
-    return { rows, asOf: when, maxCatchUpMonths: MAX_CATCH_UP_MONTHS };
+    // `catchUp` is per frequency now; the old single number is kept beside it
+    // so a caller written against the previous shape still reads something
+    // true rather than `undefined`.
+    return { rows, asOf: when, catchUp: CATCH_UP, maxCatchUpMonths: CATCH_UP.monthly };
   }
 
   /**

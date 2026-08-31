@@ -1,57 +1,57 @@
-Pictures were 404 on every hosted shop: an img src with no tenant prefix
+Repeating costs: daily, weekly, monthly and yearly
 
-THE BUG (photographed on the live shop, brands screen)
-Every brand that HAD a logo drew a broken-image icon; every brand without one
-drew its letter correctly.
+THE ASK
+The owner, looking at the repeating-cost dialog: "can you please enhance this
+function to be have a type (Monthly - weekly - and so on)". It only ever asked
+for a day of the MONTH, because the engine behind it stepped one month at a
+time and keyed each entry YYYY-MM.
 
-The ERP is one SPA served two ways: at "/" for a shop running it on its own
-PC, and at "/t/<slug>/" for a shop on the hosted platform. core/api.js exists
-to hide that difference - every fetch it makes is prefixed with apiBase(). An
-<img src> never goes through that door; the browser issues the request itself.
-So it is the one kind of API call a view can build by hand without anything
-noticing, and two views had:
+FOUR FREQUENCIES, AND WHAT EACH ONE NEEDS
+  daily     nothing.
+  weekly    a day of the week - "every Friday", not "every 7 days from
+            whenever I created this". A drifting weekday is a bug nobody can
+            name.
+  monthly   a day of the month, clamped. UNCHANGED, including its key.
+  yearly    a day and a month.
+The form shows only the fields the chosen frequency uses, and the server
+stores NULL for the ones it does not - so a template switched from weekly to
+monthly cannot keep a weekday that something later misreads.
 
-  public/js/views/masterData.js  the brand logo chip, and the preview in its
-                                 own dialog
-  public/js/views/catalog.js     EVERY product photograph in the catalogue
+WHAT DOES NOT CHANGE, AND WHY IT MATTERS MOST
+Monthly keeps the YYYY-MM period key exactly. Every entry every existing
+template has already posted carries that key; a new shape would make all of
+them look unposted and offer the whole history again. There is a test that
+inserts a template using only the columns that existed before this release -
+the shape of every row in the live database - and checks its dates, its months
+and its already-posted entries come out identical.
 
-which means product photos were torn pages for every hosted shop too, not
-just brand logos.
+Catch-up is now about a year per frequency (daily 366, weekly 53, monthly 12,
+yearly 2) instead of 24 months. Nothing is lost: the oldest are offered first
+and the next batch appears as they are posted.
 
-It fails silently and ONLY when hosted. On localhost the prefix is empty and
-the literal is correct, so nothing in development could ever show it: no
-throw, no failed request the UI can see, no rendering test that notices. Just
-a small torn page where a picture should be.
+NO CHECK CONSTRAINT ON THE FREQUENCY COLUMN, ON PURPOSE
+SQLite would accept one. A CHECK on a live table cannot gain a new value
+without rebuilding the table under a trading shop - this project paid for that
+lesson once already with sale_payments.method. A fifth frequency should be one
+line. The list lives in public/shared/recurrence.js, which the engine, the API
+validator and the browser's picker all read, so an unknown value cannot arrive
+from outside.
 
-THE FIX
-Picture addresses are NAMED in core/api.js next to apiBase(), the way the
-storefront's own api.js already names imageUrl, brandLogoUrl and
-categoryImageUrl: brandLogoUrl, productImageUrl, categoryImageUrl, and
-assetUrl(path) as the named escape hatch. A view asks for the address of a
-thing; it does not assemble one. brandLogoUrl takes an optional version
-because the address carries no id of its own - without it, a replaced logo
-keeps showing the old bytes.
+THREE BUGS FOUND WHILE BUILDING IT
+- A SEMICOLON IN A SQL COMMENT cuts a CREATE TABLE in half. The shared schema
+  string is applied by splitting on ";", and that splitter cannot see comments,
+  so an ordinary English semicolon in a note about a column made the migration
+  fail at BOOT with "incomplete input". Same family as the backtick that cannot
+  appear in a schema.js comment. Now fenced for every shared SQL string.
+- Number(null) IS 0, AND 0 IS SUNDAY. Reading the weekday column with Number()
+  alone turned "no weekday saved" into a confident Sunday, so a weekly template
+  created without one would have repeated on Sundays instead of on its own
+  start day. Absence is tested before coercion now, in both places that read it.
+- hidden DID NOT MEAN HIDDEN. The attribute loses to `.field { display: grid }`,
+  so hiding a form field left it on screen while every script was told it was
+  hidden. This codebase has met that three times now and patched it one
+  selector at a time twice; there is one global rule for it now. Found only
+  because the browser check measured pixels rather than asking the code what it
+  had intended.
 
-HOW IT IS PINNED, TWICE
-- tests/asset-urls.test.js reads the three front ends as source and fails on
-  any literal /api/... used as a src, href, action or CSS url(); then proves
-  the helpers themselves carry the prefix under a /t/<slug>/ location, and
-  that the version stamp is present and encoded.
-- tests/tenant-assets-check.mjs boots the ERP in PLATFORM mode with its own
-  tenant, creates a brand and a product, gives each a picture through the real
-  endpoints, opens both screens in a browser at /t/<slug>/ and asks each <img>
-  whether it decoded. naturalWidth 0 is exactly what the owner photographed.
-
-Reversion-checked four ways: writing the literal back into the view fails the
-source test; removing the prefix from either helper fails the browser check
-with his exact symptom; dropping the version stamp fails its own test.
-
-ALSO
-- The comment-stripping source scanner is now shared (tests/helpers/source.js)
-  instead of living inside one test - a rule written twice diverges, and that
-  one has already been wrong once in a way that made a test pass on a broken
-  file.
-- FIX in this check: it printed "all decoded" unconditionally, including on a
-  run where nothing decoded. It reports what it measured now.
-
-npm test 1197 -> 1201.
+npm test 1201 -> 1258, plus tests/recurring-frequency-ui-check.mjs.

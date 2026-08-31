@@ -255,6 +255,26 @@ html[dir="rtl"] .nav-group { letter-spacing: 0; }
   .btn.is-busy::after { animation-duration: 2.4s; }
 }
 
+/*
+ * `hidden` MEANS HIDDEN — once, for the whole stylesheet.
+ *
+ * The `hidden` attribute is only `display: none` in the browser's own default
+ * sheet, which every class here outranks. So `.field { display: grid }` below
+ * quietly beats it, and `el.hidden = true` on a form field leaves the field
+ * exactly where it was, on screen, for the user to fill in — while every
+ * script that asks is told it is hidden. That gap is a bug that cannot be seen
+ * in code and cannot be seen on screen either, only in the disagreement
+ * between the two.
+ *
+ * This project has now met it three times: the checkout error bar that showed
+ * an empty red strip on every order, `.suggest-menu[hidden]` a few hundred
+ * lines down in this file, and a repeating cost still asking for a day of the
+ * MONTH when it repeats daily. Two of those were patched one selector at a
+ * time. This is the general fix; the specific ones can stay, they simply stop
+ * being load-bearing.
+ */
+[hidden] { display: none !important; }
+
 .field { display: grid; gap: 5px; }
 .field > label { font-size: 12.5px; font-weight: 500; color: var(--ink-2); }
 .field .hint { font-size: 11.5px; color: var(--ink-3); }
