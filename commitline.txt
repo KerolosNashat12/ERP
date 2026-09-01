@@ -1,57 +1,53 @@
-Repeating costs: daily, weekly, monthly and yearly
+Choose a size on the card instead of leaving the shelf
 
 THE ASK
-The owner, looking at the repeating-cost dialog: "can you please enhance this
-function to be have a type (Monthly - weekly - and so on)". It only ever asked
-for a day of the MONTH, because the engine behind it stepped one month at a
-time and keyed each entry YYYY-MM.
+The owner, on a product card whose button read "choose the size":
+"ينفع تظبط اختر المقاس دي ل اضف للسله عادي"
 
-FOUR FREQUENCIES, AND WHAT EACH ONE NEEDS
-  daily     nothing.
-  weekly    a day of the week - "every Friday", not "every 7 days from
-            whenever I created this". A drifting weekday is a bug nobody can
-            name.
-  monthly   a day of the month, clamped. UNCHANGED, including its key.
-  yearly    a day and a month.
-The form shows only the fields the chosen frequency uses, and the server
-stores NULL for the ones it does not - so a template switched from weekly to
-monthly cannot keep a weekday that something later misreads.
+WHAT IT DID
+A product with ONE size added in a tap. A product with several said "choose
+the size" and took the shopper to the product page - honest, but it sent them
+away from the shelf they were browsing to answer one question.
 
-WHAT DOES NOT CHANGE, AND WHY IT MATTERS MOST
-Monthly keeps the YYYY-MM period key exactly. Every entry every existing
-template has already posted carries that key; a new shape would make all of
-them look unposted and offer the whole history again. There is a test that
-inserts a template using only the columns that existed before this release -
-the shape of every row in the live database - and checks its dates, its months
-and its already-posted entries come out identical.
+WHAT IT DOES NOW
+Every card says "add to cart". A product with more than one size answers the
+tap with its sizes, on the card, each with its own price; tapping one adds
+THAT one. The shopper never leaves the shelf.
 
-Catch-up is now about a year per frequency (daily 366, weekly 53, monthly 12,
-yearly 2) instead of 24 months. Nothing is lost: the oldest are offered first
-and the next batch appears as they are posted.
+Two things it deliberately does not do:
+- It does not guess. Adding the cheapest size blind is one tap shorter and
+  puts the wrong bottle in the bag, found out at the door.
+- It does not ask when there is nothing to ask. Four sizes with one of them in
+  stock has no choice in it, so that one goes straight in.
 
-NO CHECK CONSTRAINT ON THE FREQUENCY COLUMN, ON PURPOSE
-SQLite would accept one. A CHECK on a live table cannot gain a new value
-without rebuilding the table under a trading shop - this project paid for that
-lesson once already with sale_payments.method. A fifth frequency should be one
-line. The list lives in public/shared/recurrence.js, which the engine, the API
-validator and the browser's picker all read, so an unknown value cannot arrive
-from outside.
+The sizes are fetched the first time somebody opens a product's panel and kept
+for the rest of the visit - a shelf is two dozen products and sending every
+variant of every one of them would undo the performance round for a panel most
+shoppers never open. The promise is cached, not the result, so two quick taps
+share one request instead of racing two.
 
-THREE BUGS FOUND WHILE BUILDING IT
-- A SEMICOLON IN A SQL COMMENT cuts a CREATE TABLE in half. The shared schema
-  string is applied by splitting on ";", and that splitter cannot see comments,
-  so an ordinary English semicolon in a note about a column made the migration
-  fail at BOOT with "incomplete input". Same family as the backtick that cannot
-  appear in a schema.js comment. Now fenced for every shared SQL string.
-- Number(null) IS 0, AND 0 IS SUNDAY. Reading the weekday column with Number()
-  alone turned "no weekday saved" into a confident Sunday, so a weekly template
-  created without one would have repeated on Sundays instead of on its own
-  start day. Absence is tested before coercion now, in both places that read it.
-- hidden DID NOT MEAN HIDDEN. The attribute loses to `.field { display: grid }`,
-  so hiding a form field left it on screen while every script was told it was
-  hidden. This codebase has met that three times now and patched it one
-  selector at a time twice; there is one global rule for it now. Found only
-  because the browser check measured pixels rather than asking the code what it
-  had intended.
+HOW IT IS PINNED
+tests/quick-add-sizes-check.mjs builds its own fixture - a product with three
+sizes at three prices and a product with one, both published and stocked -
+then drives a real browser: every card is labelled "add to cart"; opening the
+sizes leaves the basket EMPTY; choosing the 100ml at 750 puts the 100ml at 750
+in the basket (the last one, so "it adds the first whatever you tapped" cannot
+pass); and a one-size product adds on the first tap with no panel at all.
 
-npm test 1201 -> 1258, plus tests/recurring-frequency-ui-check.mjs.
+Reversion-checked three ways: putting the old label and navigation back fails
+it, guessing the first size fails it, and adding the wrong size fails it by
+name.
+
+THREE THINGS THE FIRST CUT GOT WRONG, ALL FOUND BY RUNNING IT
+- `api.get(...)` does not exist on the storefront's request object. The panel
+  opened, said "loading", and stayed there. It is `api.product(id)` - the
+  request door that knows the tenant prefix and de-duplicates in-flight calls.
+- `.card-add` is a RULER the size of the photo and is pointer-events: none so
+  the rest of the card stays clickable. The check clicked its centre, landed
+  on the card's own link, navigated to the product page, and reported "no size
+  panel" about a panel that worked.
+- The check hard-crashed on a 30-second Playwright timeout when the panel was
+  missing - which is exactly what a regression looks like - and died before
+  printing any of its findings. It reports now.
+
+npm test 1258 passing.

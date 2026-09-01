@@ -1,10 +1,10 @@
 /** Product cards, availability badges and the grids they live in. */
 import { el, icon, chevron, ICONS } from '../core/dom.js';
-import { imageUrl, brandLogoUrl, categoryImageUrl } from '../core/api.js';
+import { api, imageUrl, brandLogoUrl, categoryImageUrl } from '../core/api.js';
 import { t, pick, isRtl } from '../core/i18n.js';
 import { monogramText } from '../core/branding.js';
 import { defaultProductImage, defaultBrandImage, categoryArt } from './placeholders.js';
-import { priceRange } from '../core/format.js';
+import { priceRange, money } from '../core/format.js';
 import { href } from '../core/router.js';
 import { routePath, slugFor } from '../../../shared/shopUrls.js';
 import * as favorites from '../core/favorites.js';
@@ -246,19 +246,146 @@ export function productCard(card, { eager = false } = {}) {
  * click; the favourite heart already solved this by being a sibling laid over
  * the corner, and this is the same arrangement over the bottom of the photo.
  */
+/**
+ * A product's sizes, fetched once and kept.
+ *
+ * The shelf endpoint sends `variant_count` and nothing else about the sizes,
+ * on purpose: a shelf is twenty-four products and carrying every variant of
+ * every one of them would undo the performance round for a panel most
+ * shoppers never open. So the sizes are fetched the first time somebody asks
+ * for THIS product, and remembered for the rest of the visit.
+ *
+ * The promise itself is cached, not the result — two quick taps then share one
+ * request instead of racing two.
+ */
+const sizeCache = new Map();
+const sizesOf = (productId) => {
+  if (!sizeCache.has(productId)) {
+    // `api.product`, not a hand-built path: the request door is the one place
+    // that knows the tenant prefix, the in-flight de-duplication and the error
+    // shape. The first cut called `api.get(...)`, which does not exist on this
+    // object at all — the panel opened, said "loading", and stayed there.
+    sizeCache.set(productId, api.product(productId).catch((error) => {
+      // A failed lookup must not be remembered as "this product has no sizes"
+      // for the rest of the visit; the next tap tries again.
+      sizeCache.delete(productId);
+      throw error;
+    }));
+  }
+  return sizeCache.get(productId);
+};
+
+/** How many of a variant may be sold: a number, or null for untracked stock. */
+const capOf = (variant) => {
+  const value = variant?.available;
+  if (value === null || value === undefined) return null;
+  const n = Math.floor(Number(value));
+  return Number.isFinite(n) ? Math.max(n, 0) : null;
+};
+
+/** Put one variant of one product in the basket and say so. */
+function addLine(card, variant, product = null) {
+  const held = cart.add({
+    variant_id: variant.id,
+    product_id: card.id,
+    name_en: card.name_en,
+    name_ar: card.name_ar,
+    label: variant.label || '',
+    price: Number(variant.price) || Number(card.price_from) || 0,
+    tax_rate: Number(product?.tax_rate ?? card.tax_rate ?? 0),
+    image_id: variant.image_id || card.image_id,
+  }, 1, capOf(variant));
+  const cap = capOf(variant);
+  // Held nothing means the basket already has all there is — saying "added"
+  // then would be a lie the shopper only discovers at the checkout.
+  toast(held === 0 ? t('onlyNLeft', cap ?? 0) : t('addedToCart'));
+}
+
+/**
+ * THE SIZE PANEL — choosing a size without leaving the shelf.
+ *
+ * The button used to say «اختار المقاس» and go to the product page, which is
+ * honest but is not what the owner wanted: *"ينفع تظبط اختر المقاس دي ل اضف
+ * للسله عادي"*. So the button says «أضف للسلة» on every card now, and a
+ * product with more than one size answers the tap with its sizes, here, on the
+ * card. One tap to open, one to choose, and the shopper is still looking at
+ * the shelf.
+ *
+ * Two things it deliberately does NOT do:
+ *   · it does not guess. Adding the cheapest size blind is one tap shorter and
+ *     puts the wrong bottle in the bag, which is found out at the door.
+ *   · it does not ask when there is nothing to ask. A product with four sizes
+ *     and one of them in stock has no choice in it, so that one goes straight
+ *     in — see `purchasable` below.
+ */
+function openSizes(host, card, button) {
+  host.querySelector('.card-sizes')?.remove();
+  button.hidden = true;
+
+  const close = () => {
+    host.querySelector('.card-sizes')?.remove();
+    button.hidden = false;
+  };
+
+  const panel = el('div.card-sizes', {
+    onClick: (event) => { event.preventDefault(); event.stopPropagation(); },
+  });
+  host.append(panel);
+  // Closing on leave rather than on a stray click: this whole overlay only
+  // exists where there is a pointer to hover with (see shop.css), so leaving
+  // the card IS the dismissal a person expects.
+  host.addEventListener('mouseleave', close, { once: true });
+
+  panel.append(el('div.card-sizes-busy', t('loading')));
+
+  sizesOf(card.id).then((product) => {
+    if (!panel.isConnected) return;
+    const variants = (product?.variants || []).filter((v) => v.availability !== 'out');
+    panel.textContent = '';
+
+    if (!variants.length) {
+      panel.append(el('div.card-sizes-busy', t('outOfStock')));
+      return;
+    }
+    if (variants.length === 1) {
+      // Nothing to choose. Add it and get out of the way.
+      close();
+      addLine(card, variants[0], product);
+      return;
+    }
+    panel.append(el('div.card-sizes-head', t('chooseOptions')));
+    for (const variant of variants) {
+      panel.append(el('button.card-size', {
+        type: 'button',
+        tabindex: '-1',
+        onClick: (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          close();
+          addLine(card, variant, product);
+        },
+      },
+      el('span.card-size-label', variant.label || t('addToCart')),
+      el('span.card-size-price', money(variant.price))));
+    }
+  }).catch(() => {
+    if (!panel.isConnected) return;
+    panel.textContent = '';
+    // The product page can always do this; say so rather than dead-ending.
+    panel.append(el('a.card-sizes-link', {
+      href: href(routePath('product', { id: card.id, slug: slugFor(card) })),
+    }, t('chooseOptions')));
+  });
+}
+
 function quickAdd(card) {
   if (card.availability === 'out') return null;
 
   const many = Number(card.variant_count || 0) > 1 || !card.variant_id;
-  if (many) {
-    return el('a.card-add', {
-      href: href(routePath('product', { id: card.id, slug: slugFor(card) })),
-      tabindex: '-1',
-      'aria-hidden': 'true',
-    }, el('span.card-add-btn', icon(ICONS.bag, { size: 16 }), el('span', t('chooseOptions'))));
-  }
 
-  return el('button.card-add', {
+  const button = el('span.card-add-btn', icon(ICONS.bag, { size: 16 }), el('span', t('addToCart')));
+
+  const host = el('button.card-add', {
     type: 'button',
     tabindex: '-1',
     'aria-hidden': 'true',
@@ -266,19 +393,21 @@ function quickAdd(card) {
       // The card is a link; adding to the basket must not also navigate.
       event.preventDefault();
       event.stopPropagation();
-      cart.add({
-        variant_id: card.variant_id,
-        product_id: card.id,
-        name_en: card.name_en,
-        name_ar: card.name_ar,
+      if (many) {
+        openSizes(host, card, button);
+        return;
+      }
+      addLine(card, {
+        id: card.variant_id,
         label: '',
         price: Number(card.price_from) || 0,
-        tax_rate: Number(card.tax_rate || 0),
         image_id: card.image_id,
-      }, 1);
-      toast(t('addedToCart'));
+        available: null,
+      });
     },
-  }, el('span.card-add-btn', icon(ICONS.bag, { size: 16 }), el('span', t('addToCart'))));
+  }, button);
+
+  return host;
 }
 
 export function productGrid(cards, { eagerCount = 4 } = {}) {

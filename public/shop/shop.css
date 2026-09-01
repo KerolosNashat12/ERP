@@ -4118,6 +4118,76 @@ html[data-paper="night"] .card-add {
   text-decoration: none;
 }
 
+/* --------------------------------------------------------------------------
+   CHOOSING A SIZE WITHOUT LEAVING THE SHELF
+
+   The button used to say «اختار المقاس» and take the shopper to the product
+   page. It says «أضف للسلة» on every card now, and a product with more than
+   one size answers the tap with this — its sizes, on the card, above where the
+   button was.
+
+   It lives inside `.card-add`, which is already a box the size of the photo
+   laid over it, and inherits everything that made that work: it only exists in
+   this skin, only where there is a pointer to hover with, and it disappears
+   when the pointer leaves the card. There is no touch version for the same
+   reason there is no touch button — a panel that opened on tap would swallow
+   the tap meant to open the product.
+   -------------------------------------------------------------------------- */
+html[data-paper="night"] .card-sizes {
+  /* Its own scroll, so a product with nine sizes cannot grow past the photo
+     it is sitting on and cover the name and the price underneath. */
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  inline-size: min(100%, 220px);
+  max-block-size: 100%;
+  overflow-y: auto;
+  padding: var(--sp-4);
+  border-radius: var(--radius);
+  /* Opaque, not translucent: these are prices, and a photograph reading
+     through them is how a 750 looks like a 780. */
+  background: var(--chrome);
+  box-shadow: inset 0 0 0 1px var(--line), 0 10px 30px rgba(0, 0, 0, .45);
+}
+html[data-paper="night"] .card-sizes-head,
+html[data-paper="night"] .card-sizes-busy {
+  font-size: var(--fs-xs);
+  color: var(--ink-2);
+  text-align: center;
+  padding-block-end: var(--sp-1);
+}
+html[data-paper="night"] .card-size {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  inline-size: 100%;
+  padding: var(--sp-3) var(--sp-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--ink);
+  font-family: var(--font);
+  font-size: var(--fs-xs);
+  cursor: pointer;
+  text-align: start;
+}
+html[lang="ar"][data-paper="night"] .card-size,
+html[lang="ar"][data-paper="night"] .card-sizes-head,
+html[lang="ar"][data-paper="night"] .card-sizes-busy { font-family: var(--font-ar); }
+html[data-paper="night"] .card-size:hover,
+html[data-paper="night"] .card-size:focus-visible {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+html[data-paper="night"] .card-size-price { color: var(--accent); font-weight: 600; white-space: nowrap; }
+html[data-paper="night"] .card-sizes-link {
+  text-align: center;
+  color: var(--accent);
+  font-size: var(--fs-xs);
+  text-decoration: underline;
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════
    NIGHT, PART THREE — the reference's own measurements.
 
