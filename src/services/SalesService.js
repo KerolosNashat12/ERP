@@ -13,7 +13,9 @@
 import repositories from '../infrastructure/repositories/index.js';
 import { returnState } from '../infrastructure/repositories/SalesRepository.js';
 import { transaction } from '../infrastructure/database/connection.js';
-import { BusinessRuleError, NotFoundError, ValidationError } from '../shared/errors.js';
+import {
+  BusinessRuleError, ForbiddenError, NotFoundError, ValidationError,
+} from '../shared/errors.js';
 import { calculateLine, percentOf, round2, round3 } from '../shared/money.js';
 import { offerPrice } from '../shared/pricing.js';
 import inventoryService from './InventoryService.js';
@@ -25,6 +27,47 @@ import auditService from './AuditService.js';
  * mirrored here so the service can keep to it rather than discover it.
  */
 const HEADER_METHODS = new Set(['cash', 'card', 'transfer', 'wallet', 'credit', 'mixed']);
+
+/**
+ * KNOCKING MONEY OFF IS A PERMISSION, AND IT IS ENFORCED HERE.
+ *
+ * `sales.discount` exists, and until now it was enforced by DISABLING the
+ * price and % boxes in the till's browser. That is not enforcement. A request
+ * built by hand, a queued offline sale replayed after a role changed, or any
+ * second screen that forgot to ask `can()` could all sell a 500 bottle for 50
+ * — and the exchange screen was about to become exactly such a second screen.
+ *
+ * So it is checked once, on the write path, where every one of those doors
+ * leads: the till, the exchange, and whatever screen is written next.
+ *
+ * ── What counts as knocking money off ──────────────────────────────────────
+ * A typed unit price, a line discount, or a manual discount on the header.
+ * NOT an offer: an offer is the shop's own price, decided on the server, and
+ * applies to a cashier with no discount rights at all.
+ *
+ * ── A caller with no actor is trusted code, not an untrusted request ───────
+ * `ExchangeService` and `WebOrderService` reach checkout from inside the
+ * server. Absence of an actor means "not a person", and a person without a
+ * permission LIST at all (an older token, a test harness) is not silently
+ * treated as having none — that would refuse the shop's own owner mid-sale
+ * over a plumbing detail. Only an actor that HAS a list and lacks the code is
+ * refused, which is the only case we can be sure about.
+ */
+function requireDiscountRight(lines, payload, context) {
+  const permissions = context?.actor?.permissions;
+  if (!Array.isArray(permissions)) return;
+  if (permissions.includes('sales.discount')) return;
+
+  const typedPrice = lines.some((line) => line.unit_price !== undefined
+    && line.unit_price !== null && line.unit_price !== '');
+  const lineDiscount = lines.some((line) => Number(line.discount_percent || 0) > 0
+    || Number(line.discount_amount || 0) > 0);
+  const headerDiscount = Number(payload?.manual_discount || 0) > 0;
+
+  if (typedPrice || lineDiscount || headerDiscount) {
+    throw new ForbiddenError('You may not change a price or give a discount');
+  }
+}
 
 export class SalesService {
   constructor(deps = {}) {
@@ -241,6 +284,7 @@ export class SalesService {
 
       const rawLines = (payload.lines || []).filter((l) => Number(l.quantity) > 0);
       if (!rawLines.length) throw new ValidationError('The sale has no items');
+      requireDiscountRight(rawLines, payload, context);
 
       const customer = payload.customer_id
         ? await this.customers.requireById(payload.customer_id, 'customer')

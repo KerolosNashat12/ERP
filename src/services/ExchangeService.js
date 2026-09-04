@@ -182,11 +182,28 @@ export class ExchangeService {
        * sale, offers included, or an exchange becomes a second place where a
        * price is decided.
        */
-      const quoteLines = out.map((line, index) => ({
-        key: index + 1,
-        variant_id: line.variant_id,
-        quantity: line.quantity,
-      }));
+      /*
+       * Built ONCE and used for both the quote and the checkout below, which
+       * is what stops the price the screen was shown and the price the
+       * customer is charged from ever being two different numbers.
+       *
+       * The three money fields ride along exactly as they arrived. A price
+       * nobody typed is left OFF rather than sent as null — `#priceLines`
+       * treats "absent" as "you price it" and would treat a 0 as "free".
+       */
+      const quoteLines = out.map((line, index) => {
+        const quoted = {
+          key: index + 1,
+          variant_id: line.variant_id,
+          quantity: line.quantity,
+          discount_percent: Number(line.discount_percent || 0),
+          discount_amount: Number(line.discount_amount || 0),
+        };
+        if (line.unit_price !== undefined && line.unit_price !== null && line.unit_price !== '') {
+          quoted.unit_price = Number(line.unit_price);
+        }
+        return quoted;
+      });
       const quote = await this.salesService.quote({
         lines: quoteLines,
         customer_id: header.customer_id || null,

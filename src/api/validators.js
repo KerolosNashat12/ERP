@@ -218,9 +218,24 @@ export const exchangeSchema = z.object({
     condition: z.enum(['resellable', 'damaged']).default('resellable'),
     notes: optionalString,
   })).min(1, 'Choose what the customer is bringing back').max(50),
+  /*
+   * The three money fields are the SAME three a sale line carries, by name and
+   * by rule — because the replacement leg IS a sale and is priced by the same
+   * code. The owner's case: somebody brings back a 200 bottle and takes a 500
+   * one, and the shop wants to charge 400 for it, or knock something off.
+   * «مش لازم السيستيم يجبرني انها تفضل 500».
+   *
+   * All three are optional. Sending none prices the replacement exactly as the
+   * shelf does, offers included, which is what every exchange did before.
+   * Sending any of them requires `sales.discount` — enforced in
+   * SalesService.checkout, which this leg goes through like any other sale.
+   */
   replacements: z.array(z.object({
     variant_id: id,
     quantity: z.coerce.number().positive('Choose how many are going out'),
+    unit_price: z.coerce.number().min(0).optional().nullable(),
+    discount_percent: z.coerce.number().min(0).max(100).default(0),
+    discount_amount: money,
   })).min(1, 'Choose what the customer is taking instead').max(50),
   // How the DIFFERENCE crosses the counter, in either direction. Not how the
   // whole replacement is paid for — most of that is the credit.

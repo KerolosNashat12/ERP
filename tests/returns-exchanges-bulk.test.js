@@ -468,6 +468,163 @@ test('bulk edits, returns and exchanges', async (t) => {
       assert.equal(exchange.settlement_method, 'cash');
     });
 
+    /*
+     * THE OWNER'S OWN CASE, in his words: «حد جه يرجع استرونجر ب سوفاج،
+     * واسترونجر كانت بـ200 وسوفاج 500 — مش لازم السيستيم يجبرني انها تفضل 500،
+     * لا أقدر أغير فيها أو أحط خصم».
+     *
+     * A replacement used to be priced by the shelf and by nothing else. It can
+     * now carry a typed price or a discount, exactly as a till line can — and
+     * the money has to come out right in all four places at once: the credit,
+     * the replacement, the difference, and the payments behind the new
+     * invoice. Getting three of them right and one wrong is the shape the
+     * supplier-swap bug had.
+     */
+    await ctx.test('a typed price on the replacement is what the customer is charged', async () => {
+      const sale = await sell([{ key: 1, variant_id: mid.variant.id, quantity: 1 }], 800);
+      const line = await firstLine(sale.id);
+
+      // Marked at 1,200, sold on this exchange for 900.
+      const exchange = await ok('/api/exchanges', {
+        method: 'POST',
+        body: {
+          sale_id: sale.id,
+          lines: [{ sale_line_id: line.id, quantity: 1, condition: 'resellable' }],
+          replacements: [{ variant_id: dear.variant.id, quantity: 1, unit_price: 900 }],
+          settlement_method: 'cash',
+        },
+      });
+
+      assert.equal(exchange.credit_amount, 800, 'what came back is still worth what it was');
+      assert.equal(exchange.replacement_amount, 900, 'the typed price, not the 1,200 on the shelf');
+      assert.equal(exchange.difference_amount, 100);
+      assert.equal(exchange.replacement.total_amount, 900);
+      assert.equal(exchange.replacement.paid_amount, 900);
+
+      const payments = await getDb()
+        .prepare('SELECT amount, method FROM sale_payments WHERE sale_id = ? ORDER BY id')
+        .all(exchange.new_sale_id);
+      assert.deepEqual(payments.map((p) => `${p.method}:${p.amount}`),
+        ['exchange_credit:800', 'cash:100'],
+        'the credit is still a payment on the invoice, and only the 100 is cash');
+
+      // What it was MARKED at survives on the line, or the shop can never
+      // answer "how much did we give away on exchanges this month".
+      const sold = await getDb()
+        .prepare('SELECT unit_price, list_price FROM sale_lines WHERE sale_id = ?')
+        .get(exchange.new_sale_id);
+      assert.equal(sold.unit_price, 900);
+      assert.equal(sold.list_price, 1200, 'the shelf price is remembered, not overwritten');
+    });
+
+    await ctx.test('a discount in MONEY on the replacement lands the same way', async () => {
+      const sale = await sell([{ key: 1, variant_id: mid.variant.id, quantity: 1 }], 800);
+      const line = await firstLine(sale.id);
+
+      /*
+       * 300 off 1,200 is 900 — the same money as the typed price above by a
+       * different route, which is the point: both are supported and both must
+       * agree. The owner asked for the discount to be MONEY rather than a
+       * percentage — «خلي الخصم فلوس مش نسبة» — because a shop says "take
+       * three hundred off", not "take twenty-five percent off".
+       */
+      const exchange = await ok('/api/exchanges', {
+        method: 'POST',
+        body: {
+          sale_id: sale.id,
+          lines: [{ sale_line_id: line.id, quantity: 1, condition: 'resellable' }],
+          replacements: [{ variant_id: dear.variant.id, quantity: 1, discount_amount: 300 }],
+          settlement_method: 'cash',
+        },
+      });
+      assert.equal(exchange.replacement_amount, 900);
+      assert.equal(exchange.difference_amount, 100);
+
+      /*
+       * AND IT IS WRITTEN DOWN, in the columns that already existed.
+       *
+       * This release adds no column to any table: a replacement is a sale
+       * line, and a sale line has carried `unit_price`, `list_price`,
+       * `discount_percent` and `discount_amount` since the beginning. Reading
+       * them back is what proves that — and a discount the shop can compute
+       * but cannot SEE afterwards is the "written and never read" bug this
+       * project has already been bitten by once.
+       */
+      const stored = await getDb()
+        .prepare(`SELECT unit_price, list_price, discount_percent, discount_amount, line_total
+                    FROM sale_lines WHERE sale_id = ?`)
+        .get(exchange.new_sale_id);
+      assert.equal(stored.unit_price, 1200, 'the piece was still sold at its marked price');
+      assert.equal(stored.discount_amount, 300, 'and 300 came off it');
+      assert.equal(stored.discount_percent, 0, 'as MONEY, not as a rate');
+      assert.equal(stored.line_total, 900, 'which is what the line is worth');
+
+      // The invoice and its lines have to agree, or a report reading one will
+      // disagree with a report reading the other.
+      const invoice = await getDb()
+        .prepare('SELECT subtotal, line_discount, total_amount FROM sales WHERE id = ?')
+        .get(exchange.new_sale_id);
+      assert.equal(invoice.subtotal, 1200);
+      assert.equal(invoice.line_discount, 300);
+      assert.equal(invoice.total_amount, 900);
+    });
+
+    await ctx.test('a discount bigger than the line makes it free, never negative', async () => {
+      // 5,000 off a 1,200 bottle is a 0 bottle, not a 3,800 refund. The line
+      // floors at zero on the server; the screen caps what can be typed.
+      const sale = await sell([{ key: 1, variant_id: mid.variant.id, quantity: 1 }], 800);
+      const line = await firstLine(sale.id);
+      const exchange = await ok('/api/exchanges', {
+        method: 'POST',
+        body: {
+          sale_id: sale.id,
+          lines: [{ sale_line_id: line.id, quantity: 1, condition: 'resellable' }],
+          replacements: [{ variant_id: dear.variant.id, quantity: 1, discount_amount: 5000 }],
+          settlement_method: 'cash',
+        },
+      });
+      assert.equal(exchange.replacement_amount, 0);
+      assert.equal(exchange.difference_amount, -800, 'the whole credit goes back as cash');
+    });
+
+    await ctx.test('a price low enough turns the exchange around', async () => {
+      // 800 comes back, a 1,200 bottle goes out at 500: the SHOP owes 300.
+      // The sign of the difference has to follow the typed price, not the
+      // shelf price it replaced.
+      const sale = await sell([{ key: 1, variant_id: mid.variant.id, quantity: 1 }], 800);
+      const line = await firstLine(sale.id);
+      const exchange = await ok('/api/exchanges', {
+        method: 'POST',
+        body: {
+          sale_id: sale.id,
+          lines: [{ sale_line_id: line.id, quantity: 1, condition: 'resellable' }],
+          replacements: [{ variant_id: dear.variant.id, quantity: 1, unit_price: 500 }],
+          settlement_method: 'cash',
+        },
+      });
+      assert.equal(exchange.replacement_amount, 500);
+      assert.equal(exchange.difference_amount, -300, 'negative: the shop hands money back');
+      assert.equal(exchange.replacement.total_amount, 500);
+      assert.equal(exchange.replacement.paid_amount, 500,
+        'the new invoice is settled in full by the credit');
+    });
+
+    await ctx.test('sending no price prices it from the shelf, exactly as before', async () => {
+      const sale = await sell([{ key: 1, variant_id: mid.variant.id, quantity: 1 }], 800);
+      const line = await firstLine(sale.id);
+      const exchange = await ok('/api/exchanges', {
+        method: 'POST',
+        body: {
+          sale_id: sale.id,
+          lines: [{ sale_line_id: line.id, quantity: 1, condition: 'resellable' }],
+          replacements: [{ variant_id: dear.variant.id, quantity: 1 }],
+          settlement_method: 'cash',
+        },
+      });
+      assert.equal(exchange.replacement_amount, 1200,
+        'an untouched line must not be re-priced by whatever the screen was showing');
+    });
+
     await ctx.test('for the same price: nothing crosses the counter', async () => {
       const sale = await sell([{ key: 1, variant_id: mid.variant.id, quantity: 1 }], 800);
       const line = await firstLine(sale.id);

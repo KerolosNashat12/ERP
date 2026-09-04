@@ -75,6 +75,23 @@ export async function authenticate(req, _res, next) {
       username: user.username,
       fullName: user.full_name,
       defaultWarehouseId: user.default_warehouse_id,
+      /*
+       * WHAT THIS PERSON MAY DO, carried into the services.
+       *
+       * Route guards answer "may you call this endpoint". Some decisions are
+       * finer than an endpoint: everybody who may ring up a sale may call
+       * `POST /sales`, and only some of them may knock money off a line while
+       * doing it. That was enforced by DISABLING the price box in the browser
+       * and nowhere else, which is not enforcement — a request built by hand
+       * carried any price it liked, and the exchange screen was about to
+       * become a second door to the same thing.
+       *
+       * The list is already loaded and cached by the identity read above, so
+       * carrying it costs nothing. Services must still treat its ABSENCE as
+       * "not a person" rather than "no permissions": an internal caller with
+       * no actor is trusted code, not an untrusted request.
+       */
+      permissions,
     };
     next();
   } catch (error) {

@@ -19,7 +19,7 @@
 import api from '../core/api.js';
 import {
   h, mount, dataTable, spinner, toast, toastError, tag, textInput, selectInput, field,
-  confirmDialog,
+  confirmDialog, numberInput,
 } from '../core/ui.js';
 import { t, pick } from '../core/i18n.js';
 import { money, number, dateTime } from '../core/format.js';
@@ -66,8 +66,21 @@ async function newExchangeView(root) {
           variant_id: variant.variant_id,
           sku: variant.sku,
           name: pick(variant, 'product_name'),
-          // Shown, never sent: the server prices the replacement itself.
+          /*
+           * Today's shelf price, offers included — the starting point, not the
+           * final word. The owner's case: a 200 bottle comes back and a 500
+           * one goes out, and he wants to charge 400 for it or knock something
+           * off. «مش لازم السيستيم يجبرني انها تفضل 500».
+           *
+           * `list_price` remembers what it was marked at so the row can show
+           * what was given away, and `priceEdited` is what decides whether a
+           * price is SENT at all: a line nobody touched is sent without one so
+           * the server prices it, exactly as the till does.
+           */
           unit_price: variant.selling_price,
+          list_price: variant.selling_price,
+          priceEdited: false,
+          discount_amount: 0,
           quantity: 1,
         });
       }
@@ -119,9 +132,39 @@ async function newExchangeView(root) {
   const creditTotal = () => state.back.reduce(
     (sum, line) => sum + Number(line.quantity || 0) * Number(line.refund_per_unit || 0), 0,
   );
-  const replacementTotal = () => state.out.reduce(
-    (sum, line) => sum + Number(line.quantity || 0) * Number(line.unit_price || 0), 0,
-  );
+  /**
+   * What the replacement costs, discounts and all.
+   *
+   * The same arithmetic the server does, in the same order — price × quantity,
+   * then the line's percentage off. If these two ever disagree the cashier is
+   * told one number at the counter and the customer is charged another, which
+   * is the kind of thing a shop finds out from an angry customer rather than
+   * from a test. `exchange-price-check.mjs` compares the two on a real
+   * exchange for exactly this reason.
+   */
+  const lineTotal = (line) => {
+    const gross = Number(line.quantity || 0) * Number(line.unit_price || 0);
+    // The discount is MONEY, not a percentage — the owner's own instruction:
+    // «خلي الخصم فلوس مش نسبة». A shop says "take fifty off", not "take nine
+    // point one percent off". Floored at zero the way the server floors it, so
+    // a discount larger than the line cannot turn into money owed BACK.
+    const off = Math.min(Number(line.discount_amount || 0), gross);
+    return Math.round((gross - off) * 100) / 100;
+  };
+  const replacementTotal = () => state.out.reduce((sum, line) => sum + lineTotal(line), 0);
+
+  /** Rewrite one row's total cell — see the column below for why in place. */
+  function paintLineTotal(line) {
+    if (!line.totalNode) return;
+    const marked = Number(line.quantity || 0) * Number(line.list_price || 0);
+    const charged = lineTotal(line);
+    mount(line.totalNode,
+      h('span', { class: 'mono' }, money(charged)),
+      // What it was marked at, when that is not what is being charged. A shop
+      // that cannot see what it gave away cannot decide whether to keep doing
+      // it.
+      marked > charged ? h('div', { class: 'muted small' }, money(marked)) : null);
+  }
 
   function renderSettlement() {
     const credit = creditTotal();
@@ -225,7 +268,20 @@ async function newExchangeView(root) {
           })),
         replacements: state.out
           .filter((line) => Number(line.quantity) > 0)
-          .map((line) => ({ variant_id: line.variant_id, quantity: Number(line.quantity) })),
+          .map((line) => {
+            // A price is sent ONLY when a person typed one. Otherwise it is
+            // left out and the server prices the piece itself — the same rule
+            // the till follows, so an offer that started this morning is
+            // applied rather than overwritten by whatever the screen was
+            // showing when it loaded.
+            const out = {
+              variant_id: line.variant_id,
+              quantity: Number(line.quantity),
+              discount_amount: Number(line.discount_amount || 0),
+            };
+            if (line.priceEdited) out.unit_price = Number(line.unit_price);
+            return out;
+          }),
         settlement_method: state.settlement,
         reason_code: state.reason,
         notes: state.notes || null,
@@ -383,12 +439,82 @@ async function newExchangeView(root) {
                 style: { width: '84px' },
                 oninput: (event) => {
                   line.quantity = Math.max(Number(event.target.value) || 1, 1);
+                  paintLineTotal(line);
                   renderSettlement();
                 },
               }),
             },
             {
-              key: 'unit_price', label: t('price'), type: 'money', render: (line) => money(line.unit_price),
+              key: 'unit_price',
+              label: t('price'),
+              align: 'end',
+              /*
+               * Gated on `sales.discount`, the same permission the till's own
+               * price box uses. It is no longer ONLY a browser guard: the
+               * server refuses a typed price from an actor without it (see
+               * SalesService.checkout), so a cashier cannot reach round the
+               * disabled box by any other route.
+               */
+              render: (line) => numberInput({
+                value: line.unit_price,
+                min: 0,
+                style: { width: '96px' },
+                disabled: !can('sales.discount'),
+                onchange: (event) => {
+                  line.unit_price = Math.max(Number(event.target.value) || 0, 0);
+                  line.priceEdited = true;
+                  paintLineTotal(line);
+                  renderSettlement();
+                },
+              }),
+            },
+            {
+              key: 'discount_amount',
+              label: t('discount'),
+              align: 'end',
+              render: (line) => numberInput({
+                value: line.discount_amount,
+                min: 0,
+                style: { width: '92px' },
+                disabled: !can('sales.discount'),
+                onchange: (event) => {
+                  const gross = Number(line.quantity || 0) * Number(line.unit_price || 0);
+                  const wanted = Math.max(Number(event.target.value) || 0, 0);
+                  // Capped at what the line is worth. More than that is not a
+                  // bigger discount, it is the shop paying the customer to
+                  // take it — and the server floors it at zero anyway, so
+                  // letting it be typed here would show one number and charge
+                  // another.
+                  line.discount_amount = Math.min(wanted, gross);
+                  if (line.discount_amount !== wanted) event.target.value = line.discount_amount;
+                  paintLineTotal(line);
+                  renderSettlement();
+                },
+              }),
+            },
+            {
+              key: '__line_total',
+              label: t('total'),
+              align: 'end',
+              /*
+               * What this line is actually charged, so money knocked off is
+               * visible on the row that caused it and not only in the total at
+               * the bottom.
+               *
+               * It is REFRESHED IN PLACE rather than by redrawing the table.
+               * The first cut redrew only the settlement strip on a keystroke,
+               * so the strip said 400 while the row beside it still said 500 —
+               * two numbers for one line, on screen at the same time, and the
+               * one the cashier reads out is the wrong one. Redrawing the
+               * whole table instead would take the focus out of the box being
+               * typed into, which is why the row keeps a handle to its own
+               * cell and only that cell is rewritten.
+               */
+              render: (line) => {
+                line.totalNode = h('div');
+                paintLineTotal(line);
+                return line.totalNode;
+              },
             },
             {
               key: '__x',

@@ -1,53 +1,59 @@
-Choose a size on the card instead of leaving the shelf
+Exchanges: set the replacement's price, or take money off it
 
 THE ASK
-The owner, on a product card whose button read "choose the size":
-"ينفع تظبط اختر المقاس دي ل اضف للسله عادي"
+"حد جه يرجع استرونجر بـسوفاج، واسترونجر كانت بـ200 وسوفاج 500 - مش لازم
+السيستيم يجبرني انها تفضل 500، لا أقدر أغير فيها أو أحط خصم"
+And then: "خلي الخصم فلوس مش نسبة".
 
 WHAT IT DID
-A product with ONE size added in a tap. A product with several said "choose
-the size" and took the shopper to the product page - honest, but it sent them
-away from the shelf they were browsing to answer one question.
+The replacement was priced by the shelf and by nothing else. A 500 bottle
+going out against a 200 one coming back was 500, and the only way to charge
+anything else was not to use the exchange screen at all.
 
 WHAT IT DOES NOW
-Every card says "add to cart". A product with more than one size answers the
-tap with its sizes, on the card, each with its own price; tapping one adds
-THAT one. The shopper never leaves the shelf.
+The replacement row has a PRICE box and a DISCOUNT box, the discount in money
+rather than as a rate. Both are optional: a line nobody touches is priced by
+the shelf exactly as before, offers included. The row shows what it is
+actually charged with what it was marked at underneath, so the shop can see
+what it gave away.
 
-Two things it deliberately does not do:
-- It does not guess. Adding the cheapest size blind is one tap shorter and
-  puts the wrong bottle in the bag, found out at the door.
-- It does not ask when there is nothing to ask. Four sizes with one of them in
-  stock has no choice in it, so that one goes straight in.
+Sending nothing changes nothing - the untouched path is fenced by its own test
+so a screen that starts sending a price for every line cannot slip through.
 
-The sizes are fetched the first time somebody opens a product's panel and kept
-for the rest of the visit - a shelf is two dozen products and sending every
-variant of every one of them would undo the performance round for a panel most
-shoppers never open. The promise is cached, not the result, so two quick taps
-share one request instead of racing two.
+A SECURITY HOLE FOUND AND CLOSED ON THE WAY
+`sales.discount` decides who may change a price or discount a line. It was
+enforced by DISABLING two boxes in the till's browser and NOWHERE ELSE. The
+server never checked. So any cashier - every cashier has `sales.create` -
+could post a sale carrying any `unit_price` it liked and the server wrote it
+down: a 1,200 bottle for 1, and the books balance. The exchange screen was
+about to become a second door to the same thing.
 
-HOW IT IS PINNED
-tests/quick-add-sizes-check.mjs builds its own fixture - a product with three
-sizes at three prices and a product with one, both published and stocked -
-then drives a real browser: every card is labelled "add to cart"; opening the
-sizes leaves the basket EMPTY; choosing the 100ml at 750 puts the 100ml at 750
-in the basket (the last one, so "it adds the first whatever you tapped" cannot
-pass); and a one-size product adds on the first tap with no panel at all.
+It is checked once now, on the write path every door leads to, and it covers a
+typed price, a line discount and a manual discount on the header. An internal
+caller with no actor is trusted code and passes; only a person who HAS a
+permission list and lacks the code is refused. Fenced in pentest.test.js with
+its control: the same four requests from the administrator must still succeed.
 
-Reversion-checked three ways: putting the old label and navigation back fails
-it, guessing the first size fails it, and adding the wrong size fails it by
-name.
+NO DATABASE CHANGE
+Audited after the fact rather than assumed. A replacement is a sale line, and
+sale_lines has carried unit_price, list_price, discount_percent and
+discount_amount from the beginning; the columns were dumped from a freshly
+migrated database and the values read back out of them in a test. No
+migration, no new column, nothing to backfill.
 
-THREE THINGS THE FIRST CUT GOT WRONG, ALL FOUND BY RUNNING IT
-- `api.get(...)` does not exist on the storefront's request object. The panel
-  opened, said "loading", and stayed there. It is `api.product(id)` - the
-  request door that knows the tenant prefix and de-duplicates in-flight calls.
-- `.card-add` is a RULER the size of the photo and is pointer-events: none so
-  the rest of the card stays clickable. The check clicked its centre, landed
-  on the card's own link, navigated to the product page, and reported "no size
-  panel" about a panel that worked.
-- The check hard-crashed on a 30-second Playwright timeout when the panel was
-  missing - which is exactly what a regression looks like - and died before
-  printing any of its findings. It reports now.
+ONE BUG THE TESTS MISSED AND A SCREENSHOT CAUGHT
+Typing a price redrew the settlement strip but NOT the row it came from, so
+the strip said 400 while the row beside it still said 500 - two numbers for
+one line, on screen at once, and the cashier reads the row. Redrawing the
+whole table would have taken the focus out of the box being typed into, so the
+row refreshes its own cell in place. The browser check now reads the ROW as
+well as the strip; it only looked at the strip before, which is why it passed
+on a screen that plainly disagreed with itself.
 
-npm test 1258 passing.
+Also fixed in that check: it searched for the replacement by NAME, so a
+previous run's exhausted product was picked and the exchange failed with
+"insufficient stock" for a product it had stocked seconds earlier. It matches
+its own SKU now, and reports the toast when nothing is recorded rather than
+leaving the reason to be guessed.
+
+npm test 1258 -> 1264, plus tests/exchange-price-check.mjs.
