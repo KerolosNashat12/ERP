@@ -53,7 +53,7 @@ rem Build this version as a normal commit on top of what is already there,
 rem so nothing is force-pushed and no history is lost.
 git reset --soft FETCH_HEAD
 git add -A
-git commit -m "Exchanges: price or discount the replacement - and close the discount permission hole"
+git commit -m "Backups: raise the 64 MB stored ceiling to 200 MB, fix three tests that only worked by inheriting an old seeded database, and add Export CSV to the Products screen"
 if errorlevel 1 (
   echo.
   echo   Nothing changed compared to GitHub - already up to date.

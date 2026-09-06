@@ -347,8 +347,54 @@ router.use('/attributes', crudRouter({
 }));
 
 // ---------------------------------------------------------------- products
+/**
+ * `?format=csv` answers a different question than the paginated list above:
+ * not "what does page 3 look like" but "every product this screen's own
+ * filters match, in one file". Same filters, same permission — a CSV export
+ * is a read, not a new capability — and the same `reportService.toCsv()`
+ * every other export in this app already uses, so a shop owner opening it in
+ * Excel gets the Arabic BOM and the same comma-escaping for free rather than
+ * a second implementation of both.
+ */
 router.get('/products', requirePermission('products.view'), asyncHandler(async (req, res) => {
-  res.json(await catalogService.list(req.query));
+  if (req.query.format !== 'csv') {
+    res.json(await catalogService.list(req.query));
+    return;
+  }
+  const lang = req.query.lang === 'ar' ? 'ar' : 'en';
+  const label = (en, ar) => (lang === 'ar' ? ar : en);
+  const rows = (await catalogService.exportRows(req.query)).map((row) => ({
+    ...row,
+    gender_label: row.gender === 'women' ? label('Women', 'حريمي')
+      : row.gender === 'men' ? label('Men', 'رجالي') : label('Unisex', 'للجنسين'),
+    status_label: Number(row.is_active) ? label('Active', 'مفعل') : label('Inactive', 'مفقل'),
+    published_label: Number(row.is_published) ? label('On website', 'على الموقع') : label('Hidden', 'مخفي'),
+  }));
+  const report = {
+    columns: [
+      { key: 'sku_prefix', labelEn: 'SKU', labelAr: 'الكود' },
+      { key: 'name_en', labelEn: 'Product', labelAr: 'المنتج' },
+      { key: 'brand_name_en', labelEn: 'Brand', labelAr: 'العلامة' },
+      { key: 'category_name_en', labelEn: 'Category', labelAr: 'الفئة' },
+      { key: 'supplier_name_en', labelEn: 'Supplier', labelAr: 'المورد' },
+      { key: 'gender_label', labelEn: 'Gender', labelAr: 'الجنس' },
+      { key: 'status_label', labelEn: 'Status', labelAr: 'الحالة' },
+      { key: 'published_label', labelEn: 'On website', labelAr: 'على الموقع' },
+      { key: 'variant_count', labelEn: 'Variants', labelAr: 'المتغيرات' },
+      { key: 'total_stock', labelEn: 'Stock on hand', labelAr: 'المخزون' },
+      { key: 'min_price', labelEn: 'Min price', labelAr: 'أقل سعر' },
+      { key: 'max_price', labelEn: 'Max price', labelAr: 'أعلى سعر' },
+    ],
+    rows,
+  };
+  await auditService.record({
+    action: 'EXPORT', module: 'products', entityType: 'product_catalogue', entityId: null,
+    entityLabel: 'Products CSV export', after: { rows: rows.length, filters: req.query },
+    actor: req.context.actor, request: req.context.request,
+  });
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', 'attachment; filename="products.csv"');
+  res.send(reportService.toCsv(report, lang));
 }));
 
 /*

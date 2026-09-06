@@ -11,6 +11,7 @@ import { createApp } from '../src/server.js';
 import {
   initDb, applySchema, closeDb, supportsFileBackup, getDb,
 } from '../src/infrastructure/database/connection.js';
+import { seedBaseline } from '../src/infrastructure/database/seed.js';
 import { runMigrations } from '../src/infrastructure/database/migrations/index.js';
 
 
@@ -39,6 +40,7 @@ before(async () => {
    */
   await initDb();
   await applySchema();
+  await seedBaseline();
   await runMigrations();
   const app = createApp();
   server = await new Promise((resolve) => {

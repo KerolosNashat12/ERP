@@ -9,7 +9,9 @@ import './single-shop.js'; // must be first — see that file
 import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { createApp } from '../src/server.js';
-import { initDb, closeDb } from '../src/infrastructure/database/connection.js';
+import { initDb, applySchema, closeDb } from '../src/infrastructure/database/connection.js';
+import { seedBaseline } from '../src/infrastructure/database/seed.js';
+import { runMigrations } from '../src/infrastructure/database/migrations/index.js';
 import { ean13CheckDigit } from '../src/shared/barcode.js';
 
 
@@ -20,7 +22,14 @@ let cookie = '';
 
 before(async () => {
   if (base) return;
+  // Open, shaped, seeded and migrated before the first request — exactly as
+  // in start(). `initDb()` alone leaves no `users` table at all: this file
+  // does not share the shop-PC bootstrap that seeds an administrator, so
+  // without this every request past the login is `Authentication required`.
   await initDb();
+  await applySchema();
+  await seedBaseline();
+  await runMigrations();
   const app = createApp();
   server = await new Promise((resolve) => {
     const listening = app.listen(0, '127.0.0.1', () => resolve(listening));

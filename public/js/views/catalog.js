@@ -4,7 +4,7 @@ import {
   h, mount, dataTable, pager, spinner, toast, toastError, confirmDialog, debounce,
   textInput, selectInput, numberInput, field, tag, modal, buildForm, summaryCards,
 } from '../core/ui.js';
-import { t, pick } from '../core/i18n.js';
+import { t, pick, getLanguage } from '../core/i18n.js';
 import { money, number, fileSize } from '../core/format.js';
 import { can, lookup, invalidate } from '../core/store.js';
 import { onScan } from '../core/scanner.js';
@@ -479,6 +479,14 @@ export async function productsView(root, route) {
     h('div', { class: 'page-head' },
       h('div', {}, h('h2', {}, t('products')), h('p', {}, t('navCatalogue'))),
       h('span', { class: 'spacer' }),
+      can('products.view') ? h('button', {
+        class: 'btn',
+        onclick: () => api.download('/api/products', {
+          search: state.search, brandId: state.brandId, categoryId: state.categoryId,
+          supplierId: state.supplierId, isActive: state.isActive, gender: state.gender,
+          onOffer: state.onOffer, format: 'csv', lang: getLanguage(),
+        }, 'products.csv'),
+      }, '⭳ ' + t('export')) : null,
       can('products.update') ? h('button', { class: 'btn', onclick: () => openGenderReview(load) }, t('genderReview')) : null,
       can('products.update') ? h('button', { class: 'btn', onclick: () => openBulkPrice(load) }, t('bulkPrice')) : null,
     can('products.update') ? h('button', { class: 'btn', onclick: () => openBulkPhotos(load) }, t('photoBulkTitle')) : null,

@@ -1,59 +1,89 @@
-Exchanges: set the replacement's price, or take money off it
+Backups: the 64 MB ceiling, and two tests that only worked by accident
 
 THE ASK
-"حد جه يرجع استرونجر بـسوفاج، واسترونجر كانت بـ200 وسوفاج 500 - مش لازم
-السيستيم يجبرني انها تفضل 500، لا أقدر أغير فيها أو أحط خصم"
-And then: "خلي الخصم فلوس مش نسبة".
+"why ????" - a screenshot of the platform console's Backups tab for mm,
+every row for days back showing فشلت (Failed) in red, twice a day.
 
-WHAT IT DID
-The replacement was priced by the shelf and by nothing else. A 500 bottle
-going out against a 200 one coming back was 500, and the only way to charge
-anything else was not to use the exchange screen at all.
+WHAT WAS HAPPENING
+Every backup is compressed into a .zip and stored inside the control-plane
+database. A hard ceiling on that stored size - MM_BACKUP_MAX_BYTES, 64 MB by
+default - aborts the run and deletes everything written the moment it is
+crossed, on purpose: a shop silently missing its backups for a month is the
+thing this feature exists to prevent, so a backup that cannot be taken has to
+be as visible as one that can.
 
-WHAT IT DOES NOW
-The replacement row has a PRICE box and a DISCOUNT box, the discount in money
-rather than as a rate. Both are optional: a line nobody touches is priced by
-the shelf exactly as before, offers included. The row shows what it is
-actually charged with what it was marked at underneath, so the shop can see
-what it gave away.
+mm's own shop had grown past that ceiling: its compressed backup measured
+126 MB. The 64 MB number was measured against a shop with NO product photos
+of its own - a year-old shop with 900 products, 12,000 sales and so on
+compresses to about 1.3 MB, because text compresses roughly 10:1. Product
+photos, brand logos and banners are stored as BLOBs in the same row store,
+and a JPEG or PNG is already compressed - zipping it again barely shrinks it -
+so a shop with real photography can dwarf that estimate on photos alone. Every
+scheduled run since at least September 4th had failed the same way, and left
+zero successful backups behind it.
 
-Sending nothing changes nothing - the untouched path is fenced by its own test
-so a screen that starts sending a price for every line cannot slip through.
+WHAT CHANGES
+The ceiling is 200 MB now, comfortably over the 126 MB seen, with room for the
+photo library to keep growing before the next shop hits this again. No
+migration, no code change to the backup mechanism itself - one constant.
 
-A SECURITY HOLE FOUND AND CLOSED ON THE WAY
-`sales.discount` decides who may change a price or discount a line. It was
-enforced by DISABLING two boxes in the till's browser and NOWHERE ELSE. The
-server never checked. So any cashier - every cashier has `sales.create` -
-could post a sale carrying any `unit_price` it liked and the server wrote it
-down: a 1,200 bottle for 1, and the books balance. The exchange screen was
-about to become a second door to the same thing.
+If a shop ever outgrows 200 MB too: raise MM_BACKUP_MAX_BYTES again (an
+environment variable in Vercel, or this default) rather than lower it -
+retention (KEEP, in the same file) is the knob for how much control-plane
+storage backups cost over time, not this ceiling.
 
-It is checked once now, on the write path every door leads to, and it covers a
-typed price, a line discount and a manual discount on the header. An internal
-caller with no actor is trusted code and passes; only a person who HAS a
-permission list and lacks the code is refused. Fenced in pentest.test.js with
-its control: the same four requests from the administrator must still succeed.
+TWO TESTS THAT ONLY WORKED BY INHERITANCE
+Verifying this meant running the full suite in a fresh checkout, which turned
+up something the project's own database file had been quietly papering over
+for a while: labels-symbology.test.js and weborder-delivery.test.js called
+initDb() and nothing else - no applySchema(), no seedBaseline(), no
+runMigrations(). Every other end-to-end test file does all three, the same
+way start() does on a real boot. These two only ever worked because the
+shared default database at data/mm-accessories.db had already been shaped and
+seeded by an earlier run and nobody had cleared it since. On a genuinely fresh
+database: "no such table: users" or "Invalid username or password", and every
+one of their subtests failed with it - fifty-five subtests across the two
+files plus a third (smoke.test.js, which had applySchema()+runMigrations()
+but not seedBaseline()) once the database was actually empty.
 
-NO DATABASE CHANGE
-Audited after the fact rather than assumed. A replacement is a sale line, and
-sale_lines has carried unit_price, list_price, discount_percent and
-discount_amount from the beginning; the columns were dumped from a freshly
-migrated database and the values read back out of them in a test. No
-migration, no new column, nothing to backfill.
+Fixed the same way every correctly-written sibling test file already does it:
+initDb(), applySchema(), seedBaseline(), runMigrations(), in that order,
+before the first request. None of this touches what ships to the shop -
+it is three test files becoming self-contained rather than quietly borrowing
+state from whatever ran before them.
 
-ONE BUG THE TESTS MISSED AND A SCREENSHOT CAUGHT
-Typing a price redrew the settlement strip but NOT the row it came from, so
-the strip said 400 while the row beside it still said 500 - two numbers for
-one line, on screen at once, and the cashier reads the row. Redrawing the
-whole table would have taken the focus out of the box being typed into, so the
-row refreshes its own cell in place. The browser check now reads the ROW as
-well as the strip; it only looked at the strip before, which is why it passed
-on a screen that plainly disagreed with itself.
+npm test 1264 passing (unchanged - the ceiling fix and the test fix are
+independent; confirmed by reverting the ceiling change alone and rerunning,
+which reproduced the same fifty-five failures, proving they were already
+there and had nothing to do with it).
 
-Also fixed in that check: it searched for the replacement by NAME, so a
-previous run's exhausted product was picked and the exchange failed with
-"insufficient stock" for a product it had stocked seconds earlier. It matches
-its own SKU now, and reports the toast when nothing is recorded rather than
-leaving the reason to be guessed.
+ALSO IN THIS DROP: export the products list as CSV
 
-npm test 1258 -> 1264, plus tests/exchange-price-check.mjs.
+THE ASK
+"add download all products export as csv ?" - from the Products screen
+itself, next to «تصنيف النوع» and the other bulk tools.
+
+WHAT IT DOES
+A new "⭳ Export CSV" button on Products calls GET /api/products?format=csv,
+which honours every filter already on the screen (search, brand, category,
+supplier, status, gender) so the file is exactly what the grid is showing,
+not always the whole catalogue. Built on the same reportService.toCsv() the
+Reports screen already uses - one CSV encoder in the app, not two - so it
+gets the Arabic BOM and comma-escaping for free and reads correctly in
+Excel in either language. Columns: SKU, product name, brand, category,
+supplier, gender, status, on-website, variant count, stock on hand, min/max
+price. Gated by products.view, same as the screen it sits on; the export is
+audited (EXPORT / products) the same way a report export already is.
+
+THE BUG THIS PROJECT HAS ALREADY SHIPPED ONCE, CAUGHT BEFORE IT SHIPPED AGAIN
+The products repository clamps a page at 500 rows - correct for the screen,
+and exactly the shape of bug that once made the stock count sheet silently
+stop at row 1,000 with nothing on screen saying so. "Export CSV" asking for
+one page of "everything" would have quietly capped any shop over 500
+products at 500. CatalogService#exportRows pages through at that ceiling
+until it has read as many rows as the repository said there were, proven by
+a fake-repository test with a 650-row catalogue that fails if the loop is
+reverted to one call - checked by actually reverting it and watching the
+test catch it.
+
+npm test 1264 -> 1273, plus tests/products-export-check.mjs.

@@ -174,6 +174,30 @@ export class CatalogService {
     };
   }
 
+  /**
+   * Every row the screen's own filters match — for a download, not a page.
+   *
+   * `search()` clamps `pageSize` at 500, which is right for the screen and
+   * wrong here: a caller asking for "every product" that quietly gets back
+   * page one of it is the exact truncation this repository's own page size
+   * has caused before (see `buildCountSheet()` in `ReportService.js`). So this
+   * pages through at the repository's own ceiling until it has read as many
+   * rows as `total` said there were, rather than trusting one page to be all
+   * of them.
+   */
+  async exportRows(query = {}) {
+    const filters = { ...query, page: 1, pageSize: 500 };
+    const rows = [];
+    for (;;) {
+      // eslint-disable-next-line no-await-in-loop
+      const page = await this.products.search(filters);
+      rows.push(...page.rows);
+      if (rows.length >= page.total || !page.rows.length) break;
+      filters.page += 1;
+    }
+    return rows;
+  }
+
   async get(productId) {
     const product = await this.products.findAggregate(productId);
     if (!product) throw new NotFoundError('Product', productId);

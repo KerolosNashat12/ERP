@@ -88,8 +88,21 @@ import { forgetTenant } from '../api/middleware/tenant.js';
 /** One row of `tenant_backup_chunks`. Small enough to move over HTTP unremarkably. */
 export const CHUNK_BYTES = Number(process.env.MM_BACKUP_CHUNK_BYTES || 256 * 1024);
 
-/** The stored size of one backup. Crossing it fails the run. */
-export const MAX_BACKUP_BYTES = Number(process.env.MM_BACKUP_MAX_BYTES || 64 * 1024 * 1024);
+/**
+ * The stored size of one backup. Crossing it fails the run.
+ *
+ * The 64 MB the docstring above measured against was a shop with no photos in
+ * its own database — the workbooks, not the snapshot, carried the weight
+ * there. A shop with real product photography stores those as BLOBs in the
+ * row store, and a BLOB that is already a JPEG does not compress the way text
+ * does, so the snapshot itself grows close to the photo library's own size.
+ * mm's own shop crossed 64 MB compressed in September 2026 — every scheduled
+ * backup failed, twice a day, until this was raised. 200 MB gives a shop with
+ * real photography room to keep growing before the next shop hits this again;
+ * raise it further (`MM_BACKUP_MAX_BYTES`) rather than lower it if one does —
+ * retention (`KEEP`, below) is the knob for control-plane storage, not this.
+ */
+export const MAX_BACKUP_BYTES = Number(process.env.MM_BACKUP_MAX_BYTES || 200 * 1024 * 1024);
 
 /** The uncompressed size read out of the shop, checked as it is read. */
 export const MAX_RAW_BYTES = Number(process.env.MM_BACKUP_MAX_RAW_BYTES || 512 * 1024 * 1024);
