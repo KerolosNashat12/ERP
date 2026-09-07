@@ -53,7 +53,7 @@ rem Build this version as a normal commit on top of what is already there,
 rem so nothing is force-pushed and no history is lost.
 git reset --soft FETCH_HEAD
 git add -A
-git commit -m "Backups: raise the 64 MB stored ceiling to 200 MB, fix three tests that only worked by inheriting an old seeded database, add Export CSV to the Products screen, and raise the product photo size limit from 400 KB to 5 MB (plus the request body limit that would have quietly capped it at 3.5 MB)"
+git commit -m "Backups: raise the 64 MB stored ceiling to 200 MB, fix three tests that only worked by inheriting an old seeded database, add Export CSV to the Products screen, raise the product photo size limit from 400 KB to 5 MB (plus the request body limit that would have quietly capped it at 3.5 MB), and speed up the storefront home page by inlining small brand logos as data URIs instead of one network request per brand"
 if errorlevel 1 (
   echo.
   echo   Nothing changed compared to GitHub - already up to date.

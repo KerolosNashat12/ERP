@@ -158,6 +158,16 @@ const MAX_PAGE_SIZE = 48;
 const HOME_SIZE = 8;
 
 /**
+ * Above this, a brand logo stays a `has_logo: true` row with no
+ * `logo_inline`, and the client fetches it the old way — one request. Below
+ * it, `#withInlineLogos` embeds the bytes directly. 20 KB decoded is roughly
+ * 27 KB of base64; a shop's whole brand rail inlined at that ceiling adds at
+ * most a page or two of text to a response that is compressed anyway (see
+ * `compress.js`), which costs far less than sixty extra round trips.
+ */
+const INLINE_LOGO_MAX_BYTES = 20 * 1024;
+
+/**
  * How many ids one `products({ ids })` call will look up.
  *
  * The favourites page hands us a list the customer built themselves, so the
@@ -819,7 +829,7 @@ export class StorefrontService {
    * `parent_id` is a constant null and the ordering falls through to the name.
    */
   async brands() {
-    return this.db.prepare(`
+    const rows = await this.db.prepare(`
       SELECT b.id       AS id,
              b.name_en  AS name_en,
              b.name_ar  AS name_ar,
@@ -841,6 +851,47 @@ export class StorefrontService {
                      WHERE p.brand_id = b.id AND ${PUBLISHED_PRODUCT})
       ORDER BY b.name_en COLLATE NOCASE
     `).all();
+    return this.#withInlineLogos(rows);
+  }
+
+  /**
+   * `logo_inline`: a brand's own logo, embedded as a `data:` URI, for every
+   * logo small enough that embedding it costs less than fetching it.
+   *
+   * A shop with sixty brands used to mean sixty separate `GET
+   * /brands/:id/logo` round trips fired the moment the home page painted — a
+   * network storm of tiny requests, most of them a few kilobytes, that on a
+   * real connection queue behind each other and cost far more in ROUND-TRIP
+   * time than the bytes themselves ever would. `home()` already reads the
+   * brand list in one query; this reads the logos the SAME way — one query
+   * for every logo this page needs, not one request per brand — and hands
+   * back bytes the client can draw with zero further requests.
+   *
+   * Only logos at or under `INLINE_LOGO_MAX_BYTES` are inlined. A shop mark is
+   * drawn at 64px in the rail and is almost always a few kilobytes; anything
+   * bigger stays a `has_logo: true` row with no `logo_inline`, and the client
+   * falls back to `brandLogoUrl(id)` exactly as it always has — one network
+   * request for the rare large mark rather than bloating this response for
+   * every shop to cover it.
+   */
+  async #withInlineLogos(rows) {
+    const ids = rows.filter((row) => row.has_logo).map((row) => row.id);
+    if (!ids.length) return rows;
+
+    const slots = ids.map((id) => `brand:${id}`);
+    const placeholders = slots.map(() => '?').join(', ');
+    const logos = await this.db.prepare(`
+      SELECT slot, data, content_type, byte_size FROM web_assets WHERE slot IN (${placeholders})
+    `).all(...slots);
+    const bySlot = new Map(logos.map((logo) => [logo.slot, logo]));
+
+    return rows.map((row) => {
+      if (!row.has_logo) return row;
+      const logo = bySlot.get(`brand:${row.id}`);
+      if (!logo || logo.byte_size > INLINE_LOGO_MAX_BYTES) return row;
+      const bytes = Buffer.isBuffer(logo.data) ? logo.data : Buffer.from(logo.data);
+      return { ...row, logo_inline: `data:${logo.content_type};base64,${bytes.toString('base64')}` };
+    });
   }
 
   // ---------------------------------------------------------------- browsing

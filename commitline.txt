@@ -123,3 +123,47 @@ assertion rather than adding a test; the "photo far over the ceiling is
 refused" check is now sized to 5.5 MB decoded, so it still proves ImageService
 itself refuses an oversized photo rather than the request just being too big
 for any reason).
+
+ALSO IN THIS DROP: the storefront loading slowly - brand logos no longer cost
+a network round trip each
+
+THE ASK
+Two screenshots of the storefront stuck on loading skeletons - "the website
+is load very bad this is the first thing".
+
+WHAT WAS HAPPENING
+Measured against the live site rather than guessed at: the page shell itself
+loads fast (DOMContentLoaded ~1s, first byte 69ms) and every image already
+lazy-loads correctly. The slowness is round trips, not bytes or code - the
+brands rail fires one GET /api/shop/brands/:id/logo per brand the instant the
+home page paints, and a shop with dozens of brands means dozens of small
+requests competing for the same few connections, each one paying full
+serverless + database latency before its few KB of image ever start moving.
+A handful of slow seconds, not a broken page.
+
+WHAT CHANGES
+StorefrontService#brands() (and /api/shop/home, which reads brands() the same
+way) now inlines any logo at or under 20 KB directly into the JSON response
+as a data: URI, read in the same one query the brand list already runs - not
+one request per brand, one query for every logo the page needs. The browser
+then has the picture before it has finished parsing the response; nothing to
+fetch, nothing to wait on. A logo over 20 KB is left alone - has_logo stays
+true, logo_inline is simply absent, and the storefront falls back to fetching
+it by address exactly as it always has, so nothing about the large-logo path
+changed at all. Client-side, brandCard() prefers logo_inline when present and
+only falls through to the network address when it is not - a one-line change
+to the source-selection order, everything else about how a brand's mark
+renders is untouched.
+
+Nothing here touches the ERP screens, only the public storefront's brand
+list and home page.
+
+npm test 1273 -> 1279 (a new end-to-end test proves a small logo comes back
+byte-for-byte as an inline data: URI on both /api/shop/brands and
+/api/shop/home, and that a logo past the ceiling does not - checked by
+reverting #withInlineLogos to a no-op and watching both new checks fail before
+restoring it).
+
+NOT YET DONE FROM THE SAME MESSAGE: a dashboard section for social media
+links (Facebook / Instagram / TikTok, each independently switchable, shown
+somewhere on the storefront - footer suggested). Scoped, not started.

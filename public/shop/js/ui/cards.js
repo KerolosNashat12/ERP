@@ -502,12 +502,20 @@ export function brandCard(row) {
    */
   const mark = defaultBrandImage(name);
   /*
-   * Three sources, in order of how much the shop meant it:
-   *   1. a picture uploaded against the brand in the ERP — `has_logo`;
-   *   2. `logo_url`, a link somebody typed into the brand record years ago;
-   *   3. the brand's first letter, which every brand has.
+   * Four sources, in order of how much the shop meant it — and of how cheap
+   * they are to show:
+   *   1. `logo_inline` — a picture uploaded in the ERP, small enough that the
+   *      home/brands response already carries its bytes as a `data:` URI
+   *      (see `StorefrontService#withInlineLogos`). Nothing to fetch: the
+   *      browser can paint it the instant this card exists, which is the
+   *      whole point — sixty of these used to mean sixty network requests
+   *      firing the moment the rail painted.
+   *   2. `has_logo` with no `logo_inline` — the same uploaded picture, just
+   *      too big to inline, fetched the old way, one request.
+   *   3. `logo_url`, a link somebody typed into the brand record years ago.
+   *   4. the brand's first letter, which every brand has.
    */
-  const source = row.has_logo ? brandLogoUrl(row.id) : String(row.logo_url || '').trim();
+  const source = row.logo_inline || (row.has_logo ? brandLogoUrl(row.id) : String(row.logo_url || '').trim());
   const face = el('span.brand-card-face', { class: source ? 'has-logo' : '' });
 
   if (source) {

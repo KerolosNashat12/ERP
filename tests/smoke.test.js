@@ -269,6 +269,90 @@ test('a brand carries its own logo', async (ctx) => {
   });
 });
 
+test('a small brand logo is inlined into the storefront\'s brand list; a big one is not', async (ctx) => {
+  /**
+   * A shop with sixty brands used to mean sixty separate `GET
+   * /brands/:id/logo` requests firing the instant the home page painted —
+   * see `StorefrontService#withInlineLogos`. Below the inline ceiling, the
+   * public `/api/shop/brands` (and `/api/shop/home`, which calls the same
+   * method) now carries the logo's own bytes as a `data:` URI, so the client
+   * never has to ask for it at all; above the ceiling it falls back to the
+   * one-request-per-brand behaviour this file already covers above.
+   */
+  const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+  // PNG magic, then noise well past the 20 KB inline ceiling. The bytes past
+  // the header do not need to be a valid PNG body — `decodeImageDataUrl`
+  // only sniffs the magic number and, best-effort, an IHDR that is not
+  // there; a header it cannot parse stores null dimensions, not an error.
+  const bigBytes = Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    Buffer.alloc(25 * 1024, 0x41),
+  ]);
+  const bigPng = `data:image/png;base64,${bigBytes.toString('base64')}`;
+
+  // This brand is made here, published, with a published product under it —
+  // not borrowed from `/api/brands?all=1`'s first row. The baseline seed this
+  // suite boots from carries no brand at all, and even a brand another test
+  // happens to have left behind is not guaranteed to be one the storefront
+  // will show: `/api/shop/brands` requires `is_active`, `is_published`, and a
+  // published product under it (see `StorefrontService#brands`), and a
+  // fixture that skips straight to "the first admin-list row" can silently
+  // pick one that fails all three. Building the brand's own eligibility here
+  // means this test proves the inlining behaviour instead of the accident of
+  // whatever another test file left in the shared database.
+  const brand = await api('/api/brands', {
+    method: 'POST',
+    body: { name_en: 'Inline Logo Co', name_ar: 'شركة الشعار المضمن' },
+  });
+  const product = await api('/api/products', {
+    method: 'POST',
+    body: {
+      sku_prefix: `LOGO-${Date.now().toString().slice(-6)}`,
+      name_en: 'Inline Logo Product',
+      name_ar: 'منتج الشعار المضمن',
+      base_price: 100,
+      brand_id: brand.id,
+      is_published: 1,
+      variants: [{ cost_price: 50, selling_price: 100 }],
+    },
+  });
+  assert.ok(product.id, 'the product this brand needed to be storefront-eligible was not created');
+
+  await ctx.test('a logo under the ceiling arrives as bytes, not an address', async () => {
+    await api(`/api/brands/${brand.id}/logo`, { method: 'PUT', body: { dataUrl: png } });
+    const listed = await api('/api/shop/brands');
+    const row = listed.rows.find((r) => r.id === brand.id);
+    assert.ok(row, 'the brand did not come back from the public list at all');
+    assert.equal(row.has_logo, 1);
+    assert.match(row.logo_inline || '', /^data:image\/png;base64,/);
+    // And the SAME public request the client would make must decode to
+    // exactly the bytes that were uploaded — an inlined logo that does not
+    // match what `GET /brands/:id/logo` would have served is worse than no
+    // shortcut at all.
+    const decoded = Buffer.from(row.logo_inline.split(',')[1], 'base64');
+    assert.equal(decoded.toString('base64'), Buffer.from(png.split(',')[1], 'base64').toString('base64'));
+  });
+
+  await ctx.test('a logo over the ceiling stays a request, not a payload', async () => {
+    await api(`/api/brands/${brand.id}/logo`, { method: 'PUT', body: { dataUrl: bigPng } });
+    const listed = await api('/api/shop/brands');
+    const row = listed.rows.find((r) => r.id === brand.id);
+    assert.equal(row.has_logo, 1, 'a big logo must still show has_logo — the client falls back to fetching it');
+    assert.equal(row.logo_inline, undefined, 'a 25 KB logo was inlined; the ceiling is being ignored');
+  });
+
+  await ctx.test('the same rule holds on /api/shop/home, which brands() also feeds', async () => {
+    const home = await api('/api/shop/home');
+    const row = home.brands.find((r) => r.id === brand.id);
+    assert.equal(row.logo_inline, undefined, 'home() must apply the same ceiling brands() does');
+  });
+
+  await ctx.test('cleanup: back to no logo at all', async () => {
+    const cleared = await api(`/api/brands/${brand.id}/logo`, { method: 'DELETE' });
+    assert.equal(cleared.hasImage, false);
+  });
+});
+
 test('a purchase order discount is a rate, and the money follows the lines', async (ctx) => {
   /**
    * The supplier says five percent; nobody should be doing his arithmetic by

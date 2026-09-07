@@ -270,6 +270,15 @@ test('the brands rail scrolls when it is pushed and holds still when it is not',
       + "the browser's broken-image glyph in a shop window.",
     );
   });
+
+  await ctx.test('a small logo is painted from the bytes the rail already has, not a second request', () => {
+    assert.match(
+      cardsJs, /row\.logo_inline/,
+      '`StorefrontService#brands()` inlines a small logo as a `data:` URI so the '
+      + 'rail can draw it with zero further requests — the rail must read it before '
+      + "falling back to `brandLogoUrl(id)`, or sixty brands still mean sixty round trips.",
+    );
+  });
 });
 
 test('the home page is one design, not three', async (ctx) => {
