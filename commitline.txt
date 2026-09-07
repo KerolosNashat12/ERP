@@ -87,3 +87,39 @@ reverted to one call - checked by actually reverting it and watching the
 test catch it.
 
 npm test 1264 -> 1273, plus tests/products-export-check.mjs.
+
+ALSO IN THIS DROP: the product photo size limit, 400 KB -> 5 MB
+
+THE ASK
+A phone photo uploaded on a product screen was refused: "The photo is 513 KB
+- the limit is 400 KB". Asked to raise it to 5 MB.
+
+WHAT CHANGES
+ImageService's own ceiling (src/services/ImageService.js) is 5 MB now,
+decoded, up from 400 KB. The browser still resizes every photo to 1400px and
+compresses it before it ever reaches this check - most photos still land
+around 100-400 KB - this only widens the backstop for the phone photos that
+do not compress down that far, his 513 KB one included.
+
+Raising it exposed a second, narrower ceiling: the server refuses any
+request body over a flat size regardless of what is inside it
+(express.json in src/server.js), and a base64-encoded photo is about a third
+bigger than the picture it decodes to - a 5 MB photo needs close to 6.7 MB of
+body. That limit was 5 MB, which would have quietly refused any photo over
+roughly 3.5 MB with a generic "request too large" instead of the specific
+message above. Raised to 8 MB alongside it, with room for the base64
+inflation and the rest of the request.
+
+WORTH KNOWING BEFORE RAISING EITHER OF THESE AGAIN: product photos are the
+same BLOBs that made the 64 MB backup ceiling above have to move to 200 MB.
+A bigger per-photo ceiling means bigger photos are now possible on this shop,
+and every one of them rides along in every backup. This alone does not make
+backups fail again - most phone photos still compress well under the new
+5 MB limit - but it is the same weight, in the same place, and if backups
+start crossing 200 MB again, this is one of the first things worth checking.
+
+npm test 1273 passing (same count - this changed one existing pentest
+assertion rather than adding a test; the "photo far over the ceiling is
+refused" check is now sized to 5.5 MB decoded, so it still proves ImageService
+itself refuses an oversized photo rather than the request just being too big
+for any reason).

@@ -7,9 +7,22 @@
  * travels with the data, and it behaves identically in both places.
  *
  * The browser resizes to 1400px and re-encodes as JPEG before uploading, so
- * what arrives here is already small. The limits below are the backstop rather
- * than the plan: whoever is calling may not be our editor at all, and a 5 MB
- * phone photo must never reach the table.
+ * what arrives here is already small — typically 100-400 KB. The limit below
+ * is a backstop rather than the plan: whoever is calling may not be our
+ * editor at all, and an unresized multi-megabyte phone photo must never
+ * reach the table.
+ *
+ * Raised from 400 KB to 5 MB on 2026-09-07 (he hit the 400 KB wall on a
+ * phone photo that compressed to 513 KB and asked for room). Worth knowing
+ * before raising it again: these bytes are what the backup ceiling fix on
+ * 2026-09-06 was raised FOR (see `MAX_BACKUP_BYTES` in
+ * `src/platform/BackupService.js`) — a shop's product photography, stored as
+ * BLOBs in this same row store, is why that ceiling had to move from 64 MB to
+ * 200 MB in the first place. A 5 MB backstop does not mean every photo
+ * becomes 5 MB (the browser still compresses first), but every photo that
+ * lands near this ceiling instead of the old one adds that much more to every
+ * backup. If backups start crossing 200 MB again, this number is one of the
+ * first places to look before raising `MAX_BACKUP_BYTES` again.
  *
  * Nothing in here ships a blob unless it was explicitly asked for. `list()`
  * selects columns one by one for that reason — `SELECT *` on this table would
@@ -22,7 +35,7 @@ import { decodeImageDataUrl } from '../shared/imageCodec.js';
 import auditService from './AuditService.js';
 
 /** Decoded, not encoded: the base64 in transit is about a third larger. */
-const MAX_BYTES = 400 * 1024;
+const MAX_BYTES = 5 * 1024 * 1024;
 
 /** Everything except `data`. Callers that want the bytes ask for them. */
 const META_FIELDS = [

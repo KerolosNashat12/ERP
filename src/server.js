@@ -45,7 +45,17 @@ export function createApp() {
    */
   app.use(compress());
 
-  app.use(express.json({ limit: '5mb' }));
+  /*
+   * A product photo travels as base64 inside this JSON body, which inflates
+   * it by about a third — a 5 MB decoded photo (ImageService's own ceiling,
+   * `src/services/ImageService.js`) needs close to 6.7 MB of base64 plus the
+   * rest of the request. 8 MB leaves room for that with the surrounding
+   * fields still fitting; a tighter number here would silently refuse a
+   * photo `ImageService` itself would have accepted, with a less useful
+   * error (Express's own "entity too large" rather than the photo-specific
+   * message `decodeImageDataUrl` gives).
+   */
+  app.use(express.json({ limit: '8mb' }));
   app.use(express.urlencoded({ extended: true }));
   app.use(cookieParser());
 
