@@ -123,9 +123,11 @@ export const MAX_RAW_BYTES = Number(process.env.MM_BACKUP_MAX_RAW_BYTES || 512 *
  * Deliberately three numbers rather than one, because the three kinds answer
  * three different fears:
  *
- *   scheduled   the shop nobody thought about. Fourteen daily runs is two weeks
- *               of history — long enough that damage noticed on a Monday can be
- *               undone from before the weekend it happened.
+ *   scheduled   the shop nobody thought about. Was fourteen daily runs (two
+ *               weeks of history); lowered to 2 on 2026-09-09, at his request,
+ *               to cut storage now that a single backup's own size has had to
+ *               grow (see MAX_BACKUP_BYTES) — with cron running twice a day,
+ *               2 kept covers roughly the last day, not the last two weeks.
  *   manual      a copy somebody took on purpose, usually right before doing
  *               something risky. Five is enough to keep the ones that mattered.
  *   pre_restore the automatic copy taken immediately before a restore
@@ -133,24 +135,26 @@ export const MAX_RAW_BYTES = Number(process.env.MM_BACKUP_MAX_RAW_BYTES || 512 *
  *               this table: they are what makes a restore into the wrong state
  *               itself undoable.
  *
- * What it costs, measured rather than guessed. The year-old shop described
- * above stores 1.33 MB a night, so:
- *
- *     one shop, full retention   14 + 5 + 3 = 22 copies  ≈  29 MB
- *     six shops (today)                                  ≈ 176 MB
- *     eighty shops                                       ≈ 2.3 GB
- *
- * against a Turso free tier of 9 GB and a paid one of 100 GB. So the fleet can
- * grow by more than ten times before retention is a bill rather than a setting,
- * and when it is, `MM_BACKUP_KEEP_SCHEDULED` is the knob.
+ * What it costs. This knob controls total STORED copies, not the size of any
+ * one of them — that ceiling is MAX_BACKUP_BYTES, a separate setting, and
+ * lowering this one does nothing to help a single backup that is itself too
+ * large. For a shop whose own backup is, say, 250 MB: full retention (was
+ * 14 + 5 + 3 = 22 copies) could reach several GB; at scheduled = 2 the same
+ * shop's scheduled copies alone cost roughly half a GB instead of 3.5 GB.
+ * Against a Turso free tier of 9 GB and a paid one of 100 GB, this was
+ * headroom rather than a bill, but a real cost all the same once photos are
+ * involved — `MM_BACKUP_KEEP_SCHEDULED` (env var) is the knob if any of this
+ * needs to move again, per shop or fleet-wide.
  *
  * What this protects against: a bad edit, a bad import, a deleted price list, a
- * restore that turned out to be wrong — anything noticed within two weeks.
+ * restore that turned out to be wrong — anything noticed within the retained
+ * window (now roughly a day for scheduled backups, since the 2026-09-09
+ * change above; longer if manual copies exist).
  * What it does NOT protect against, said plainly because a retention policy
  * that is believed to cover more than it does is worse than none:
  *
- *   - damage nobody notices for more than two weeks. The nightly copies from
- *     before it will have been pruned.
+ *   - damage nobody notices within that window. Older nightly copies will
+ *     have been pruned.
  *   - the loss of the CONTROL PLANE, which is where these bytes live. A backup
  *     of a shop stored beside the register of shops does not survive losing the
  *     register. That gap cannot be closed from inside this file; it is closed
@@ -161,7 +165,15 @@ export const MAX_RAW_BYTES = Number(process.env.MM_BACKUP_MAX_RAW_BYTES || 512 *
  *     provisioning step, not a restore.
  */
 export const KEEP = {
-  scheduled: Number(process.env.MM_BACKUP_KEEP_SCHEDULED || 14),
+  // Lowered from 14 to 2 on 2026-09-09 at his request, to cut control-plane
+  // storage now that MAX_BACKUP_BYTES has had to move twice (64 -> 200 ->
+  // 400 MB) as this shop's own photo library grew. This trims the SAFETY
+  // WINDOW too: with cron running twice a day (see vercel.json), 2 kept
+  // scheduled backups covers roughly the last day rather than the last two
+  // weeks — damage noticed a few days late is no longer recoverable from a
+  // scheduled backup. Raise this again if that window turns out to matter
+  // more than the storage it costs.
+  scheduled: Number(process.env.MM_BACKUP_KEEP_SCHEDULED || 2),
   manual: Number(process.env.MM_BACKUP_KEEP_MANUAL || 5),
   pre_restore: Number(process.env.MM_BACKUP_KEEP_PRE_RESTORE || 3),
 };

@@ -213,3 +213,31 @@ chase a photo ceiling upward.
 npm test 1279 passing (unchanged - a single constant with no dedicated
 test coverage for the exact number; verified with a fresh database and the
 full suite regardless, per the project's standing convention).
+
+ALSO IN THIS DROP (2026-09-09): scheduled-backup retention, 14 -> 2
+
+THE ASK
+"only save last 2 backups okay this will help us to less storatge" - after
+seeing the repeated ceiling failures above.
+
+WHAT CHANGES
+KEEP.scheduled (src/platform/BackupService.js) lowered from 14 to 2. This is
+a DIFFERENT knob from MAX_BACKUP_BYTES above - that one caps how big any one
+backup is allowed to be before the run fails; this one caps how many
+successful copies are kept before the oldest are pruned. Lowering it does
+nothing to help a single backup that is itself too large, but it does cut
+total stored bytes - a shop whose scheduled backups run ~250 MB each was
+storing up to 14 of them (several GB); now it stores at most 2 (roughly half
+a GB).
+
+WORTH KNOWING: this trims the safety window, not just the storage. Scheduled
+backups run twice a day (vercel.json), so keeping 2 covers roughly the last
+day rather than the last two weeks - damage noticed a few days late is no
+longer recoverable from a scheduled backup. manual (5) and pre_restore (3)
+retention were left as they were; only scheduled was touched, since that is
+what he was looking at.
+
+npm test 1279 passing (unchanged - retention count has no dedicated test
+for its literal default; the pruning LOGIC is covered by
+tests/platform-backup.test.js, which sets its own KEEP values via env vars
+and is unaffected by the default changing).
