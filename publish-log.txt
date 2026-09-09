@@ -1,15 +1,1 @@
-Publish started Tue 09/08/2026 16:23:23.03
-warning: in the working copy of 'PUBLISH.bat', LF will be replaced by CRLF the next time Git touches it
-warning: in the working copy of 'PUSH-TO-GITHUB.bat', LF will be replaced by CRLF the next time Git touches it
-warning: in the working copy of 'commitline.txt', LF will be replaced by CRLF the next time Git touches it
-warning: in the working copy of 'public/shop/js/ui/cards.js', LF will be replaced by CRLF the next time Git touches it
-warning: in the working copy of 'src/services/StorefrontService.js', LF will be replaced by CRLF the next time Git touches it
-warning: in the working copy of 'tests/shop-product-layout.test.js', LF will be replaced by CRLF the next time Git touches it
-warning: in the working copy of 'tests/smoke.test.js', LF will be replaced by CRLF the next time Git touches it
-[main b291052] Backups: mm's own shop crossed the 64 MB stored ceiling in September 2026 because its product photos live as BLOBs in the row store and a JPEG does not compress the way text does - every scheduled backup had been failing, twice a day, since. Raised to 200 MB; raise it again rather than lower it if a shop outgrows that too, and use retention (KEEP) for control-plane storage instead. Also fixed three test files (labels-symbology, weborder-delivery, smoke) that called initDb() without applying the schema, seeding the administrator or running migrations - on a database that already had those from a previous run they passed anyway, and on a truly fresh one all fifty-five of their subtests failed with 'no such table: users' or a wrong password. All three now bootstrap exactly as start() does. Also added an Export CSV button to the Products screen, honouring the same filters already on it, built on the same CSV encoder the Reports screen uses, paging past the repository's 500-row page ceiling so a shop bigger than that is not silently truncated - the same class of bug the stock count sheet once shipped, caught this time by a test that fails if the paging is reverted to one call. Also raised the product photo size limit from 400 KB to 5 MB after a phone photo at 513 KB was refused, and raised the request body limit alongside it from 5 MB to 8 MB since a base64 photo runs about a third bigger than what it decodes to and would otherwise have been capped around 3.5 MB regardless of the new photo limit - the same BLOB weight behind the backup ceiling above, so a bigger photo limit means bigger backups too. Also fixed the storefront loading slowly: measured against the live site, the page shell and images were already fast and already lazy, the real cost was one network round trip per brand logo firing the instant the home page painted. Brand logos of 20 KB or under are now inlined as data URIs directly in the brands list and home page responses, read in the same single query the brand list already ran, so the browser has the picture with zero further requests; larger logos are untouched and still fetched by address exactly as before. npm test 1273 -> 1279.
- 1 file changed, 1 insertion(+), 15 deletions(-)
- 
---- push attempt 1 --- 
-To https://github.com/KerolosNashat12/ERP.git
-   3f154a6..b291052  HEAD -> main
-PUSH SUCCEEDED on attempt 1 
+Publish started Wed 09/09/2026 16:28:30.21

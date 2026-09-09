@@ -97,12 +97,22 @@ export const CHUNK_BYTES = Number(process.env.MM_BACKUP_CHUNK_BYTES || 256 * 102
  * row store, and a BLOB that is already a JPEG does not compress the way text
  * does, so the snapshot itself grows close to the photo library's own size.
  * mm's own shop crossed 64 MB compressed in September 2026 — every scheduled
- * backup failed, twice a day, until this was raised. 200 MB gives a shop with
- * real photography room to keep growing before the next shop hits this again;
- * raise it further (`MM_BACKUP_MAX_BYTES`) rather than lower it if one does —
+ * backup failed, twice a day, until this was raised to 200 MB.
+ *
+ * That 200 MB was crossed within 48 hours, on the same release that raised
+ * the product photo ceiling from 400 KB to 5 MB (see `ImageService.MAX_BYTES`)
+ * — a shop's last good backup was 128 MB on Sep 7; by Sep 8 it read 251-252 MB
+ * and every scheduled run failed the same way again. The two are almost
+ * certainly the same event: bigger photos allowed in means bigger BLOBs
+ * stored, and this shop clearly started using the new headroom right away.
+ * Raised to 400 MB — again giving room to keep growing rather than cutting it
+ * close — and if it happens a third time, that pattern (a backup ceiling
+ * chasing a photo ceiling) is worth treating as the real signal: either raise
+ * this again, or reconsider how large product photos need to be. Raise this
+ * constant (`MM_BACKUP_MAX_BYTES`) rather than lower it either way —
  * retention (`KEEP`, below) is the knob for control-plane storage, not this.
  */
-export const MAX_BACKUP_BYTES = Number(process.env.MM_BACKUP_MAX_BYTES || 200 * 1024 * 1024);
+export const MAX_BACKUP_BYTES = Number(process.env.MM_BACKUP_MAX_BYTES || 400 * 1024 * 1024);
 
 /** The uncompressed size read out of the shop, checked as it is read. */
 export const MAX_RAW_BYTES = Number(process.env.MM_BACKUP_MAX_RAW_BYTES || 512 * 1024 * 1024);

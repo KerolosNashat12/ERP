@@ -166,4 +166,50 @@ restoring it).
 
 NOT YET DONE FROM THE SAME MESSAGE: a dashboard section for social media
 links (Facebook / Instagram / TikTok, each independently switchable, shown
-somewhere on the storefront - footer suggested). Scoped, not started.
+somewhere on the storefront - footer suggested). Scoped, not started - and
+turned out to need no code at all: this already shipped in migration 005.
+Settings -> الموقع has a full social-links card (Facebook, Instagram,
+TikTok, YouTube, WhatsApp, X, each with its own URL and its own show/hide
+checkbox), already wired into the storefront footer. He had simply never
+opened it.
+
+ALSO IN THIS DROP (2026-09-09): the 200 MB backup ceiling, crossed again
+
+THE ASK
+"ليه كلها فشلت" ("why did they all fail") - two screenshots of the platform
+console's Backups tab for mm, the same فشلت (Failed) rows as before, this
+time against a 200 MB ceiling: "252 MB read so far against a ceiling of
+200 MB."
+
+WHAT WAS HAPPENING
+The 200 MB ceiling set two days earlier (see above) was crossed again. The
+shop's last successful backup was 128 MB, on Sep 7 at 05:46 AM - every
+scheduled run since, on Sep 8 and Sep 9, read 251-252 MB and failed the
+same way, on purpose, exactly like the first time.
+
+This almost certainly is not a coincidence: the same release that raised
+this ceiling to 200 MB also raised the product photo upload limit from
+400 KB to 5 MB (see "the product photo size limit, 400 KB -> 5 MB" above),
+and that release's own notes already flagged this exact risk - product
+photos are BLOBs in the same row store a backup has to read and compress,
+so a bigger photo ceiling means bigger backups. The timing (doubling past
+200 MB within 48 hours of that release going out) points at exactly that:
+bigger photos have evidently been getting uploaded since.
+
+No data was lost either time this has happened. A failed backup deletes
+everything it started writing and leaves nothing partial behind - the
+shop's last good backup from Sep 7 was untouched and still there the whole
+time this was failing.
+
+WHAT CHANGES
+MAX_BACKUP_BYTES raised again, 200 MB -> 400 MB - one constant in
+src/platform/BackupService.js, no migration, same shape as the first raise.
+The doc comment above the constant now records both crossings and a
+standing note for next time: if this happens a third time, that is the
+signal to stop just raising this number and look at how large product
+photos actually need to be, rather than let a backup ceiling permanently
+chase a photo ceiling upward.
+
+npm test 1279 passing (unchanged - a single constant with no dedicated
+test coverage for the exact number; verified with a fresh database and the
+full suite regardless, per the project's standing convention).
