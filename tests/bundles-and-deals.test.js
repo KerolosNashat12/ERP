@@ -88,6 +88,13 @@ const refused = async (p, o) => {
 
 const today = () => new Date().toISOString().slice(0, 10);
 
+// A 1x1 PNG — the same fixture every other photo-upload test in this suite
+// uses (see tests/shoot-list.test.js), so a byte a decoder actually accepts.
+const PIXEL = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+const addPhoto = async (productId) => ok(`/api/products/${productId}/images`, {
+  method: 'POST', body: { dataUrl: PIXEL },
+});
+
 const makeProduct = async (code, cost, sell, extra = {}) => ok('/api/products', {
   method: 'POST',
   body: {
@@ -299,6 +306,71 @@ test('bundles and deals of the day', async (t) => {
     assert.equal(detail.bundle_components.length, 2);
     const namedChain = detail.bundle_components.find((c) => c.variant_id === chain.variants[0].id);
     assert.equal(namedChain.quantity, 2);
+  });
+
+  // ─────────────────────────────────────── a bundle borrows a photo
+
+  await t.test('a bundle with no photo of its own shows its first component\'s photo', async () => {
+    // `bundle` (ring + chain) has no photo of its own yet. Give the ring —
+    // the first component, by the recipe's own order — a photo.
+    const ringPhoto = await addPhoto(ring.id);
+
+    const detail = await ok(`/api/shop/products/${bundle.id}`);
+    assert.equal(detail.image_id, ringPhoto.id, 'the storefront must not show a blank card just because nobody has photographed the combination itself');
+    assert.deepEqual(detail.images.map((i) => i.id), [ringPhoto.id]);
+
+    // The same fallback runs for the card the bundle shows up on in a
+    // listing, not only the product's own detail page.
+    const bundlesCategory = (await ok('/api/shop/categories')).rows.find((c) => c.name_en === 'Bundles');
+    const listed = (await ok(`/api/shop/products?category=${bundlesCategory.id}`))
+      .rows.find((r) => r.id === bundle.id);
+    assert.equal(listed.image_id, ringPhoto.id);
+  });
+
+  await t.test('the bundle\'s own photo wins the moment one is uploaded', async () => {
+    const ownPhoto = await addPhoto(bundle.id);
+    const detail = await ok(`/api/shop/products/${bundle.id}`);
+    assert.equal(detail.image_id, ownPhoto.id, 'a bundle\'s own photo must outrank a borrowed one');
+    assert.deepEqual(detail.images.map((i) => i.id), [ownPhoto.id]);
+  });
+
+  await t.test('a borrowed photo is never one the storefront would otherwise refuse to serve', async () => {
+    const p1 = await makeProduct('BD-PH1', 10, 40);
+    const p2 = await makeProduct('BD-PH2', 10, 40);
+    const unpublishedPhoto = await addPhoto(p1.id);
+    await addPhoto(p2.id); // the eligible fallback once p1 is unpublished
+
+    const photoBundle = await ok('/api/products', {
+      method: 'POST',
+      body: {
+        sku_prefix: 'BD-PHOTOSET', name_en: 'Photo Fallback Set', base_price: 0,
+        is_active: true, track_inventory: true, is_published: true,
+        is_bundle: true, bundle_price_mode: 'sum',
+        bundle_components: [
+          { component_variant_id: p1.variants[0].id, quantity: 1 },
+          { component_variant_id: p2.variants[0].id, quantity: 1 },
+        ],
+        attribute_ids: [], variants: [],
+      },
+    });
+
+    // p1 (first in the recipe, and the one with a photo taken first) goes
+    // unpublished. Its photo would 404 through the public image endpoint
+    // (ImageService#publishedBytes gates on it), so the fallback must skip
+    // straight past it to p2's photo rather than pick it anyway.
+    await ok(`/api/products/${p1.id}`, {
+      method: 'PUT',
+      body: {
+        sku_prefix: p1.sku_prefix, name_en: p1.name_en, name_ar: p1.name_ar,
+        base_price: p1.base_price, is_active: true, track_inventory: true,
+        is_published: false, attribute_ids: [], variants: [],
+      },
+    });
+
+    const detail = await ok(`/api/shop/products/${photoBundle.id}`);
+    assert.notEqual(detail.image_id, unpublishedPhoto.id, 'must never point at a photo behind an unpublished product');
+    const imageCheck = await fetch(`${base}/api/shop/images/${detail.image_id}`);
+    assert.equal(imageCheck.status, 200, 'whatever the fallback picked must actually be servable to a shopper');
   });
 
   // ─────────────────────────────────────────────── POS sale + void
@@ -544,13 +616,13 @@ test('bundles and deals of the day', async (t) => {
 
   await t.test('the admin grid can filter and count bundles and deals independently of each other', async () => {
     const bundles = await ok('/api/products?isBundle=1');
-    assert.equal(bundles.total, 2, 'exactly BD-SET and BD-FIXED are bundles');
+    assert.equal(bundles.total, 3, 'BD-SET, BD-FIXED and BD-PHOTOSET (from the photo-fallback checks above) are bundles');
 
     const deals = await ok('/api/products?isDealOfDay=1');
     assert.equal(deals.total, 1, 'only the bundle is still curated after the bulk edit above');
 
     const summary = await ok('/api/products/summary');
-    assert.equal(summary.bundles, 2);
+    assert.equal(summary.bundles, 3);
     assert.equal(summary.deals, 1);
   });
 });

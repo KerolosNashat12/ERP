@@ -51,6 +51,7 @@ import migration028 from './028-banner-second-button-and-stats.js';
 import migration029 from './029-stats-on-for-real-catalogues.js';
 import migration030 from './030-recurring-cost-frequency.js';
 import migration031 from './031-bundles-and-deals.js';
+import migration032 from './032-bundles-category-backfill.js';
 
 /** Ordered. Append only. */
 const MIGRATIONS = [
@@ -85,6 +86,7 @@ const MIGRATIONS = [
   migration029,
   migration030,
   migration031,
+  migration032,
 ];
 
 async function ensureRegistry() {

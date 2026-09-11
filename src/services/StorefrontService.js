@@ -354,6 +354,28 @@ const EFFECTIVE_PRICE_FROM = offerPriceSql(`(SELECT MIN(vp.selling_price) FROM p
     WHERE vp.product_id = p.id AND vp.is_active = 1)`);
 
 /**
+ * The photo a product would show for itself: its chosen primary photo, if it
+ * still resolves to one of this product's own images, else its first photo
+ * by display order. `alias` is whatever the surrounding query already bound
+ * to `products` (`p`, `cp`, ...) — this is a fragment, not a query of its own.
+ *
+ * Deliberately does NOT look at `variant_id`: the standard photo-upload panel
+ * never sets one (`ImageService#add` only resolves a variant when the caller
+ * passes one explicitly), so almost every photo in this table has
+ * `variant_id IS NULL`. Filtering on it here would silently match nothing
+ * for the common case — which is exactly the bug this fragment replaces two
+ * copies of (one in CARD_COLUMNS, one in #bundleComponents below).
+ */
+const bestImageSql = (alias) => `
+  COALESCE(
+    (SELECT ip.id FROM product_images ip
+      WHERE ip.id = ${alias}.primary_image_id AND ip.product_id = ${alias}.id),
+    (SELECT i2.id FROM product_images i2
+      WHERE i2.product_id = ${alias}.id ORDER BY i2.display_order, i2.id LIMIT 1)
+  )
+`;
+
+/**
  * The product card. Prices are the min/max across ACTIVE variants only, so a
  * discontinued colour cannot advertise a price nobody can buy.
  *
@@ -362,6 +384,16 @@ const EFFECTIVE_PRICE_FROM = offerPriceSql(`(SELECT MIN(vp.selling_price) FROM p
  * its id, so a stale `primary_image_id` (the row was deleted, or the id now
  * belongs to another product's photo) shows this product's own first picture
  * rather than a blank card or, worse, somebody else's product.
+ *
+ * A BUNDLE gets a third fallback, checked only once the first two come back
+ * empty: the first photo belonging to its first component (by the recipe's
+ * own display order, then that component's own photo order). A bundle is
+ * often created before anyone has photographed the combination itself —
+ * "Perfume + Deodorant Set" is not a real product on a real shelf to point a
+ * camera at until the shop decides to bundle it — so without this a brand
+ * new bundle would show a blank card on the day it is published. The moment
+ * the shop uploads its own photo for the bundle, the first COALESCE branch
+ * wins again and this one is never reached.
  *
  * Not selected, deliberately: base_cost, base_price, supplier_id, sku_prefix.
  */
@@ -390,10 +422,27 @@ const CARD_COLUMNS = `
   -- card needs to know only whether it IS one, to show a "bundle" mark.
   p.is_bundle         AS is_bundle,
   COALESCE(
-    (SELECT ip.id FROM product_images ip
-      WHERE ip.id = p.primary_image_id AND ip.product_id = p.id),
-    (SELECT i2.id FROM product_images i2
-      WHERE i2.product_id = p.id ORDER BY i2.display_order, i2.id LIMIT 1)
+    ${bestImageSql('p')},
+    -- Bundle fallback: the first eligible component's own photo (recipe
+    -- order), skipping any component that turns out to have none at all —
+    -- see the CARD_COLUMNS doc comment above and #bundleComponents below.
+    (SELECT img FROM (
+        SELECT bi.display_order AS ord, bi.id AS bid, ${bestImageSql('cp')} AS img
+        FROM bundle_items bi
+        JOIN product_variants cv ON cv.id = bi.component_variant_id
+        JOIN products cp ON cp.id = cv.product_id
+        WHERE bi.bundle_variant_id IN (
+          SELECT pv.id FROM product_variants pv
+            WHERE pv.product_id = p.id AND pv.is_active = 1
+        )
+        -- Same publish/active/not-in-bin gate ImageService#publishedBytes
+        -- enforces before serving a photo's bytes — see #bundleComponents.
+        AND cp.is_active = 1 AND cp.is_published = 1
+        AND NOT EXISTS (SELECT 1 FROM trash_items tcp
+          WHERE tcp.entity_type = 'product' AND tcp.entity_id = cp.id AND tcp.status = 'in_bin')
+      )
+      WHERE img IS NOT NULL
+      ORDER BY ord, bid LIMIT 1)
   ) AS image_id,
   /*
    * ENOUGH TO PUT THIS CARD IN A BASKET, WHEN THERE IS ONLY ONE THING TO PUT.
@@ -1352,7 +1401,20 @@ export class StorefrontService {
       description_en: row.description_en,
       description_ar: row.description_ar,
       tax_rate: Number(row.tax_rate || 0),
-      images,
+      /**
+       * A bundle with no photo of its own borrows its first component's —
+       * same reasoning and same fallback order as `image_id` above (see the
+       * doc comment on `CARD_COLUMNS`), applied here to the whole gallery
+       * rather than just the hero image, from data already in hand: no
+       * second query, just the first component in `bundleComponents` that
+       * actually has a photo. `variant_id: null` marks it as not really one
+       * of this product's own photos — nothing on the page needs that today,
+       * but a future caller should not mistake it for one.
+       */
+      images: images.length ? images : bundleComponents
+        .filter((c) => c.image_id != null)
+        .slice(0, 1)
+        .map((c) => ({ id: c.image_id, alt_en: row.name_en, alt_ar: row.name_ar, variant_id: null })),
       variants: variants
         .map((v) => ({ ...v, offer: offerPrice(v.price, row) }))
         .map((v) => ({
@@ -1634,6 +1696,15 @@ export class StorefrontService {
    * way a simple product's default variant is generated), so this is looked
    * up by PRODUCT id rather than by variant id — the caller does not have to
    * wait on `#variants()` to resolve first just to learn which variant it was.
+   *
+   * `image_id` here feeds the borrowed-photo fallback in `product()` below
+   * (and, separately, `CARD_COLUMNS` runs the same check itself for cards),
+   * so it is gated by the SAME publish/active/not-in-bin rule
+   * `ImageService#publishedBytes` enforces before it will actually serve a
+   * photo's bytes. Without this, a bundle could borrow a photo from a
+   * component that the shop has since unpublished or bin'd, and the
+   * storefront would print a broken-image icon instead of nothing — worse
+   * than the blank card this fallback exists to avoid.
    */
   async #bundleComponents(productId) {
     return this.db.prepare(`
@@ -1643,8 +1714,12 @@ export class StorefrontService {
              p.name_en               AS name_en,
              p.name_ar               AS name_ar,
              v.variant_label         AS variant_label,
-             (SELECT iv.id FROM product_images iv
-               WHERE iv.variant_id = v.id ORDER BY iv.display_order, iv.id LIMIT 1) AS image_id
+             CASE WHEN p.is_active = 1 AND p.is_published = 1
+               AND NOT EXISTS (SELECT 1 FROM trash_items tp
+                 WHERE tp.entity_type = 'product' AND tp.entity_id = p.id AND tp.status = 'in_bin')
+               THEN (${bestImageSql('p')})
+               ELSE NULL
+             END AS image_id
       FROM bundle_items bi
       JOIN product_variants v ON v.id = bi.component_variant_id
       JOIN products p ON p.id = v.product_id
