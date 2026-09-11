@@ -234,10 +234,15 @@ test('storefront favourites and the best-sellers flag', async (t) => {
          *
          * None of them is a stock number and none is a cost — the loop below
          * is what actually guards that, and it is unchanged.
+         *
+         * Bundles and Deals added one more: `is_bundle`, so a card can show a
+         * "bundle" mark without a second request. It is a plain boolean flag,
+         * same doctrine as every other field here — never a stock number,
+         * never a cost.
          */
         assert.deepEqual(Object.keys(card).sort(), [
           'availability', 'brand_id', 'brand_name_ar', 'brand_name_en', 'category_id',
-          'discount_percent', 'gender', 'id', 'image_id', 'name_ar', 'name_en',
+          'discount_percent', 'gender', 'id', 'image_id', 'is_bundle', 'name_ar', 'name_en',
           'on_sale', 'price_from', 'price_to', 'tax_rate', 'variant_count', 'variant_id',
         ]);
         // And the new field means what it says on a single-variant fixture.

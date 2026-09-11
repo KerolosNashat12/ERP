@@ -29,6 +29,8 @@ export class ProductRepository extends BaseRepository {
         // above: absent from this list means silently dropped on save.
         'gender', 'discount_type', 'discount_value',
         'discount_starts_on', 'discount_ends_on',
+        // Bundles, and Deals of the day. Same rule again.
+        'is_bundle', 'bundle_price_mode', 'is_deal_of_day',
       ],
       searchable: ['sku_prefix', 'name_en', 'name_ar', 'tags'],
     });
@@ -51,6 +53,7 @@ export class ProductRepository extends BaseRepository {
    */
   #scope({
     search = '', brandId, categoryId, supplierId, isActive, gender, onOffer,
+    isBundle, isDealOfDay,
   } = {}) {
     const where = [];
     const params = [];
@@ -65,6 +68,13 @@ export class ProductRepository extends BaseRepository {
     if (supplierId) { where.push('p.supplier_id = ?'); params.push(supplierId); }
     if (isActive !== undefined && isActive !== '') { where.push('p.is_active = ?'); params.push(Number(isActive)); }
     if (gender) { where.push('p.gender = ?'); params.push(String(gender)); }
+    // Bundles, and Deals of the day — the same "only when asked" rule as
+    // every other filter here: omitted means every kind of product.
+    if (isBundle !== undefined && isBundle !== '') { where.push('p.is_bundle = ?'); params.push(Number(isBundle) ? 1 : 0); }
+    if (isDealOfDay !== undefined && isDealOfDay !== '') {
+      where.push('p.is_deal_of_day = ?');
+      params.push(Number(isDealOfDay) ? 1 : 0);
+    }
     /*
      * "Show me what is on offer" - running TODAY, not merely configured. The
      * same four conditions the storefront asks, because a shopkeeper checking
@@ -148,7 +158,12 @@ export class ProductRepository extends BaseRepository {
             JOIN product_variants v ON v.id = sl.variant_id
            WHERE v.product_id = p.id), 0) <= 0 THEN 1 END), 0) AS out_of_stock,
         COALESCE(SUM(CASE WHEN NOT EXISTS (
-          SELECT 1 FROM product_images pi WHERE pi.product_id = p.id) THEN 1 END), 0) AS without_photo
+          SELECT 1 FROM product_images pi WHERE pi.product_id = p.id) THEN 1 END), 0) AS without_photo,
+        -- Bundles and Deals of the Day — the two counters that make the two
+        -- new filter cards on the products screen say something true, the
+        -- same way every other card here does.
+        COALESCE(SUM(CASE WHEN p.is_bundle = 1 THEN 1 END), 0)      AS bundles,
+        COALESCE(SUM(CASE WHEN p.is_deal_of_day = 1 THEN 1 END), 0) AS deals
       FROM products p
       ${whereSql}
     `).get(...params);
@@ -157,10 +172,11 @@ export class ProductRepository extends BaseRepository {
 
   async search({
     search = '', brandId, categoryId, supplierId, isActive, gender, onOffer,
+    isBundle, isDealOfDay,
     page = 1, pageSize = 25,
   }) {
     const { whereSql, params, term } = this.#scope({
-      search, brandId, categoryId, supplierId, isActive, gender, onOffer,
+      search, brandId, categoryId, supplierId, isActive, gender, onOffer, isBundle, isDealOfDay,
     });
     const db = getDb();
     const total = (await db.prepare(`SELECT COUNT(*) AS n FROM products p ${whereSql}`).get(...params)).n;
@@ -337,9 +353,33 @@ export class ProductRepository extends BaseRepository {
       WHERE vav.variant_id IN (SELECT id FROM product_variants WHERE product_id = ?)
     `).all(productId);
 
+    // A bundle's recipe, with enough about each component to show it on the
+    // product form without a second round trip — empty for every ordinary
+    // variant, since `bundle_items` only ever has rows for a bundle's own.
+    const bundleRows = await db.prepare(`
+      SELECT bi.bundle_variant_id AS bundle_variant_id, bi.component_variant_id, bi.quantity,
+             bi.display_order, v.sku AS component_sku, v.selling_price AS component_price,
+             p.name_en AS component_name_en, p.name_ar AS component_name_ar
+      FROM bundle_items bi
+      JOIN product_variants v ON v.id = bi.component_variant_id
+      JOIN products p         ON p.id = v.product_id
+      WHERE bi.bundle_variant_id IN (SELECT id FROM product_variants WHERE product_id = ?)
+      ORDER BY bi.display_order, bi.id
+    `).all(productId);
+
     product.variants = variants.map((v) => ({
       ...v,
       options: optionRows.filter((o) => o.variant_id === v.id),
+      bundle_components: bundleRows
+        .filter((b) => b.bundle_variant_id === v.id)
+        .map((b) => ({
+          component_variant_id: b.component_variant_id,
+          quantity: b.quantity,
+          sku: b.component_sku,
+          selling_price: b.component_price,
+          name_en: b.component_name_en,
+          name_ar: b.component_name_ar,
+        })),
     }));
     return product;
   }
@@ -546,14 +586,22 @@ export class VariantRepository extends BaseRepository {
   async isReferenced(variantId) {
     const db = getDb();
     const queries = [
-      'SELECT 1 FROM sale_lines WHERE variant_id = ? LIMIT 1',
-      'SELECT 1 FROM purchase_order_lines WHERE variant_id = ? LIMIT 1',
-      'SELECT 1 FROM stock_movements WHERE variant_id = ? LIMIT 1',
+      ['SELECT 1 FROM sale_lines WHERE variant_id = ? LIMIT 1', [variantId]],
+      ['SELECT 1 FROM purchase_order_lines WHERE variant_id = ? LIMIT 1', [variantId]],
+      ['SELECT 1 FROM stock_movements WHERE variant_id = ? LIMIT 1', [variantId]],
+      // A bundle's own recipe, either direction: this variant IS a bundle
+      // with components in it, or it is INSIDE somebody else's bundle. Either
+      // way hard-deleting it would either orphan bundle_items rows (ON DELETE
+      // RESTRICT already refuses that at the database level, for the
+      // component side) or silently empty a bundle's recipe out from under
+      // it (the bundle side, which has no such constraint to lean on).
+      ['SELECT 1 FROM bundle_items WHERE bundle_variant_id = ? OR component_variant_id = ? LIMIT 1',
+        [variantId, variantId]],
     ];
     // `some()` cannot await, and the loop keeps the original short-circuit:
     // the first hit answers the question without running the rest.
-    for (const sql of queries) {
-      if (await db.prepare(sql).get(variantId)) return true;
+    for (const [sql, params] of queries) {
+      if (await db.prepare(sql).get(...params)) return true;
     }
     return false;
   }

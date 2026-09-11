@@ -94,6 +94,13 @@ const BULK_FIELDS = {
   supplier_id: {
     async clean(value, service) { return service.assertExists('suppliers', value, 'Supplier'); },
   },
+  // Deals of the day — see the doc comment on `is_deal_of_day` in the
+  // migration. This is the "select several products, put them on the
+  // shelf" action the owner asked for, riding the same bulk-action screen
+  // gender already uses, rather than a new one built just for it.
+  is_deal_of_day: {
+    async clean(value) { return value ? 1 : 0; },
+  },
 };
 
 function offerFields(payload, existing) {
@@ -493,6 +500,23 @@ export class CatalogService {
       const published = payload.is_published === true || payload.is_published === 1;
       const existingProduct = isUpdate ? await this.products.findById(productId) : null;
 
+      /*
+       * Bundles — "more than one product, sold as one line, under a new SKU".
+       *
+       * `isBundle` decides three things below, all at once: the category
+       * (forced to the shop's one Bundles category, never a choice on the
+       * form — see the ask this shipped from), whether stock tracking can be
+       * switched off (it can't — a bundle's availability IS its components'
+       * stock, so "not tracked" would be a lie), and the price, when the
+       * owner asked for it to be CALCULATED rather than typed.
+       */
+      const isBundle = payload.is_bundle === true || payload.is_bundle === 1;
+      const bundlePriceMode = payload.bundle_price_mode === 'sum' ? 'sum' : 'fixed';
+      const bundleComponents = Array.isArray(payload.bundle_components) ? payload.bundle_components : [];
+      const basePrice = isBundle && bundlePriceMode === 'sum'
+        ? await this.#sumComponentPrices(bundleComponents)
+        : round2(payload.base_price || 0);
+
       const productData = {
         sku_prefix: skuPrefix,
         name_en: payload.name_en,
@@ -500,17 +524,25 @@ export class CatalogService {
         description_en: payload.description_en || null,
         description_ar: payload.description_ar || null,
         brand_id: payload.brand_id || null,
-        category_id: payload.category_id || null,
+        category_id: isBundle ? (await this.#bundlesCategoryId()) : (payload.category_id || null),
         supplier_id: payload.supplier_id || null,
         unit: payload.unit || 'piece',
         tax_rate: Number(payload.tax_rate || 0),
         base_cost: round2(payload.base_cost || 0),
-        base_price: round2(payload.base_price || 0),
-        track_inventory: payload.track_inventory === false ? 0 : 1,
+        base_price: basePrice,
+        track_inventory: isBundle ? 1 : (payload.track_inventory === false ? 0 : 1),
         image_url: payload.image_url || null,
         tags: payload.tags || null,
         is_active: payload.is_active === false || payload.is_active === 0 ? 0 : 1,
         is_published: published ? 1 : 0,
+        is_bundle: isBundle ? 1 : 0,
+        bundle_price_mode: bundlePriceMode,
+        // Deals of the day — explicit-only, exactly like gender and the offer
+        // fields just below: a caller that does not mention it must not
+        // silently take a product off (or put it on) the shelf.
+        is_deal_of_day: payload.is_deal_of_day === undefined
+          ? (existingProduct?.is_deal_of_day || 0)
+          : (payload.is_deal_of_day ? 1 : 0),
         // Stamped the first time it goes live and never cleared, so the
         // storefront can order by "newest on the website" rather than by
         // when the product was first typed into the back office.
@@ -540,6 +572,23 @@ export class CatalogService {
       await this.#syncVariants(product, payload.variants || [], payload.attribute_ids || []);
 
       /*
+       * The bundle's recipe — after the variants, for the same reason the
+       * search index is rebuilt after them: the bundle's own generated
+       * variant id is only known once `#syncVariants` has created or found
+       * it. A product with `is_bundle` off that used to be a bundle has its
+       * old recipe dropped, so a stale one can never keep expanding a sale
+       * for a product that no longer says it is one.
+       */
+      const bundleVariant = (await this.variants.byProduct(product.id))[0] || null;
+      if (isBundle && bundleVariant) {
+        await this.#syncBundleItems(bundleVariant.id, bundleComponents);
+      } else if (existingProduct?.is_bundle) {
+        for (const variant of await this.variants.byProduct(product.id)) {
+          await this.products.db.prepare('DELETE FROM bundle_items WHERE bundle_variant_id = ?').run(variant.id);
+        }
+      }
+
+      /*
        * AFTER the variants, because the index carries their SKUs, barcodes and
        * labels — indexing before them would store the previous set and a newly
        * added SKU would not be findable until the next save.
@@ -563,6 +612,96 @@ export class CatalogService {
       });
       return after;
     });
+  }
+
+  /**
+   * The category every bundle is filed under, seeded once for every shop
+   * (see `seedBaseline()` in seed.js, and migrations/031-bundles-and-deals.js
+   * for why this is not the owner's choice on the form) — this is what makes
+   * "filter the website by Bundles" the storefront's ordinary, pre-existing
+   * category filter rather than a new code path.
+   */
+  async #bundlesCategoryId() {
+    const row = await this.products.db.prepare("SELECT id FROM categories WHERE code = 'BUNDLES'").get();
+    if (!row) {
+      throw new BusinessRuleError(
+        'The Bundles category has not been set up on this shop yet — restart the app once and try again.',
+      );
+    }
+    return row.id;
+  }
+
+  /**
+   * `bundle_price_mode = 'sum'` — the price is not typed, it is the total of
+   * what is inside the bundle, recomputed every time the recipe is saved so
+   * a component's own price change is reflected the next time somebody opens
+   * this bundle and saves it again.
+   */
+  async #sumComponentPrices(components) {
+    if (!components.length) {
+      throw new ValidationError('A bundle needs at least one product in it to calculate a price from');
+    }
+    let sum = 0;
+    for (const c of components) {
+      const componentId = Number(c.component_variant_id);
+      // eslint-disable-next-line no-await-in-loop -- components are few.
+      const variant = await this.variants.requireById(componentId, 'component product');
+      sum = round2(sum + Number(variant.selling_price) * (Number(c.quantity) || 1));
+    }
+    return sum;
+  }
+
+  /**
+   * A bundle's recipe — what it expands into everywhere stock actually moves.
+   * See InventoryService#expandLine, and the doc comment on `bundle_items` in
+   * migrations/031-bundles-and-deals.js for why this is keyed by variant.
+   *
+   * Replace-the-whole-set, exactly like `#syncAttributes` and the variant
+   * matrix below it: a bundle's recipe is small (a handful of products), so
+   * there is nothing a partial diff would save that clarity is worth losing
+   * for.
+   */
+  async #syncBundleItems(bundleVariantId, components) {
+    const db = this.products.db;
+    await db.prepare('DELETE FROM bundle_items WHERE bundle_variant_id = ?').run(bundleVariantId);
+
+    if (components.length < 2) {
+      throw new ValidationError('A bundle needs at least two products in it');
+    }
+
+    const insert = db.prepare(`
+      INSERT INTO bundle_items (bundle_variant_id, component_variant_id, quantity, display_order)
+      VALUES (?, ?, ?, ?)
+    `);
+    const seen = new Set();
+    for (const [index, item] of components.entries()) {
+      const componentId = Number(item.component_variant_id);
+      if (!Number.isInteger(componentId) || componentId <= 0) {
+        throw new ValidationError('Choose a real product for every item in the bundle');
+      }
+      if (componentId === bundleVariantId) {
+        throw new BusinessRuleError('A bundle cannot contain itself');
+      }
+      if (seen.has(componentId)) {
+        throw new ValidationError('The same product was added to this bundle twice');
+      }
+      seen.add(componentId);
+
+      const component = await this.variants.requireById(componentId, 'component product');
+      const componentProduct = await this.products.requireById(component.product_id, 'product');
+      if (componentProduct.is_bundle) {
+        throw new BusinessRuleError(
+          `"${component.sku}" is itself a bundle — a bundle cannot contain another bundle`,
+        );
+      }
+
+      const quantity = round3(Number(item.quantity) || 1);
+      if (!(quantity > 0)) {
+        throw new ValidationError('Each item in a bundle needs a quantity greater than zero');
+      }
+
+      await insert.run(bundleVariantId, componentId, quantity, index);
+    }
   }
 
   async #syncAttributes(productId, attributeIds) {

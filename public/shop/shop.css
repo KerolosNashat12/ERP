@@ -1722,6 +1722,25 @@ html[lang="ar"] .card-brand { letter-spacing: 0; text-transform: none; font-size
 .badge-low { background: var(--warn-soft); color: var(--warn); }
 .badge-out { background: var(--line-2); color: var(--ink-3); }
 
+/*
+ * The "Bundle" mark on a card — inline in the body, not an overlay: the two
+ * overlay corners are already spoken for (the sale flash / stock badge on
+ * the END corner, the favourite heart on the START one), and a bundle is not
+ * urgent the way a sale is, so it reads as a plain label above the name
+ * rather than competing with either for the photo's corners.
+ */
+.card-tag {
+  display: inline-block;
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  padding: 2px var(--sp-3);
+  border-radius: var(--radius-pill);
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  white-space: nowrap;
+  margin-block-end: var(--sp-2);
+}
+
 /* ------------------------------------------------------------ buttons ---- */
 /*
  * Three buttons and one rule for all of them: a pill, weight 600, and a 1px

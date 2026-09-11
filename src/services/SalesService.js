@@ -408,21 +408,48 @@ export class SalesService {
       let actualCost = 0;
       const trueLineCosts = [];
       for (const line of totals.lines) {
-        const level = await repositories.inventory.ensureLevel(line.variant_id, warehouseId);
-        const unitCost = Number(level.average_cost || line.unit_cost || 0);
-        // Sequential: each movement's balance_after builds on the previous one.
-        await this.inventory.postMovement({
-          variantId: line.variant_id,
-          warehouseId,
-          movementType: 'sale',
-          quantity: -Math.abs(line.quantity),
-          unitCost,
-          referenceType: 'sale',
-          referenceId: sale.id,
-          referenceNo: sale.invoice_no,
-          actorId: context.actor?.id || null,
-        });
-        actualCost = round2(actualCost + line.quantity * unitCost);
+        /*
+         * `expandLine` hands back the line unchanged, in an array of one, for
+         * every ordinary product — so this loop is byte-for-byte what it was
+         * before bundles existed on the path that every sale before this
+         * release already took. A bundle line expands into one entry per
+         * component, each posted as its own real movement against that
+         * component's own stock (never against the bundle's own variant,
+         * which carries no stock of its own — see InventoryService#expandLine)
+         * at THAT component's own moving-average cost, read fresh exactly as
+         * a plain line's always has been.
+         */
+        // eslint-disable-next-line no-await-in-loop -- components are few.
+        const expanded = await this.inventory.expandLine(line.variant_id, line.quantity);
+        let lineCost = 0;
+        for (const piece of expanded) {
+          // eslint-disable-next-line no-await-in-loop
+          const level = await repositories.inventory.ensureLevel(piece.variantId, warehouseId);
+          const pieceUnitCost = expanded.length === 1 && piece.variantId === line.variant_id
+            // The exact fallback this line has always used: a variant that
+            // has never carried stock falls back to what it was priced at.
+            ? Number(level.average_cost || line.unit_cost || 0)
+            : Number(level.average_cost || 0);
+          // Sequential: each movement's balance_after builds on the previous one.
+          // eslint-disable-next-line no-await-in-loop
+          await this.inventory.postMovement({
+            variantId: piece.variantId,
+            warehouseId,
+            movementType: 'sale',
+            quantity: -Math.abs(piece.quantity),
+            unitCost: pieceUnitCost,
+            referenceType: 'sale',
+            referenceId: sale.id,
+            referenceNo: sale.invoice_no,
+            actorId: context.actor?.id || null,
+          });
+          lineCost = round2(lineCost + piece.quantity * pieceUnitCost);
+        }
+        // The line's OWN cost basis — one bundle's worth of its components,
+        // summed — is what the line total below and `sale_lines.unit_cost`
+        // both need: one number per document line, whatever it expanded into.
+        const unitCost = line.quantity > 0 ? round2(lineCost / line.quantity) : 0;
+        actualCost = round2(actualCost + lineCost);
         trueLineCosts.push({ variantId: line.variant_id, unitCost });
       }
       await this.sales.setLineCosts(sale.id, trueLineCosts);
@@ -487,14 +514,29 @@ export class SalesService {
         throw new BusinessRuleError('This invoice has returns against it — reverse those first');
       }
 
-      for (const line of sale.lines) {
+      /*
+       * Reversed from the LEDGER, not from `sale.lines`.
+       *
+       * For a plain sale the two say the same thing: one 'sale' movement per
+       * line, at that line's own recorded cost. They stop agreeing the moment
+       * a bundle is involved — checkout() posts one real movement per
+       * COMPONENT, each at that component's own true cost, and `sale.lines`
+       * only ever sees the bundle's single blended line total. Replaying the
+       * ledger is what lets void() undo a bundle sale without having to
+       * re-derive a per-component split it was never handed in the first
+       * place — and it reverses a plain sale exactly as before, because that
+       * is what the ledger holds for one too.
+       */
+      const originalMovements = await this.inventory.movementsForReference('sale', sale.id);
+      for (const movement of originalMovements) {
+        if (movement.movement_type !== 'sale') continue;
         // Sequential: each movement's balance_after builds on the previous one.
         await this.inventory.postMovement({
-          variantId: line.variant_id,
+          variantId: movement.variant_id,
           warehouseId: sale.warehouse_id,
           movementType: 'sale_return',
-          quantity: Math.abs(line.quantity),
-          unitCost: line.unit_cost,
+          quantity: -Number(movement.quantity),
+          unitCost: movement.unit_cost,
           referenceType: 'sale_void',
           referenceId: sale.id,
           referenceNo: sale.invoice_no,

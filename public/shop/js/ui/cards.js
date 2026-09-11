@@ -217,6 +217,11 @@ export function productCard(card, { eager = false } = {}) {
         card.on_sale && el('div.card-sale', `−${card.discount_percent}%`),
         card.availability !== 'in_stock' && el('div.card-badge', availabilityBadge(card.availability))),
       el('div.card-body',
+        // A bundle carries no stock of its own — see StorefrontService's own
+        // doc comment on Deals and Bundles — so this is the one word that
+        // tells a shopper why "available" means several things at once
+        // rather than one product's own shelf.
+        card.is_bundle && el('span.card-tag', t('bundleBadge')),
         brand && el('span.card-brand', brand),
         el('h3.card-name', name),
         cardPrice(card))),

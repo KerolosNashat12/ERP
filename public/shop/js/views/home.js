@@ -323,13 +323,28 @@ export default async function homeView(root) {
 
   const {
     newest = [], featured = [], categories = [], brands = [],
-    featuredFromSales = false, stats = null,
+    featuredFromSales = false, stats = null, deals = null,
   } = data;
   shop.categories = categories;
   shop.brands = brands;
   fill(statsHost, statsStrip(stats));
 
   const sections = [];
+
+  /*
+   * Deals of the Day — the owner's own curated shelf, first on the page: see
+   * the ask this shipped from ("let me appear it as a section on the
+   * website... and can choose the specific products to add on it from my
+   * dashboard"). `deals` is `null` both when the section is switched off and
+   * when it is on but nothing has been curated yet (see `StorefrontService
+   * #deals`) — either way there is nothing honest to show, so the shelf is
+   * simply absent rather than printing a heading over an empty grid.
+   */
+  if (deals && deals.length) {
+    sections.push(el('section.section.section-band',
+      sectionHead(t('dealsOfTheDay'), t('dealsOfTheDayNote')),
+      productGrid(deals)));
+  }
 
   /*
    * A GRID, not a rail — and this is a decision that was made twice.

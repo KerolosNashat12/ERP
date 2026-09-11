@@ -237,6 +237,9 @@ const SETTING_ENUMS = {
   // the storefront reads it through the same tolerant test it uses for every
   // other on/off setting, so a hand-edited 'true' still works.
   'web.stats_enabled': ['0', '1'],
+  // Deals of the Day's own on/off switch — same '0'/'1' string convention,
+  // read by `StorefrontService#dealsEnabled()` through the same tolerant test.
+  'web.deals_enabled': ['0', '1'],
   'shop.delivery_mode': ['flat', 'percent'],
 };
 

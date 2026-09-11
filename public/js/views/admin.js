@@ -719,6 +719,22 @@ export async function settingsView(root, route) {
       disabled: !editable,
       options: [{ value: '0', label: t('no') }, { value: '1', label: t('yes') }],
     },
+    /*
+     * Deals of the Day's own switch — same pattern as the figures band right
+     * above: the section is curated per-product (see the product form's
+     * "Show in Deals of the Day" checkbox) and this is only whether the
+     * SECTION appears at all. Ships ON — see seedBaseline() — so a shop that
+     * has never touched this setting still sees a shelf the moment it
+     * curates its first deal.
+     */
+    {
+      name: 'web.deals_enabled',
+      label: t('dealsEnabled'),
+      type: 'select',
+      hint: t('dealsEnabledHint'),
+      disabled: !editable,
+      options: [{ value: '0', label: t('no') }, { value: '1', label: t('yes') }],
+    },
     {
       name: 'web.banner_overlay', label: t('bannerOverlay'), type: 'number', min: 0, max: 80,
       hint: t('bannerOverlayHint'), disabled: !editable,

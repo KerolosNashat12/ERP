@@ -106,9 +106,108 @@ export class InventoryService {
 
   /** A default parameter cannot await, so the location is resolved in the body. */
   async availableQuantity(variantId, warehouseId = null) {
-    const level = await this.inventory.getLevel(variantId, warehouseId || (await this.locationId()));
-    if (!level) return 0;
-    return round3(Number(level.quantity) - Number(level.reserved_quantity));
+    const location = warehouseId || (await this.locationId());
+    const components = await this.bundleComponents(variantId);
+    if (!components.length) {
+      const level = await this.inventory.getLevel(variantId, location);
+      if (!level) return 0;
+      return round3(Number(level.quantity) - Number(level.reserved_quantity));
+    }
+    /*
+     * A bundle never carries its own stock (see the doc comment on
+     * `bundle_items` in migrations/031-bundles-and-deals.js) — how many can
+     * still be SOLD is how many a kitchen could still plate tonight: the
+     * scarcest ingredient, divided down by how much of it one bundle needs,
+     * rounded DOWN because half an ingredient makes no whole bundle. A
+     * component is never itself a bundle (CatalogService refuses to save one
+     * that is), so this does not recurse.
+     */
+    let scarcest = Infinity;
+    for (const component of components) {
+      // eslint-disable-next-line no-await-in-loop -- components are few, and
+      // each answer depends on nothing the others could overlap with.
+      const free = await this.availableQuantity(component.variant_id, location);
+      scarcest = Math.min(scarcest, Math.floor(free / Number(component.quantity)));
+    }
+    return Number.isFinite(scarcest) ? Math.max(scarcest, 0) : 0;
+  }
+
+  // -------------------------------------------------------------- bundles
+
+  /**
+   * The recipe a bundle variant expands into, in the order it was built.
+   * Empty for a plain variant — every caller below treats "no components"
+   * as "this is not a bundle" rather than asking twice.
+   */
+  async bundleComponents(variantId) {
+    return this.inventory.db.prepare(`
+      SELECT component_variant_id AS variant_id, quantity
+      FROM bundle_items
+      WHERE bundle_variant_id = ?
+      ORDER BY display_order, id
+    `).all(variantId);
+  }
+
+  /**
+   * Turn ONE document line into the stock-bearing lines it actually moves.
+   *
+   * A plain variant IS the stock-bearing line — this hands it back unchanged,
+   * in an array of one, so every caller (`SalesService`, `ReturnService`,
+   * `WebOrderService`) can loop the result the same way whether or not a
+   * bundle was involved, instead of re-deriving "is this a bundle" for
+   * itself in four different places.
+   *
+   * A bundle's line becomes one entry per component, its quantity scaled by
+   * how many of that component ONE bundle needs. This is the one place that
+   * arithmetic happens — reservation, sale and return all call through here
+   * rather than each doing their own multiplication, which is what keeps a
+   * bundle auto-deducting from the SAME components everywhere it is sold.
+   */
+  async expandLine(variantId, quantity) {
+    const qty = round3(Number(quantity));
+    const components = await this.bundleComponents(variantId);
+    if (!components.length) return [{ variantId, quantity: qty }];
+    return components.map((component) => ({
+      variantId: component.variant_id,
+      quantity: round3(qty * Number(component.quantity)),
+    }));
+  }
+
+  /**
+   * Hold stock for one document line — a plain variant, or every component of
+   * a bundle line at once. `quantity` is the number of LINES (bundles, or
+   * plain units), never pre-multiplied by a recipe; that scaling happens once,
+   * inside `expandLine`.
+   */
+  async reserveLine(variantId, warehouseId, quantity) {
+    const expanded = await this.expandLine(variantId, quantity);
+    for (const line of expanded) {
+      // eslint-disable-next-line no-await-in-loop -- a reservation is not a
+      // ledger entry; nothing here depends on another line's balance.
+      await this.inventory.adjustReserved(line.variantId, warehouseId, line.quantity);
+    }
+    return expanded;
+  }
+
+  /** The mirror of `reserveLine` — gives back exactly what it held. */
+  async releaseLine(variantId, warehouseId, quantity) {
+    const expanded = await this.expandLine(variantId, quantity);
+    for (const line of expanded) {
+      // eslint-disable-next-line no-await-in-loop
+      await this.inventory.adjustReserved(line.variantId, warehouseId, -line.quantity);
+    }
+    return expanded;
+  }
+
+  /**
+   * Every ledger row posted under one document — what `SalesService#void` and
+   * `ReturnService#reverse` replay to undo a document EXACTLY, including a
+   * bundle line, which fans out into one movement per component at a cost per
+   * component the document's own line total never carried. See the doc
+   * comment on `InventoryRepository#movementsByReference`.
+   */
+  async movementsForReference(referenceType, referenceId) {
+    return this.inventory.movementsByReference(referenceType, referenceId);
   }
 
   async stockOnHand(query) {

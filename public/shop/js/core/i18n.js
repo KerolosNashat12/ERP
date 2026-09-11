@@ -68,6 +68,14 @@ const dictionary = {
     newArrivalsNote: 'The latest pieces to reach the shop',
     bestSellers: 'Best sellers',
     bestSellersNote: 'What our customers are buying most',
+    // --- deals of the day: the owner's own curated shelf — see the ask this
+    // shipped from ("let me appear it as a section on the website... and can
+    // choose the specific products to add on it"). Not date- or
+    // discount-driven — a piece is here because the shop put it here.
+    dealsOfTheDay: 'Deals of the day',
+    dealsOfTheDayNote: 'Hand-picked by the shop, today',
+    bundleBadge: 'Bundle',
+    bundleContentsTitle: "What's inside",
     viewAll: 'View all',
     itemsCount: (n) => `${n} ${n === 1 ? 'piece' : 'pieces'}`,
 
@@ -351,6 +359,10 @@ const dictionary = {
     newArrivalsNote: 'أحدث القطع اللي نزلت المحل',
     bestSellers: 'الأكثر مبيعًا',
     bestSellersNote: 'اللي عملاؤنا بيشتروه أكتر',
+    dealsOfTheDay: 'عروض اليوم',
+    dealsOfTheDayNote: 'مختارة بعناية من المحل، النهاردة',
+    bundleBadge: 'باقة',
+    bundleContentsTitle: 'محتويات الباقة',
     viewAll: 'اعرض الكل',
     itemsCount: (n) => (n === 1 ? 'قطعة واحدة' : n === 2 ? 'قطعتان' : n <= 10 ? `${n} قطع` : `${n} قطعة`),
 

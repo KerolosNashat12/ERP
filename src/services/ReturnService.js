@@ -266,37 +266,66 @@ export class ReturnService {
       let restocked = 0;
       let writtenOff = 0;
       for (const line of lines) {
-        // The goods physically come back either way — always receive them first,
-        // so the ledger tells the true story. Sequential: the write-off below
-        // needs the balance this movement leaves behind.
-        await this.inventory.postMovement({
-          variantId: line.variant_id,
-          warehouseId: record.warehouse_id,
-          movementType: 'sale_return',
-          quantity: Math.abs(line.quantity),
-          unitCost: line.unit_cost,
-          referenceType: 'sales_return',
-          referenceId: record.id,
-          referenceNo: record.return_no,
-          notes: `Returned — ${reasonCode}`,
-          actorId: context.actor?.id || null,
-        });
+        /*
+         * `expandLine` hands the line back unchanged, in an array of one, for
+         * every ordinary product — so a plain return posts exactly the two
+         * movements (receive, then maybe scrap) it always has. A bundle line
+         * expands into one pair of movements PER COMPONENT, each costed at
+         * what THAT component actually cost the shop on the original sale —
+         * never the bundle's single blended line total, which is not any one
+         * component's real cost. See #componentCost below.
+         */
+        // eslint-disable-next-line no-await-in-loop
+        const expanded = await this.inventory.expandLine(line.variant_id, line.quantity);
+        for (const piece of expanded) {
+          const solo = expanded.length === 1 && piece.variantId === line.variant_id;
+          // eslint-disable-next-line no-await-in-loop
+          const pieceUnitCost = solo
+            // The exact prior behaviour for a plain line: unchanged.
+            ? line.unit_cost
+            : await this.#componentCost(sale, piece.variantId);
 
-        if (line.condition === 'damaged') {
-          // ...then immediately scrap it, which is what makes the loss visible.
+          // The goods physically come back either way — always receive them
+          // first, so the ledger tells the true story. Sequential: the
+          // write-off below needs the balance this movement leaves behind.
+          // eslint-disable-next-line no-await-in-loop
           await this.inventory.postMovement({
-            variantId: line.variant_id,
+            variantId: piece.variantId,
             warehouseId: record.warehouse_id,
-            movementType: 'write_off',
-            quantity: -Math.abs(line.quantity),
-            unitCost: line.unit_cost,
+            movementType: 'sale_return',
+            quantity: Math.abs(piece.quantity),
+            unitCost: pieceUnitCost,
             referenceType: 'sales_return',
             referenceId: record.id,
             referenceNo: record.return_no,
-            notes: 'Returned damaged — not resellable',
+            notes: `Returned — ${reasonCode}`,
             actorId: context.actor?.id || null,
-            allowNegative: true,
           });
+
+          if (line.condition === 'damaged') {
+            // ...then immediately scrap it, which is what makes the loss visible.
+            // eslint-disable-next-line no-await-in-loop
+            await this.inventory.postMovement({
+              variantId: piece.variantId,
+              warehouseId: record.warehouse_id,
+              movementType: 'write_off',
+              quantity: -Math.abs(piece.quantity),
+              unitCost: pieceUnitCost,
+              referenceType: 'sales_return',
+              referenceId: record.id,
+              referenceNo: record.return_no,
+              notes: 'Returned damaged — not resellable',
+              actorId: context.actor?.id || null,
+              allowNegative: true,
+            });
+          }
+        }
+
+        // Counted at the DOCUMENT line's own quantity — bundles, or plain
+        // units, whichever this line was — never at the expanded component
+        // count, which is an inventory detail the return summary is not
+        // about.
+        if (line.condition === 'damaged') {
           writtenOff = round3(writtenOff + line.quantity);
         } else {
           restocked = round3(restocked + line.quantity);
@@ -474,6 +503,41 @@ export class ReturnService {
     return { sale: null, lines };
   }
 
+  /**
+   * What ONE unit of a bundle's component actually cost the shop, the moment
+   * it left the shelf on the sale this return is against.
+   *
+   * Traced from the ledger rather than the sale line, for the same reason
+   * `SalesService#void` reads the ledger instead of `sale.lines`: the sale
+   * line for a bundle carries one blended cost for the whole bundle, and no
+   * single component's true cost is recoverable from that one number. The
+   * movement checkout() posted for this exact component, under this exact
+   * sale, still is — weighted across however many such movements exist (a
+   * component bought both loose and inside this bundle in the same sale
+   * posts more than one), because that is the true average cost of what left
+   * the shelf for it.
+   *
+   * No receipt to trace against (`sale` is null) means no history — the
+   * shop's current shelf cost for that component is the only honest number
+   * left, exactly like the no-receipt fallback for a plain item above.
+   */
+  async #componentCost(sale, componentVariantId) {
+    if (!sale) {
+      const component = await this.variants.details(componentVariantId);
+      return Number(component?.cost_price || 0);
+    }
+    const movements = await this.inventory.movementsForReference('sale', sale.id);
+    const matches = movements.filter(
+      (m) => m.movement_type === 'sale' && m.variant_id === componentVariantId,
+    );
+    if (!matches.length) return 0;
+    const totalQty = matches.reduce((sum, m) => sum + Math.abs(Number(m.quantity)), 0);
+    const totalCost = matches.reduce(
+      (sum, m) => sum + Math.abs(Number(m.quantity)) * Number(m.unit_cost), 0,
+    );
+    return totalQty > 0 ? round2(totalCost / totalQty) : 0;
+  }
+
   /** Store credit is a single-use voucher the customer spends at the till. */
   async #issueStoreCredit(amount, returnNo, policy, context) {
     if (!(amount > 0)) return null;
@@ -542,52 +606,62 @@ export class ReturnService {
       let unRestocked = 0;
       let unWrittenOff = 0;
 
-      for (const line of lines) {
-        const quantity = Math.abs(Number(line.quantity || 0));
-        if (!quantity) continue;
+      /*
+       * The STOCK side is undone from the LEDGER, in the REVERSE of the order
+       * create() posted it — not by re-deriving anything from `record.lines`.
+       *
+       * Two reasons, one for each direction:
+       *
+       *  · A bundle line's stock never lived on `record.lines` in the first
+       *    place — create() fanned it out into one movement PER COMPONENT, at
+       *    that component's own true cost. Replaying those exact rows is what
+       *    undoes a bundle return correctly; `record.lines` only ever has the
+       *    bundle's single blended line, same limitation `void()` has for a
+       *    sale.
+       *
+       *  · The ORDER matters for a damaged line even without a bundle in
+       *    sight: create() posts (receive, then scrap) per piece, and undoing
+       *    that has to happen scrap-first, receive-second — "put the scrap
+       *    back before taking it back off the shelf" — or the second movement
+       *    can hit a negative balance. Undoing in REVERSE CHRONOLOGICAL order
+       *    (last movement first) gets every piece's pair in that order for
+       *    free, for exactly the same reason undoing a stack means popping it.
+       */
+      const REVERSAL_TYPE = { sale_return: 'sale', write_off: 'adjustment' };
+      const originalMovements = await this.inventory.movementsForReference('sales_return', record.id);
+      for (const movement of [...originalMovements].reverse()) {
+        const reversalType = REVERSAL_TYPE[movement.movement_type];
+        if (!reversalType) continue; // defensive: nothing else is ever posted under this reference
 
-        if (line.condition === 'damaged') {
-          /*
-           * It was received and then scrapped. Put the scrap back first so the
-           * shelf can carry the piece the outbound movement is about to take —
-           * without this the second movement can hit a negative balance and be
-           * refused, and the ledger would be left half-undone.
-           */
-          // eslint-disable-next-line no-await-in-loop
-          await this.inventory.postMovement({
-            variantId: line.variant_id,
-            warehouseId: record.warehouse_id,
-            movementType: 'adjustment',
-            quantity,
-            unitCost: line.unit_cost,
-            referenceType: 'sales_return_reversal',
-            referenceId: record.id,
-            referenceNo: record.return_no,
-            notes: reason || 'Return reversed — write-off undone',
-            actorId: context.actor?.id || null,
-            allowNegative: true,
-          });
-          unWrittenOff += quantity;
-        } else {
-          unRestocked += quantity;
-        }
-
-        // And out again: the piece is back with the customer, wherever it is.
-        // eslint-disable-next-line no-await-in-loop
+        // eslint-disable-next-line no-await-in-loop -- each undo depends on
+        // the balance the previous undo left, same as create() did forwards.
         await this.inventory.postMovement({
-          variantId: line.variant_id,
+          variantId: movement.variant_id,
           warehouseId: record.warehouse_id,
-          movementType: 'sale',
-          quantity: -quantity,
-          unitCost: line.unit_cost,
+          movementType: reversalType,
+          quantity: -Number(movement.quantity),
+          unitCost: movement.unit_cost,
           referenceType: 'sales_return_reversal',
           referenceId: record.id,
           referenceNo: record.return_no,
-          notes: reason || 'Return reversed',
+          notes: reason || (movement.movement_type === 'write_off'
+            ? 'Return reversed — write-off undone'
+            : 'Return reversed'),
           actorId: context.actor?.id || null,
           allowNegative: true,
         });
+      }
 
+      // The DOCUMENT side — `returned_quantity` on the original sale line, and
+      // the restocked/written-off counts reported below — stays keyed to the
+      // return's own lines, at their own (bundle-level, or plain) quantity:
+      // these count bundles sold and returned, not the components underneath
+      // one, exactly mirroring how create() counted them going in.
+      for (const line of lines) {
+        const quantity = Math.abs(Number(line.quantity || 0));
+        if (!quantity) continue;
+        if (line.condition === 'damaged') unWrittenOff = round3(unWrittenOff + quantity);
+        else unRestocked = round3(unRestocked + quantity);
         // eslint-disable-next-line no-await-in-loop
         if (line.sale_line_id) await this.sales.incrementReturnedQty(line.sale_line_id, -quantity);
       }

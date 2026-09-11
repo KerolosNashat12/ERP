@@ -12,6 +12,7 @@ import { navigate } from '../core/router.js';
 import { productDetailsView } from './productDetails.js';
 import { confirmDelete } from './trash.js';
 import { attachSuggest } from '../core/suggest.js';
+import { variantPicker } from './pickers.js';
 // The filename → code rule, imported rather than reimplemented: the server
 // matches with the same module, so what this screen ticks is what gets filed.
 import { codeFromFilename, sequenceOf } from '../../shared/photoFilename.js';
@@ -50,7 +51,7 @@ export async function productsView(root, route) {
 
   const state = {
     search: route.query.search || '', brandId: '', categoryId: '', supplierId: '',
-    isActive: '', gender: '', onOffer: '', page: 1, pageSize: 25,
+    isActive: '', gender: '', onOffer: '', isBundle: '', isDealOfDay: '', page: 1, pageSize: 25,
   };
 
   /*
@@ -156,6 +157,18 @@ export async function productsView(root, route) {
         onClick: toggle('onOffer', '1'),
         active: state.onOffer === '1',
       },
+      {
+        label: t('bundles'),
+        value: number(counts.bundles || 0),
+        onClick: toggle('isBundle', '1'),
+        active: state.isBundle === '1',
+      },
+      {
+        label: t('isDealOfDay'),
+        value: number(counts.deals || 0),
+        onClick: toggle('isDealOfDay', '1'),
+        active: state.isDealOfDay === '1',
+      },
       { label: t('publishedOnSite'), value: number(counts.published), sub: share(counts.published) },
       { label: t('outOfStockProducts'), value: number(counts.out_of_stock) },
       {
@@ -221,7 +234,10 @@ export async function productsView(root, route) {
           key: 'name',
           label: t('product'),
           render: (r) => h('div', {},
-            h('div', { class: 'strong' }, pick(r, 'name')),
+            h('div', { class: 'row', style: { gap: '6px', alignItems: 'center' } },
+              h('span', { class: 'strong' }, pick(r, 'name')),
+              r.is_bundle ? tag(t('isBundle'), 'gold') : null,
+              r.is_deal_of_day ? tag(t('isDealOfDay'), 'info') : null),
             h('small', { class: 'muted' }, [pick(r, 'brand_name'), pick(r, 'category_name')].filter(Boolean).join(' · ') || '—')),
         },
         { key: 'variant_count', label: t('variants'), type: 'number', render: (r) => tag(`${r.variant_count}`, 'info') },
@@ -353,6 +369,7 @@ export async function productsView(root, route) {
       { value: 'brand_id', label: t('brand') },
       { value: 'category_id', label: t('category') },
       { value: 'supplier_id', label: t('supplier') },
+      { value: 'is_deal_of_day', label: t('isDealOfDay') },
     ];
     const valuesFor = (name) => {
       if (name === 'gender') {
@@ -361,6 +378,9 @@ export async function productsView(root, route) {
           { value: 'men', label: t('genderMen') },
           { value: 'unisex', label: t('genderUnisex') },
         ];
+      }
+      if (name === 'is_deal_of_day') {
+        return [{ value: '1', label: t('yes') }, { value: '0', label: t('no') }];
       }
       const rows = name === 'brand_id' ? brands : name === 'category_id' ? categories : suppliers;
       // "None" is a real answer: clearing a supplier off a batch is a change
@@ -425,7 +445,9 @@ export async function productsView(root, route) {
                 changes: {
                   [chosenField]: chosenField === 'gender'
                     ? value
-                    : (value === '' ? null : Number(value)),
+                    : chosenField === 'is_deal_of_day'
+                      ? Boolean(Number(value))
+                      : (value === '' ? null : Number(value)),
                 },
               });
               toast(t('bulkApplied')
@@ -581,10 +603,40 @@ async function productFormView(root, route) {
     { name: 'description_en', label: t('description'), type: 'textarea', span: 2 },
     { name: 'is_active', label: t('active'), type: 'checkbox', value: 1 },
     { name: 'track_inventory', label: t('trackInventory'), type: 'checkbox', value: 1 },
+    /*
+     * Bundles — "more than one product, sold as one line, under a new SKU".
+     *
+     * Turning this on hides the fields a bundle does not use (category —
+     * forced to the shop's one Bundles category so the website's existing
+     * category filter is what browses them; stock tracking — a bundle's
+     * availability IS its components', never a count of its own) and swaps
+     * the variant matrix below for the bundle contents picker. `applyBundleMode()`,
+     * wired up right after this form is built, is what actually does the
+     * swapping.
+     */
+    { name: 'is_bundle', label: t('isBundle'), type: 'checkbox', hint: t('isBundleHint') },
+    {
+      name: 'bundle_price_mode',
+      label: t('bundlePriceMode'),
+      type: 'select',
+      hint: t('bundlePriceModeHint'),
+      options: [
+        { value: 'fixed', label: t('bundlePriceFixed') },
+        { value: 'sum', label: t('bundlePriceSum') },
+      ],
+    },
     // Hidden until somebody deliberately publishes. Placed with the web copy so
     // it reads as one decision: "this is what the shop shows, and here is what
     // it says".
     { name: 'is_published', label: t('showOnWebsite'), type: 'checkbox', hint: t('showOnWebsiteHint') },
+    /*
+     * The owner's own curated shelf on the front page — see the ask this
+     * shipped from: "let me appear it as a section on the website ... and can
+     * choose the specific products to add on it from my dashboard". A plain
+     * flag, independent of the offer fields below: a piece can be a deal
+     * without being discounted, and discounted without being a deal.
+     */
+    { name: 'is_deal_of_day', label: t('isDealOfDay'), type: 'checkbox', hint: t('isDealOfDayHint') },
     { name: 'web_description_en', label: t('webDescriptionEn'), type: 'textarea', span: 2, hint: t('webDescriptionHint') },
     { name: 'web_description_ar', label: t('webDescriptionAr'), type: 'textarea', span: 3 },
 
@@ -622,6 +674,7 @@ async function productFormView(root, route) {
   ], existing || {
     is_active: 1, track_inventory: 1, unit: 'piece', tax_rate: 14, base_cost: 0, base_price: 0,
     gender: 'unisex', discount_type: 'none', discount_value: 0,
+    is_bundle: 0, bundle_price_mode: 'fixed', is_deal_of_day: 0,
   }, { columns: 3 });
 
   /*
@@ -638,7 +691,12 @@ async function productFormView(root, route) {
     const values = header.values();
     const type = values.discount_type || 'none';
     const rate = Number(values.discount_value || 0);
-    const list = Number(variants[0]?.selling_price || values.base_price || 0);
+    // A bundle is always priced by `base_price` — its own variant's stored
+    // price can lag behind edits made to the recipe this session, in a way a
+    // simple product's never does. See refreshBundlePricePreview().
+    const list = Number(values.is_bundle
+      ? values.base_price
+      : (variants[0]?.selling_price || values.base_price) || 0);
     if (type === 'none' || !(rate > 0) || !(list > 0)) {
       mount(offerPreview, h('span', { class: 'muted small' }, t('offerNoneNote')));
       return;
@@ -661,6 +719,184 @@ async function productFormView(root, route) {
     entry.input.addEventListener('change', refreshOfferPreview);
   }
   refreshOfferPreview();
+
+  // -------------------------------------------------------------- bundles
+  /*
+   * A bundle's recipe: which other variants it expands into, and how many of
+   * each. Loaded from `existing.variants[0].bundle_components` — the one
+   * variant `#syncVariants` generates for a bundle, the same way it generates
+   * one for any simple product — via `ProductRepository#findAggregate`.
+   */
+  let bundleComponents = (existing?.is_bundle
+    ? (existing.variants?.[0]?.bundle_components || [])
+    : []).map((c) => ({
+    component_variant_id: c.component_variant_id,
+    quantity: Number(c.quantity) || 1,
+    sku: c.sku,
+    name_en: c.name_en,
+    name_ar: c.name_ar,
+    selling_price: Number(c.selling_price) || 0,
+  }));
+  // The bundle's own variant id, if it has been saved before — so it cannot
+  // be added to its own recipe. A brand new bundle has none yet, and the
+  // server catches self-reference anyway; this is only the friendlier error.
+  const bundleOwnVariantId = existing?.is_bundle ? (existing.variants?.[0]?.id || null) : null;
+  const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
+
+  const bundleComponentsHost = h('div');
+
+  function renderBundleComponents() {
+    if (!bundleComponents.length) {
+      mount(bundleComponentsHost, h('div', { class: 'empty' }, t('bundleNoComponentsYet')));
+      return;
+    }
+    mount(bundleComponentsHost, dataTable({
+      columns: [
+        {
+          key: 'product',
+          label: t('product'),
+          render: (c) => h('div', {},
+            h('div', {}, pick(c, 'name')),
+            h('small', { class: 'muted mono' }, c.sku)),
+        },
+        {
+          key: 'quantity',
+          label: t('quantity'),
+          align: 'end',
+          render: (c) => numberInput({
+            value: c.quantity, step: '0.01', min: '0.01', style: { width: '90px' },
+            oninput: (e) => {
+              c.quantity = e.target.value === '' ? 0 : Number(e.target.value);
+              refreshBundlePricePreview();
+            },
+          }),
+        },
+        { key: 'selling_price', label: t('sellingPrice'), align: 'end', render: (c) => money(c.selling_price) },
+        {
+          key: 'subtotal',
+          label: t('subtotal'),
+          align: 'end',
+          render: (c) => money(round2(Number(c.selling_price || 0) * Number(c.quantity || 0))),
+        },
+        {
+          key: '__a',
+          label: '',
+          render: (c, index) => h('button', {
+            class: 'btn sm ghost',
+            type: 'button',
+            title: t('removeVariant'),
+            onclick: () => {
+              bundleComponents.splice(index, 1);
+              renderBundleComponents();
+              refreshBundlePricePreview();
+            },
+          }, '✕'),
+        },
+      ],
+      rows: bundleComponents,
+    }));
+  }
+
+  const bundlePicker = variantPicker({
+    placeholder: t('bundleAddComponentPrompt'),
+    onPick: (variant) => {
+      const variantId = variant.variant_id;
+      if (!variantId) return;
+      if (bundleOwnVariantId && variantId === bundleOwnVariantId) {
+        toast(t('bundleCannotContainItself'), 'warn');
+        return;
+      }
+      const found = bundleComponents.find((c) => c.component_variant_id === variantId);
+      if (found) {
+        found.quantity = round2(Number(found.quantity) + 1);
+      } else {
+        bundleComponents.push({
+          component_variant_id: variantId,
+          quantity: 1,
+          sku: variant.sku,
+          name_en: variant.product_name_en,
+          name_ar: variant.product_name_ar,
+          selling_price: Number(variant.selling_price) || 0,
+        });
+      }
+      renderBundleComponents();
+      refreshBundlePricePreview();
+    },
+  });
+
+  const bundleCard = h('div', { class: 'card', style: { marginTop: '14px' }, hidden: true },
+    h('div', { class: 'card-head' },
+      h('h3', {}, t('bundleContents')),
+      h('span', { class: 'spacer' }),
+      h('span', { class: 'muted small' }, t('bundleContentsHint'))),
+    h('div', { class: 'card-body' }, bundlePicker.node, bundleComponentsHost));
+
+  const bundleModeNote = h('div', { class: 'muted small', hidden: true }, t('bundleModeNote'));
+
+  /**
+   * `base_price`, when the owner asked for it to be CALCULATED rather than
+   * typed: shown, disabled, and kept in step with the recipe as it changes —
+   * so what the form displays is always what saving it will actually charge,
+   * never a stale number from before the last row was added or removed.
+   */
+  function refreshBundlePricePreview() {
+    const modeEntry = header.inputs.get('bundle_price_mode');
+    const priceEntry = header.inputs.get('base_price');
+    const bundleEntry = header.inputs.get('is_bundle');
+    if (!modeEntry || !priceEntry || !bundleEntry) return;
+    const isBundle = bundleEntry.input.querySelector('input').checked;
+    const sumMode = isBundle && modeEntry.input.value === 'sum';
+    priceEntry.input.disabled = sumMode;
+    if (sumMode) {
+      const sum = round2(bundleComponents.reduce(
+        (total, c) => total + Number(c.selling_price || 0) * Number(c.quantity || 0), 0,
+      ));
+      priceEntry.input.value = sum;
+      refreshOfferPreview();
+    }
+  }
+
+  const show = (name, on) => {
+    const entry = header.inputs.get(name);
+    if (entry) entry.holder.hidden = !on;
+  };
+
+  /**
+   * Everything that changes when "this is a bundle" is switched on or off:
+   * the fields a bundle does not use (category — forced; stock tracking —
+   * never independent) drop out, the variant matrix — attributes, sizes,
+   * colours — gives way to the bundle's own recipe editor, and the price
+   * preview picks up whichever mode is chosen.
+   */
+  function applyBundleMode() {
+    const isBundle = header.inputs.get('is_bundle').input.querySelector('input').checked;
+    if (isBundle) {
+      /*
+       * A bundle is sold as one line under one new SKU — never a matrix of
+       * sizes and colours. Collapse down to the single variant CatalogService
+       * expects; anything left over from the attribute matrix would
+       * otherwise persist invisibly and re-appear the moment the checkbox is
+       * switched off again. `#syncVariants` on the server already
+       * deactivates whatever variant this leaves out — the same thing that
+       * happens whenever a row is removed from the matrix by hand.
+       */
+      selectedAttributeIds.clear();
+      if (variants.length > 1) variants = variants.slice(0, 1);
+      for (const v of variants) v.options = [];
+      renderAttributePicker();
+      renderMatrix();
+    }
+    show('bundle_price_mode', isBundle);
+    show('category_id', !isBundle);
+    show('track_inventory', !isBundle);
+    bundleModeNote.hidden = !isBundle;
+    variantsCard.hidden = isBundle;
+    bundleCard.hidden = !isBundle;
+    refreshBundlePricePreview();
+  }
+  header.inputs.get('is_bundle').input.querySelector('input')
+    .addEventListener('change', applyBundleMode);
+  header.inputs.get('bundle_price_mode').input.addEventListener('change', refreshBundlePricePreview);
 
   // ------------------------------------------------------------- scanning
   // On this screen a scan is not a lookup: it fills whichever code box the
@@ -695,6 +931,18 @@ async function productFormView(root, route) {
 
   const attributePicker = h('div', { class: 'attr-picker' });
   const matrixHost = h('div');
+  // Hidden instead of omitted while a bundle is on — see applyBundleMode() —
+  // so switching the checkbox back off hands the matrix back exactly as it
+  // was, sizes, colours and all.
+  const variantsCard = h('div', { class: 'card', style: { marginTop: '14px' } },
+    h('div', { class: 'card-head' },
+      h('h3', {}, t('variantMatrix')),
+      h('span', { class: 'spacer' }),
+      h('span', { class: 'muted small' }, t('productAttributes'))),
+    h('div', { class: 'card-body' },
+      attributePicker,
+      h('div', { class: 'muted small', style: { marginTop: '8px' } }, t('noAttributesNeeded'))),
+    matrixHost);
 
   function renderAttributePicker() {
     mount(attributePicker, ...attributes.map((attribute) => h('button', {
@@ -820,10 +1068,24 @@ async function productFormView(root, route) {
   async function save() {
     if (!header.validate()) return;
     const values = header.values();
+    const isBundle = Boolean(values.is_bundle);
+    if (isBundle && bundleComponents.length < 2) {
+      toast(t('bundleNeedsTwoComponents'), 'warn');
+      return;
+    }
     const payload = {
       ...values,
       is_active: Boolean(values.is_active),
       track_inventory: Boolean(values.track_inventory),
+      is_bundle: isBundle,
+      is_deal_of_day: Boolean(values.is_deal_of_day),
+      bundle_price_mode: values.bundle_price_mode === 'sum' ? 'sum' : 'fixed',
+      bundle_components: isBundle
+        ? bundleComponents.map((c) => ({
+          component_variant_id: c.component_variant_id,
+          quantity: Number(c.quantity) || 0,
+        }))
+        : [],
       attribute_ids: [...selectedAttributeIds],
       variants: variants.map((v) => ({
         id: v.id || undefined,
@@ -868,17 +1130,10 @@ async function productFormView(root, route) {
 
     h('div', { class: 'card' },
       h('div', { class: 'card-head' }, h('h3', {}, t('details'))),
-      h('div', { class: 'card-body' }, header.node, offerPreview)),
+      h('div', { class: 'card-body' }, header.node, bundleModeNote, offerPreview)),
 
-    h('div', { class: 'card', style: { marginTop: '14px' } },
-      h('div', { class: 'card-head' },
-        h('h3', {}, t('variantMatrix')),
-        h('span', { class: 'spacer' }),
-        h('span', { class: 'muted small' }, t('productAttributes'))),
-      h('div', { class: 'card-body' },
-        attributePicker,
-        h('div', { class: 'muted small', style: { marginTop: '8px' } }, t('noAttributesNeeded'))),
-      matrixHost),
+    variantsCard,
+    bundleCard,
 
     // Below the matrix, because a photo can be pinned to one of its variants.
     // Saved variants only: an unsaved row has no id to attach anything to.
@@ -886,6 +1141,8 @@ async function productFormView(root, route) {
 
   renderAttributePicker();
   renderMatrix();
+  renderBundleComponents();
+  applyBundleMode();
   // A leaked subscription would swallow scans on every other screen.
   return () => unsubscribeScan();
 }

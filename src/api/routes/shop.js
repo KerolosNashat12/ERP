@@ -111,6 +111,7 @@ router.get('/products', asyncHandler(async (req, res) => {
     maxPrice: req.query.maxPrice,
     attr: req.query.attr,
     inStock: req.query.inStock,
+    dealOfDay: req.query.dealOfDay ?? req.query.deal,
   }));
 }));
 

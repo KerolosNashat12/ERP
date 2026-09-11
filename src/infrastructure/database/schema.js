@@ -250,6 +250,20 @@ CREATE TABLE IF NOT EXISTS products (
   -- everybody, where a wrong guess would hide it from half the shop.
   gender          TEXT    NOT NULL DEFAULT 'unisex'
                   CHECK (gender IN ('women','men','unisex')),
+  -- A bundle sells several products as one line, under one new SKU, on its
+  -- own generated variant (see #defaultVariant in CatalogService.js) -- what
+  -- it is MADE OF lives in bundle_items below, keyed by variant because
+  -- everything sold, reserved or shipped already is. bundle_price_mode
+  -- says where the variant's own selling_price came from: typed by hand
+  -- ('fixed') or the sum of every component's price, recomputed at save
+  -- time whenever a component is added, removed or repriced ('sum').
+  is_bundle          INTEGER NOT NULL DEFAULT 0,
+  bundle_price_mode  TEXT    NOT NULL DEFAULT 'fixed' CHECK (bundle_price_mode IN ('fixed','sum')),
+  -- Owner-curated placement on the storefront's "Deals of the day" shelf.
+  -- Deliberately its own column and not a reading of the offer columns
+  -- above: a piece can be discounted without being featured there, and
+  -- featured there without being discounted at all.
+  is_deal_of_day     INTEGER NOT NULL DEFAULT 0,
   -- An offer on this product. While one runs, its price IS the product's
   -- price -- on the website, in an online order and at the till -- and the
   -- arithmetic lives in exactly one place: shared/pricing.js. Per product and
@@ -326,6 +340,31 @@ CREATE TABLE IF NOT EXISTS variant_attribute_values (
   PRIMARY KEY (variant_id, attribute_id)
 );
 CREATE INDEX IF NOT EXISTS idx_vav_value ON variant_attribute_values(attribute_value_id);
+
+-- A bundle's recipe: what it expands into everywhere stock actually moves --
+-- a counter sale, a return, a web order's reservation. Keyed by VARIANT, not
+-- product, because that is what every one of those documents already keys on,
+-- and because a bundle's own generated variant is what carries the new SKU.
+--
+-- No FK on bundle_variant_id pointing back at "a product with is_bundle=1"
+-- -- SQLite cannot express that constraint -- so CatalogService is the one
+-- place a bundle_items row is written, and it is the one place that checks a
+-- component is not itself a bundle (no nesting) and is not the bundle's own
+-- variant (no self-reference). ON DELETE RESTRICT on the component side: a
+-- variant that is part of a live bundle recipe cannot be hard-deleted out
+-- from under it -- CatalogService#remove already soft-deactivates anything
+-- referenced elsewhere, and this is one more place that counts as reference
+-- (see ProductRepository#isReferenced).
+CREATE TABLE IF NOT EXISTS bundle_items (
+  id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+  bundle_variant_id    INTEGER NOT NULL REFERENCES product_variants(id) ON DELETE CASCADE,
+  component_variant_id INTEGER NOT NULL REFERENCES product_variants(id) ON DELETE RESTRICT,
+  quantity             REAL    NOT NULL DEFAULT 1 CHECK (quantity > 0),
+  display_order        INTEGER NOT NULL DEFAULT 0,
+  UNIQUE (bundle_variant_id, component_variant_id)
+);
+CREATE INDEX IF NOT EXISTS idx_bundle_items_bundle    ON bundle_items(bundle_variant_id);
+CREATE INDEX IF NOT EXISTS idx_bundle_items_component ON bundle_items(component_variant_id);
 
 -- =============================================================================
 --  4. INVENTORY — BALANCES, LEDGER, TRANSFERS, ADJUSTMENTS

@@ -66,6 +66,30 @@ const dictionary = {
     noAttributesNeeded: 'Attributes are optional — leave them empty for a simple product with one code.',
     singleVariantNote: 'No attributes selected, so this product will have one code.',
 
+    // --- bundles and deals of the day
+    isBundle: 'This is a bundle',
+    isBundleHint: 'Two or more products sold together as one item, under one new SKU. '
+      + 'Stock is never tracked on the bundle itself — selling one takes stock from each product inside it.',
+    bundlePriceMode: 'Bundle price',
+    bundlePriceModeHint: 'Type a price, or let it be the total of everything inside the bundle.',
+    bundlePriceFixed: 'Fixed — type it below',
+    bundlePriceSum: 'Calculated — sum of the products inside',
+    bundleModeNote: 'This is a bundle: it is filed under "Bundles" automatically, and it always '
+      + 'tracks stock through what is inside it — see below to choose what that is.',
+    bundleContents: 'What\'s inside the bundle',
+    bundleContentsHint: 'At least two products. Selling the bundle takes this many of each from stock.',
+    bundleAddComponentPrompt: 'Scan or search for a product to add',
+    bundleNoComponentsYet: 'Nothing added yet — search above for the first product',
+    bundleCannotContainItself: 'A bundle cannot contain itself',
+    bundleNeedsTwoComponents: 'Add at least two products to this bundle before saving',
+    bundles: 'Bundles',
+    isDealOfDay: 'Show in Deals of the Day',
+    isDealOfDayHint: 'Featured in the Deals of the Day section on the website — switch the whole '
+      + 'section on or off from Settings → Website.',
+    dealsEnabled: 'Deals of the Day section',
+    dealsEnabledHint: 'A shelf on the home page for whichever products you tick "Show in Deals of '
+      + 'the Day" on their product page. Off hides the section even if products are chosen for it.',
+
     // navigation
     navOperations: 'Operations', navCatalogue: 'Catalogue', navPurchasing: 'Purchasing',
     navMoney: 'Costs & Payroll', navInsight: 'Insight', navSystem: 'System',
@@ -1106,6 +1130,29 @@ const dictionary = {
     scannedIntoField: 'تم إدخال الكود الممسوح',
     noAttributesNeeded: 'الخصائص اختيارية — اتركها فارغة لمنتج بسيط بكود واحد.',
     singleVariantNote: 'لم تُختر أي خصائص، لذا سيكون للمنتج كود واحد.',
+
+    // --- الباقات وعروض اليوم
+    isBundle: 'هذه باقة',
+    isBundleHint: 'منتجين أو أكتر بيتباعوا مع بعض كصنف واحد، بكود جديد. المخزون بتاع الباقة نفسها '
+      + 'مبيتحسبش — بيعها بيسحب من مخزون كل منتج جواها.',
+    bundlePriceMode: 'سعر الباقة',
+    bundlePriceModeHint: 'اكتب سعر، أو خليه يتحسب تلقائي من مجموع أسعار المنتجات اللي جوا الباقة.',
+    bundlePriceFixed: 'سعر ثابت — اكتبه تحت',
+    bundlePriceSum: 'محسوب — مجموع المنتجات اللي جوا',
+    bundleModeNote: 'دي باقة: بتتصنف تلقائي تحت "باقات"، ومخزونها دايمًا بيتحسب من اللي جواها — '
+      + 'اختار اللي جواها تحت.',
+    bundleContents: 'محتويات الباقة',
+    bundleContentsHint: 'منتجين على الأقل. بيع الباقة بيسحب العدد ده من كل منتج من المخزون.',
+    bundleAddComponentPrompt: 'امسح أو دوّر على منتج تضيفه',
+    bundleNoComponentsYet: 'لسه معملتش إضافة — دوّر فوق على أول منتج',
+    bundleCannotContainItself: 'الباقة مينفعش تحتوي على نفسها',
+    bundleNeedsTwoComponents: 'ضيف منتجين على الأقل للباقة قبل الحفظ',
+    bundles: 'الباقات',
+    isDealOfDay: 'إظهار في عروض اليوم',
+    isDealOfDayHint: 'بيظهر في قسم عروض اليوم بالموقع — شغّل أو قفل القسم كله من الإعدادات ← الموقع.',
+    dealsEnabled: 'قسم عروض اليوم',
+    dealsEnabledHint: 'رف في الصفحة الرئيسية للمنتجات اللي علّمت عليها "إظهار في عروض اليوم" من '
+      + 'صفحة كل منتج. لو مقفول، القسم مبيظهرش حتى لو فيه منتجات مختارة له.',
 
     navOperations: 'العمليات', navCatalogue: 'الكتالوج', navPurchasing: 'المشتريات',
     navMoney: 'التكاليف والمرتبات', navInsight: 'التقارير', navSystem: 'النظام',

@@ -221,6 +221,14 @@ export async function seedBaseline() {
       // about — see TEMPLATES in shared/branding.js for why the plain one is
       // the default and migration 026 for what existing shops get.
       ['web.template', 'classic', 'string', 'website'],
+
+      // --- website: Deals of the Day. Curation (which products are on it)
+      // lives on the products themselves (`is_deal_of_day`, migration 031);
+      // this is only the section's own on/off switch, same pattern as
+      // web.stats_enabled above. On by default -- a shop that never opens
+      // Settings still sees the section once it has curated a first deal,
+      // rather than wondering why a dashboard flag it never found is hiding it.
+      ['web.deals_enabled', '1', 'boolean', 'website'],
     ];
     for (const [key, value, type, group] of settings) await insertSetting.run(key, value, type, group);
 
@@ -234,6 +242,18 @@ export async function seedBaseline() {
         VALUES ('admin', 'System Administrator', 'admin@mm-accessories.local', ?, ?, ?, 'en', 1, 1)
       `).run(bcrypt.hashSync('admin123', config.auth.bcryptRounds), adminRoleId, locationId);
     }
+
+    // The category every bundle is filed under (see migration 031 and
+    // CatalogService#save) -- seeded for every real shop, not only the demo
+    // one, because a shop needs it the moment it saves its first bundle, not
+    // whenever somebody next happens to run the demo seed. `created_by` is
+    // left null on purpose: this category was not created by anyone at the
+    // till, it is infrastructure, exactly like the MAIN warehouse above.
+    await db.prepare(`
+      INSERT INTO categories (code, name_en, name_ar, is_published, display_order)
+      VALUES ('BUNDLES', 'Bundles', 'باقات', 1, 0)
+      ON CONFLICT(code) DO NOTHING
+    `).run();
 
     // What a shop spends money on, in both languages. Rows, not a hard-coded
     // list: the owner renames these, hides the ones he does not use and adds

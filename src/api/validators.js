@@ -152,6 +152,26 @@ export const productSchema = z.object({
   discount_value: z.coerce.number().min(0).default(0),
   discount_starts_on: optionalDay,
   discount_ends_on: optionalDay,
+  /*
+   * Bundles — "more than one product, sold as one line, under a new SKU".
+   *
+   * `is_bundle` and `bundle_price_mode` follow the same whole-form-resend
+   * rule as `track_inventory` and every other plain field on this schema
+   * (the product form always sends the page it is showing), which is why
+   * both default rather than being preserved when omitted. `is_deal_of_day`
+   * is the one exception — it has NO default here on purpose, because it is
+   * also set from a separate bulk-action screen (`bulkProductSchema` below)
+   * that sends only the field it is changing; CatalogService reads its
+   * absence as "leave this product's placement alone" rather than "turn it
+   * off", the same rule `gender` already follows.
+   */
+  is_bundle: z.coerce.boolean().default(false),
+  bundle_price_mode: z.enum(['fixed', 'sum']).default('fixed'),
+  bundle_components: z.array(z.object({
+    component_variant_id: id,
+    quantity: z.coerce.number().positive('Quantity must be greater than zero').default(1),
+  })).max(50).default([]),
+  is_deal_of_day: z.coerce.boolean().optional(),
   attribute_ids: z.array(id).default([]),
   // May be empty: a product with no attributes gets one default variant made
   // for it, because stock, sales and labels are always keyed to a variant.
@@ -255,6 +275,9 @@ export const bulkProductSchema = z.object({
     brand_id: id.nullable().optional(),
     category_id: id.nullable().optional(),
     supplier_id: id.nullable().optional(),
+    // Deals of the day, set on many products at once — see the doc comment
+    // on `is_deal_of_day` in productSchema above.
+    is_deal_of_day: z.coerce.boolean().optional(),
   }).refine((value) => Object.keys(value).length > 0, { message: 'Choose what to change' }),
 });
 

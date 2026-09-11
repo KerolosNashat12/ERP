@@ -108,6 +108,19 @@ const CONFIG_KEYS = [
 ];
 
 /**
+ * Deals of the Day, and Bundles.
+ *
+ * A deal is a plain curation flag (`products.is_deal_of_day`) — which
+ * products, decided by the owner, nothing about price. A bundle is a
+ * product whose one variant expands into several others at the moment it
+ * is actually sold (`InventoryService#expandLine`); the storefront only
+ * ever needs to know what it is MADE OF, to show the customer, and how
+ * much of it can still be sold, which is the scarcest component's stock
+ * divided down by the recipe — never the bundle's own `stock_levels`,
+ * which does not exist.
+ */
+
+/**
  * Banner text placement: physical positions the owner picked in the ERP
  * preview, shown identically in Arabic and English. A stored value outside
  * this list (hand-edited row, a future enum member this build predates) falls
@@ -373,6 +386,9 @@ const CARD_COLUMNS = `
   p.discount_value    AS discount_value,
   p.discount_starts_on AS discount_starts_on,
   p.discount_ends_on  AS discount_ends_on,
+  -- A bundle carries no stock of its own (see #variants below) and the
+  -- card needs to know only whether it IS one, to show a "bundle" mark.
+  p.is_bundle         AS is_bundle,
   COALESCE(
     (SELECT ip.id FROM product_images ip
       WHERE ip.id = p.primary_image_id AND ip.product_id = p.id),
@@ -632,18 +648,28 @@ export class StorefrontService {
 
   // -------------------------------------------------------------------- home
 
-  /** The landing page in one request; the four reads are independent, so overlap them. */
+  /** The landing page in one request; the reads are independent, so overlap them. */
   async home() {
-    const [newest, featured, categories, brands, stats] = await Promise.all([
+    const [newest, featured, categories, brands, stats, dealsEnabled, deals] = await Promise.all([
       this.products({ sort: 'newest', pageSize: HOME_SIZE }).then((r) => r.rows),
       this.#featured(HOME_SIZE),
       this.categories(),
       this.brands(),
       this.#stats(),
+      this.#dealsEnabled(),
+      this.#deals(HOME_SIZE),
     ]);
     return {
       newest,
       featured: featured.rows,
+      /**
+       * Deals of the Day — the owner's curated shelf. `null`, never an empty
+       * array, both when the section is switched off (`web.deals_enabled`)
+       * and when it is on but nothing has been curated yet: a section with
+       * nothing in it is not a section, it is a gap on the front page with a
+       * heading over it.
+       */
+      deals: dealsEnabled && deals.length ? deals : null,
       /**
        * The three figures under the banner — REAL, counted now, or absent.
        *
@@ -745,6 +771,38 @@ export class StorefrontService {
         percent,
       },
     };
+  }
+
+  /** The section's own on/off switch — same pattern as `#stats`, one query. */
+  async #dealsEnabled() {
+    const row = await this.db
+      .prepare("SELECT value FROM settings WHERE key = 'web.deals_enabled'")
+      .get();
+    // Missing row means nobody has ever touched the setting; seedBaseline()
+    // ships it ON, so absence reads as ON too, same rule `config()` already
+    // uses for `shop.enabled`.
+    if (row === undefined || row === null) return true;
+    const raw = String(row.value ?? '').trim().toLowerCase();
+    return ['1', 'true', 'yes', 'on'].includes(raw);
+  }
+
+  /**
+   * Deals of the Day — owner-curated, not date- or discount-driven. A
+   * product earns its place here by `is_deal_of_day`, set from the
+   * dashboard (bulk action, or the product form) and nothing else; a piece
+   * can be a deal without being on a price offer, and on offer without
+   * being a deal. Newest curated first, so putting a fresh piece on the
+   * shelf is what moves it to the front — the only ordering signal this has.
+   */
+  async #deals(limit) {
+    const rows = await this.db.prepare(`
+      SELECT p.id AS id
+      FROM products p
+      WHERE p.is_deal_of_day = 1 AND ${PUBLISHED_PRODUCT}
+      ORDER BY p.updated_at DESC, p.id DESC
+      LIMIT ?
+    `).all(limit);
+    return this.#cardsByIds(rows.map((row) => row.id));
   }
 
   /**
@@ -909,7 +967,7 @@ export class StorefrontService {
    * mapped through `Number` and filtered to real integers before a single one
    * reaches a placeholder.
    */
-  async #facetClauses({ gender, onSale, minPrice, maxPrice, attr, inStock } = {}) {
+  async #facetClauses({ gender, onSale, minPrice, maxPrice, attr, inStock, dealOfDay } = {}) {
     const where = [];
     const params = [];
 
@@ -920,6 +978,11 @@ export class StorefrontService {
     }
 
     if (isTrue(onSale)) where.push(`(${OFFER_RUNNING})`);
+
+    // The same owner-curated flag the Deals of the Day shelf reads — a
+    // shopper can land on /shop?deal=1 from that shelf's "see all" link and
+    // get exactly what was on it, filtered the same way every other facet is.
+    if (isTrue(dealOfDay)) where.push('p.is_deal_of_day = 1');
 
     // Against the price she would pay, offer included. See the doc above.
     const min = Number(minPrice);
@@ -1137,10 +1200,13 @@ export class StorefrontService {
    *   inStock   something on the shelf right now. Uses the same reservation
    *             maths the product page shows, so it cannot promise a piece the
    *             checkout would then refuse.
+   *   dealOfDay only products the owner curated onto the Deals of the Day
+   *             shelf — see `#deals()`. Independent of `onSale`: a deal need
+   *             not be discounted, and a discount need not be a deal.
    */
   async products({
     category, brand, q, sort, page, pageSize, ids,
-    gender, onSale, minPrice, maxPrice, attr, inStock,
+    gender, onSale, minPrice, maxPrice, attr, inStock, dealOfDay,
   } = {}) {
     const wanted = parseIds(ids);
     if (wanted) {
@@ -1176,7 +1242,7 @@ export class StorefrontService {
     }
 
     const facet = await this.#facetClauses({
-      gender, onSale, minPrice, maxPrice, attr, inStock,
+      gender, onSale, minPrice, maxPrice, attr, inStock, dealOfDay,
     });
     where.push(...facet.where);
     params.push(...facet.params);
@@ -1236,8 +1302,9 @@ export class StorefrontService {
     `).get(productId);
     if (!row) throw new NotFoundError('Product', id);
 
-    // Independent reads: the photos do not depend on the variants.
-    const [variants, images, options] = await Promise.all([
+    // Independent reads: none of the three depend on each other, and the
+    // bundle lookup is skipped entirely for the ordinary, non-bundle product.
+    const [variants, images, options, bundleComponents] = await Promise.all([
       this.#variants([productId], { includeAvailable: true }),
       this.db.prepare(`
         SELECT i.id     AS id,
@@ -1249,6 +1316,7 @@ export class StorefrontService {
         ORDER BY i.display_order, i.id
       `).all(productId),
       this.#variantOptions(productId),
+      row.is_bundle ? this.#bundleComponents(productId) : Promise.resolve([]),
     ]);
 
     return {
@@ -1262,6 +1330,24 @@ export class StorefrontService {
       ...cardPricing(row),
       gender: row.gender || 'unisex',
       image_id: row.image_id,
+      is_bundle: Boolean(row.is_bundle),
+      /**
+       * What this bundle is made of — name and quantity per component, never
+       * a cost or a component's own price. Empty for every ordinary product;
+       * present only so the product page can print "Includes: 2 × ..., 1 ×
+       * ..." under a bundle. Availability for the bundle itself is already
+       * folded into `availability`/`variants[].available` below — this array
+       * is for display, not for the stock math.
+       */
+      bundle_components: bundleComponents.map((c) => ({
+        product_id: c.product_id,
+        variant_id: c.variant_id,
+        name_en: c.name_en,
+        name_ar: c.name_ar,
+        variant_label: c.variant_label,
+        image_id: c.image_id,
+        quantity: Number(c.quantity),
+      })),
       availability: rollUp(variants),
       description_en: row.description_en,
       description_ar: row.description_ar,
@@ -1409,6 +1495,7 @@ export class StorefrontService {
       ...cardVariant(row),
       gender: row.gender || 'unisex',
       image_id: row.image_id,
+      is_bundle: Boolean(row.is_bundle),
       availability: rollUp(byProduct.get(row.id) || []),
     }));
   }
@@ -1433,9 +1520,31 @@ export class StorefrontService {
     if (!productIds.length) return [];
     const threshold = await this.#lowStockThreshold();
     const placeholders = productIds.map(() => '?').join(', ');
-    const available = `
+
+    // A plain variant's free stock: its own stock_levels rows, summed.
+    const plainAvailable = `
       COALESCE((SELECT SUM(sl.quantity - sl.reserved_quantity)
                   FROM stock_levels sl WHERE sl.variant_id = v.id), 0)`;
+
+    /*
+     * A bundle variant carries no stock of its own — see the doc comment on
+     * `bundle_items` in migrations/031-bundles-and-deals.js — so how many
+     * can still be sold is the scarcest component's free stock, divided down
+     * by how much of it one bundle needs, floored to whole bundles. This
+     * mirrors `InventoryService#availableQuantity` in SQL rather than
+     * calling it, because this runs once for a whole PAGE of products; the
+     * JavaScript version is for the single, real-time checks in
+     * `WebOrderService` where one extra round trip does not matter.
+     */
+    const bundleAvailable = `
+      (SELECT MIN(CAST(FLOOR(
+          COALESCE((SELECT SUM(csl.quantity - csl.reserved_quantity)
+                      FROM stock_levels csl WHERE csl.variant_id = bi.component_variant_id), 0)
+          / bi.quantity
+        ) AS INTEGER))
+       FROM bundle_items bi WHERE bi.bundle_variant_id = v.id)`;
+
+    const available = `CASE WHEN p.is_bundle = 1 THEN COALESCE(${bundleAvailable}, 0) ELSE ${plainAvailable} END`;
 
     // Whole units only, never negative — a reservation that has overrun the
     // shelf is 0 left to sell, not a negative cap the stepper would misread.
@@ -1514,6 +1623,36 @@ export class StorefrontService {
       byVariant.set(row.variant_id, list);
     }
     return byVariant;
+  }
+
+  /**
+   * What a bundle is made of, for the one product page that shows it: the
+   * name and quantity of each component, never a cost or a component's own
+   * price — the same discipline as every other query in this file.
+   *
+   * A bundle has exactly one variant (CatalogService generates it the same
+   * way a simple product's default variant is generated), so this is looked
+   * up by PRODUCT id rather than by variant id — the caller does not have to
+   * wait on `#variants()` to resolve first just to learn which variant it was.
+   */
+  async #bundleComponents(productId) {
+    return this.db.prepare(`
+      SELECT bi.component_variant_id AS variant_id,
+             bi.quantity             AS quantity,
+             p.id                    AS product_id,
+             p.name_en               AS name_en,
+             p.name_ar               AS name_ar,
+             v.variant_label         AS variant_label,
+             (SELECT iv.id FROM product_images iv
+               WHERE iv.variant_id = v.id ORDER BY iv.display_order, iv.id LIMIT 1) AS image_id
+      FROM bundle_items bi
+      JOIN product_variants v ON v.id = bi.component_variant_id
+      JOIN products p ON p.id = v.product_id
+      WHERE bi.bundle_variant_id IN (
+        SELECT id FROM product_variants WHERE product_id = ? AND is_active = 1
+      )
+      ORDER BY bi.display_order, bi.id
+    `).all(productId);
   }
 
   async #lowStockThreshold() {

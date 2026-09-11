@@ -241,3 +241,81 @@ npm test 1279 passing (unchanged - retention count has no dedicated test
 for its literal default; the pruning LOGIC is covered by
 tests/platform-backup.test.js, which sets its own KEEP values via env vars
 and is unaffected by the default changing).
+
+ALSO IN THIS DROP (2026-09-11): Deals of the Day, and Bundles
+
+THE ASK
+"add a new section at the website and same at the dashboard called deals of
+the day, let me appear it as a section on the website or disappear, and can
+choose the specific products to add on it from my dashboard. And let me add
+bundles too at this section, more than one product and let me put a selling
+price for this bundle or calculate it from each product price. Bundle
+should appear at the dashboard with new sku and at website, maybe at
+dashboard we should add it on Category Bundles, to appear on website
+filtering with this category and can choose it to appear in the new section
+deals of the day."
+
+WHAT DEALS OF THE DAY IS
+A new home-page shelf, off by default (web.deals_enabled, same on/off
+setting pattern as the other storefront sections in Settings -> الموقع).
+Which products land on it is entirely manual - a checkbox on each product's
+own edit form (also settable in bulk from the Products grid) marks it
+is_deal_of_day; the shelf shows exactly those, nothing algorithmic. The
+storefront's existing product-listing filters also gained a dealOfDay
+option, so "everything on the deals shelf" can be browsed as its own page,
+not just seen on the home strip.
+
+WHAT A BUNDLE IS
+A product form gained an "is a bundle" checkbox. Turning it on hides the
+normal single-variant/size-matrix controls (a bundle has no sizes of its
+own) and replaces them with a component picker - search and add two or more
+existing products, each with its own quantity. The price can be typed by
+hand (fixed) or left to compute itself as the live sum of every component's
+selling price times its quantity (sum) - a toggle on the form switches
+between the two, and in sum mode the price field locks and recalculates as
+components are added, removed, or requantified. Every bundle is
+auto-filed under a "Bundles" category on save, which is what makes it
+filterable on the storefront through the category browsing that already
+existed - no new filtering code needed there. A bundle also gets its own
+new SKU and sits in the dashboard products grid like any other product,
+tagged so it is easy to pick out; it can additionally be flagged onto the
+Deals of the Day shelf like anything else.
+
+THE STOCK DECISION
+Asked directly whether a bundle should carry its own independent stock
+count or draw down its components' stock when sold: he chose the second,
+harder path - a bundle holds NO stock of its own. Selling one, returning
+one, reserving one on a web order, or cancelling a web order all expand
+into moving each component's own stock by (quantity in the recipe x units
+sold), the same components a customer could also buy individually and
+which any other bundle might also draw from. A bundle's available quantity
+is computed, not stored: the scarcest component's free stock divided by how
+many of it the recipe needs, floored - four components at "2 left, needs
+1" and "10 left, needs 3" cap the bundle at 2 available, not 3. A component
+can never itself be a bundle - nesting is refused outright, at both create
+and edit time, including a bundle that would end up listing itself as its
+own component after an edit.
+
+WHERE THIS TOUCHED STOCK-MOVING CODE
+Every place stock already moved - POS sale and void, customer returns (full
+and partial, with per-component cost tracing so a partial refund still
+knows what it is actually giving back), and the full web-order lifecycle
+(reserve on placement, release on cancel, deduct on delivery) - now expands
+a bundle line into its components before touching a single stock row,
+through one shared InventoryService method rather than four separate
+reimplementations of the same expansion. A bundle sold at POS blends its
+line cost from each component's own cost price at the moment of sale, the
+same way a normal sale already priced its cost; voiding it restores every
+component exactly, checked by selling a bundle down to the wire and voiding
+it back to its starting stock.
+
+npm test 1279 -> 1299 (a new file, tests/bundles-and-deals.test.js, 20
+subtests: bundle pricing in both modes, category auto-assignment, the four
+refusal cases above, availability arithmetic, POS sale/oversell/void,
+partial return with cost tracing plus a direct reversal check since sales
+returns have no HTTP reversal route of their own, web-order reserve
+through deliver and a separate cancel-releases-reservation check, and the
+Deals of the Day surface end to end - home shelf presence and absence, the
+settings toggle, a bundle appearing as a deal, the storefront dealOfDay and
+Bundles-category filters, the bulk-edit toggle, and the admin grid's own
+filters and summary counts).

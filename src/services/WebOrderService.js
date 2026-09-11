@@ -136,7 +136,6 @@ export class WebOrderService {
     this.customers = deps.customers || repositories.customers;
     this.sequences = deps.sequences || repositories.sequences;
     this.settings = deps.settings || repositories.settings;
-    this.stock = deps.stock || repositories.inventory;
     this.inventory = deps.inventory || inventoryService;
     this.sales = deps.sales || salesService;
     this.audit = deps.audit || auditService;
@@ -191,10 +190,16 @@ export class WebOrderService {
 
         // A product that is not stock-tracked (a service, a made-to-order item)
         // has nothing to hold, so it reserves nothing and can never be short.
+        //
+        // `availableQuantity` and `reserveLine` are bundle-aware: for a plain
+        // variant they read and hold `stock_levels` exactly as this always
+        // has, and for a bundle they check and hold each COMPONENT's stock —
+        // a bundle itself never carries a stock row worth reading. Neither
+        // this method nor anything below it has to know the difference; see
+        // InventoryService#expandLine.
         let reserved = 0;
         if (variant.track_inventory) {
-          const level = await this.stock.ensureLevel(variant.variant_id, warehouseId);
-          const free = round3(Number(level.quantity) - Number(level.reserved_quantity));
+          const free = await this.inventory.availableQuantity(variant.variant_id, warehouseId);
           if (item.quantity > free) {
             throw new BusinessRuleError(
               `Sorry — "${description}" is no longer available in the quantity you asked for. `
@@ -202,7 +207,7 @@ export class WebOrderService {
               { variant_id: variant.variant_id },
             );
           }
-          await this.stock.adjustReserved(variant.variant_id, warehouseId, item.quantity);
+          await this.inventory.reserveLine(variant.variant_id, warehouseId, item.quantity);
           reserved = item.quantity;
         }
 
@@ -520,8 +525,7 @@ export class WebOrderService {
       // ledger happened to trip on.
       for (const line of order.lines) {
         if (!(await this.#tracksInventory(line.variant_id))) continue;
-        const level = await this.stock.ensureLevel(line.variant_id, warehouseId);
-        const free = round3(Number(level.quantity) - Number(level.reserved_quantity));
+        const free = await this.inventory.availableQuantity(line.variant_id, warehouseId);
         if (line.quantity > free) {
           throw new BusinessRuleError(
             `Not enough stock for ${line.sku} — ${line.description}: `
@@ -791,7 +795,17 @@ export class WebOrderService {
     for (const line of order.lines) {
       const held = Number(line.reserved || 0);
       if (held <= 0) continue;
-      await this.stock.adjustReserved(line.variant_id, warehouseId, -held);
+      /*
+       * Re-expands through the bundle's CURRENT recipe — `place()` never
+       * recorded which components it actually reserved, only how many
+       * bundles (`held`). That is safe here for the same reason a web
+       * order's lifecycle is short: `pending` -> `accepted` ->
+       * `out_for_delivery` -> `delivered` plays out in minutes to days, not
+       * the months it would take a shop to edit a bundle's own recipe out
+       * from under an order still sitting in that window. See
+       * InventoryService#releaseLine.
+       */
+      await this.inventory.releaseLine(line.variant_id, warehouseId, held);
       await this.db.prepare('UPDATE web_order_lines SET reserved = 0 WHERE id = ?').run(line.id);
       line.reserved = 0;
       released = round3(released + held);

@@ -500,6 +500,22 @@ function deliveryLine(delivery) {
   return flat > 0 ? t('deliveryFlat', money(flat)) : t('trustDeliveryFlat', t('free'));
 }
 
+/**
+ * "What's inside" — a bundle's own recipe, read straight off the product:
+ * `StorefrontService#product` sends `bundle_components` for a bundle and an
+ * empty array for everything else. Names and quantities only, same as every
+ * other public panel on this page — nothing about what any of it cost the
+ * shop.
+ */
+function bundleContentsPanel(product) {
+  const items = product.bundle_components || [];
+  if (!product.is_bundle || !items.length) return null;
+  return el('section.panel',
+    el('h2.panel-title', icon(ICONS.bag, { size: 18 }), t('bundleContentsTitle')),
+    el('ul.note-list', items.map((item) => el('li',
+      `${number(item.quantity)} × ${pick(item, 'name')}`))));
+}
+
 /** The small print that answers "and how much is delivery" without leaving the page. */
 function deliveryNote() {
   const threshold = freeDeliveryOver();
@@ -662,6 +678,7 @@ export default async function productView(root, route) {
       el('div.product-info',
         pick(product, 'brand_name') && el('a.product-brand', { href: href(routePath('brand', { id: product.brand_id, slug: slugFor(product, 'brand_name') })) },
           pick(product, 'brand_name')),
+        product.is_bundle && el('span.card-tag', t('bundleBadge')),
         el('h1.product-name', name),
         priceNode,
         badgeNode,
@@ -684,5 +701,6 @@ export default async function productView(root, route) {
         description && el('section.panel',
           el('h2.panel-title', t('aboutThisPiece')),
           el('p.prose', description)),
+        bundleContentsPanel(product),
         deliveryNote())));
 }
