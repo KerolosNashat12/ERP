@@ -53,7 +53,7 @@ rem Build this version as a normal commit on top of what is already there,
 rem so nothing is force-pushed and no history is lost.
 git reset --soft FETCH_HEAD
 git add -A
-git commit -m "Add Deals of the Day and Bundles. Deals of the Day is a new home-page shelf, off by default and switched on from Settings -> the Website, showing whatever products are manually flagged is_deal_of_day on their own product form or in bulk from the Products grid; the storefront's product listing also gained a matching dealOfDay filter. A bundle is a new kind of product: a checkbox on the product form swaps the size-matrix controls for a component picker (two or more existing products, each with its own quantity), prices either typed by hand or computed live as the sum of every component's price times its quantity, and every bundle is auto-filed under a new Bundles category, which is what makes it filterable on the storefront through the browsing that already existed. A bundle carries no stock of its own - selling, returning, reserving, or cancelling one expands into moving each component's own stock by quantity-in-the-recipe times units sold, through one shared expansion path reused by POS sale/void, customer returns with per-component cost tracing, and the full web-order lifecycle; a bundle's available quantity is computed as the scarcest component's free stock divided by how many of it the recipe needs, and a bundle can never contain another bundle, checked at create and edit time. npm test 1279 -> 1299, a new 20-subtest file covering bundle pricing, all four refusal cases, availability arithmetic, sale/oversell/void, partial return plus reversal, the full web-order lifecycle, and Deals of the Day end to end"
+git commit -m "Publish from PC - %DATE% %TIME%"
 if errorlevel 1 (
   echo.
   echo   Nothing changed compared to GitHub - already up to date.
@@ -73,9 +73,23 @@ if errorlevel 1 (
   exit /b 1
 )
 
+for /f %%s in ('git rev-parse --short HEAD') do set "SHA=%%s"
 echo.
-echo   ==========================================
-echo   Pushed. Vercel will pick up the new commit and redeploy.
-echo   ==========================================
+echo   Checking that the live site picked it up...
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0WAIT-FOR-DEPLOY.ps1" -Sha "%SHA%"
+if errorlevel 1 (
+  echo.
+  echo   ==========================================
+  echo   Pushed to GitHub, but could not yet confirm
+  echo   it is live - the build may still be running.
+  echo   Check https://vercel.com, or wait a minute
+  echo   and refresh the site.
+  echo   ==========================================
+) else (
+  echo.
+  echo   ==========================================
+  echo   Pushed AND confirmed live.
+  echo   ==========================================
+)
 echo.
 pause
