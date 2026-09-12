@@ -1,122 +1,52 @@
-Turn the /kj page into the Nexora company page, and fix voiding a sale
+The Nexora page was live but still wearing KJ's words, and a stale logo with them
 
-THE ASK
-"we need to chnage Logo and name first name should be Nexora second we need
-to put our systems not only the M&M also ChemCost and High level and our
-clients okay understand me company landing page not for a spsefic project"
+WHAT HE SAW
+The new page deployed and the live site still said "KJ", the old hero, the old
+three prices, the old indigo. "nothing changes ????????? why"
 
-WHAT THE PAGE IS NOW
-It sold one product. It sells the company that builds three.
+WHAT WAS ACTUALLY HAPPENING
+The new page HAD shipped. Its structure was all there - the systems section,
+the clients row, the Nexora mark, the new favicon. What was covering it was
+the stored landing document.
 
-BRAND
-The page wears Nexora's own logo, taken from the Nexora Facebook page and cut
-out to a transparent mark: the header, the footer, the browser tab icon and
-the share card that Facebook and WhatsApp draw when the link is pasted. The
-two-letter monogram it used to draw is gone - kj.js no longer overwrites the
-favicon at all, so the tab keeps the real mark rather than a drawn "NE". The
-accent colour moved from KJ's indigo to the blue in that mark (#0a5f96), and
-the seven shades kj.css ships with are exactly what the theme derives from it,
-so the page with no JavaScript is the same colour as the page with it.
-
-THE THREE SYSTEMS, WHERE THE THREE PRICES WERE
-The price cards are now system cards, one each:
-
-  Retail + online shop - clothing, accessories, perfume and gift shops. Till,
-  stock with sizes and variants, invoices, returns, exchanges, suppliers,
-  reports, and the storefront under the shop's own name.
-
-  ChemCost - perfume and cosmetics compounding. A recipe per product that
-  costs itself out of its ingredients, raw materials in batches with expiry
-  dates, production orders, wastage, and cost and profit per product.
-
-  High Level - fit-out and interiors. The company website, the financing
-  calculator a client uses before they call, enquiries arriving together, and
-  a dashboard for changing packages and prices without a developer.
-
-NO PRICE IS PRINTED ANYWHERE. Three systems sold to three different kinds of
-business do not share one number, so every card ends in "request a quote" and
-the demo band is a quote request. The price markup is still in the page,
-hidden, and the renderer unhides it the moment a card in the document carries
-a price again - so this is a decision the console can reverse, not a rebuild.
-The document schema now accepts a null price for the same reason: clearing
-that field in the console means "quoted on request", not a validation error.
-
-CLIENTS
-A new section, and a new part of the editable document, so it is maintained
-from the console like everything else on this page. Four names, which is how
-many there are: M&M Accessories (retail), Lustre and OnlyOnce (ChemCost), and
-High Level (High Level). Each carries what the business does and which system
-it runs. A client's name is a plain field rather than a bilingual pair,
-because a business is called what it is called in either language.
-
-WHAT ELSE MOVED
-Screens from High Level's live site were captured and added to the
-screenshots section beside the ERP's own. "Why Nexora" replaced the old
-shop-specific overview, the steps, the paper-and-Excel comparison and the
-"is this for you" columns were rewritten to speak to all three kinds of
-business, and the FAQ gained the three questions a company page gets that a
-product page does not - what work do you do, is it ready or built from
-scratch, and how much.
-
-Nothing about how this page works changed: the whole page still ships written
-out in the HTML and reads identically with JavaScript switched off, the render
-on an unedited deployment still touches zero nodes, and every string is still
-editable from the console in both languages.
-
-ALSO IN THIS DROP: voiding a sale answered 500, on production
-
-Found while running the suite before shipping the above, not reported by
-anyone yet - which is the only good news in this paragraph.
-
-WHAT WAS WRONG
-The bundles release added InventoryService#movementsForReference, which reads
-back every ledger row a document posted so that a void can replay and undo it
-exactly - the right design, and the only way to undo a bundle sale correctly.
-It calls InventoryRepository#movementsByReference. That method was never
-written. Its own doc comment refers the reader to it; three services call
-through it; it does not exist.
-
-So every one of these answered 500 INTERNAL_ERROR with
-"this.inventory.movementsByReference is not a function":
-
-  - voiding a sale at the till
-  - reversing a customer return
-  - deleting an invoice (which reverses it first)
-
-This is live on the shop right now and has been since bundles shipped.
+This page renders its own defaults and then merges the owner's saved document
+over the top, per key. That is the whole design and it is the right one - until
+the page stops being the same page. Every key in the stored document described
+the old KJ product page: brand.name "KJ", the old SEO title, the old hero, the
+three priced packages. Merged over the new defaults, it produced exactly what
+he was looking at: the new layout wearing all the old words.
 
 WHAT CHANGES
-The missing repository method, written: every stock_movements row under one
-reference, ordered by id. By id and not by created_at, deliberately - all the
-movements of one document are written inside one transaction and can share a
-timestamp to the second, and the callers reverse this list to undo a damaged
-return line scrap-first, receive-second. A clock sort is not a stable order
-and would take the second movement of a pair through a negative balance.
+DOCUMENT_VERSION 1 -> 2.
 
-No migration, no schema change, no data touched. The 36 tests that had been
-failing because of it pass again.
+That field already existed for precisely this, and its own comment says so:
+"bump only when the shape changes in a way an older page cannot render." The
+stored document is validated on READ as well as on write, and `version` is a
+literal in the schema - so a document written under 1 now fails that read, and
+the service serves the page's own defaults instead. No console clicks, no
+section-by-section restore, no data migration. It takes effect the moment this
+deploys.
 
-ALSO IN THIS DROP: two test fixtures that the bundles release broke
+AND THE SECOND HALF, WHICH IS THE PART THAT WOULD HAVE BEEN MISSED
+The logo does not live in the document. It lives in the asset table, and it was
+still being minted into brand.logo - so discarding the old words alone would
+have left the new page under the old "KJ SOFTWARE COMPANY" mark, which is a
+worse result than either. A discarded document now discards its pictures too:
+when the stored content is thrown away, the assets uploaded for it are withheld
+from the served document.
 
-tests/shop-seo.test.js wrote its own brand and category at id 1, which worked
-only while a newly provisioned shop had an empty categories table. Migration
-032 now seeds every shop a "Bundles" category, which takes id 1, so all 21
-tests in that file failed in their hook with "UNIQUE constraint failed:
-categories.id". The fixture creates its ids out of the way now.
+NOTHING IS DELETED. The bytes stay exactly where they are. The moment a document
+at the current version is saved from the console, every upload is minted again
+on the next read. A stale picture is hidden, not destroyed.
 
-tests/kj-landing-check.mjs failed every Arabic run with "1 DOM mutation on
-boot - data-paper". brandTheme grew that attribute and the check's list of
-root-element writes it expects was never updated. It is listed now, beside
-data-theme, with a note - a data-paper written on anything other than <html>
-still fails, and so does any other attribute written on <html>.
+npm test 1307 -> 1309. The new test stores a picture and a document that is
+valid in every respect EXCEPT its version, and asserts both halves: not one word
+of the old document survives, and the picture is withheld - then that the same
+picture comes straight back once a current document is saved. Verified by
+reverting the asset half alone and watching it fail before restoring it. The
+tests that spelled the version number as a literal now read the constant, and
+the two rows forced into the table to prove read-side validation carry the
+CURRENT version deliberately, so the markup and the bad price are what fails
+rather than the version number.
 
-npm test 1307 passing, 0 failing (from 1250 passing / 57 failing on main
-before this drop - verified by running the full suite on a clean clone of
-main to be sure every one of those 57 was already there and none of them was
-mine). Plus node tests/kj-landing-check.mjs: all checks passed, including
-"rendered the defaults without touching one node" and, with JavaScript off,
-"identical to the rendered default, word for word" - which is what proves the
-page and the document behind it still say exactly the same thing.
-
-STILL TO COME: ChemCost has no screenshots on the page yet. Its section is
-words and a card; the capture needs a sign-in on chemcost-web.vercel.app.
+Also: node tests/kj-landing-check.mjs, all checks passed.

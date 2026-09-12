@@ -246,8 +246,33 @@ export class LandingContentService {
    * the same read, so they cannot disagree.
    */
   async publicDocument() {
-    const [{ document }, assets] = await Promise.all([this.storedDocument(), this.assetMap()]);
+    const [{ document, malformed }, assets] = await Promise.all([
+      this.storedDocument(), this.assetMap(),
+    ]);
     const out = { ...document, version: DOCUMENT_VERSION };
+
+    /*
+     * A DISCARDED DOCUMENT DISCARDS ITS PICTURES TOO.
+     *
+     * `storedDocument()` answers `malformed` when it threw the stored content
+     * away — unreadable JSON, or content that failed validation, which is also
+     * what a document written under an older `DOCUMENT_VERSION` does. The
+     * pictures in the asset table were uploaded FOR that content, by the same
+     * owner, in the same session, and they go stale with it: on 2026-09-12 the
+     * page became Nexora's, its document was discarded by a version bump, and
+     * the "KJ SOFTWARE COMPANY" logo uploaded for the old page went on being
+     * minted into `brand.logo` — so the page served the new words under the old
+     * mark. Serving the defaults has to mean serving the defaults' pictures.
+     *
+     * NOTHING IS DELETED. The bytes stay exactly where they are, and the moment
+     * the owner saves a document from the console — which writes the current
+     * version — every upload he still wants is minted again on the next read.
+     * A stale picture is hidden, not destroyed.
+     */
+    if (malformed) {
+      out.assets = {};
+      return out;
+    }
 
     if (assets.logo) out.brand = { ...(out.brand || {}), logo: assets.logo.url };
     if (assets.hero) out.hero = { ...(out.hero || {}), image: assets.hero.url };

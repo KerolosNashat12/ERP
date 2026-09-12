@@ -44,8 +44,26 @@
 import { z } from 'zod';
 import { normalizeHexColor } from '../shared/branding.js';
 
-/** Bump only when the shape changes in a way an older page cannot render. */
-export const DOCUMENT_VERSION = 1;
+/**
+ * Bump only when the shape changes in a way an older page cannot render.
+ *
+ * A stored document is validated on READ as well as on write, and `version` is
+ * a `z.literal`, so bumping this number makes every document written under the
+ * old number fail that read — and `LandingContentService#storedDocument` then
+ * serves the page's own defaults instead. That is the whole mechanism, and it
+ * is the reason this field exists rather than being decoration.
+ *
+ * ── 1 → 2, on 2026-09-12 ─────────────────────────────────────────────────────
+ * The page stopped selling one product and started selling the company that
+ * builds three. `packages` went from three PRICE TIERS of the ERP to the three
+ * SYSTEMS themselves, with no price on any of them; `brand` went from KJ to
+ * Nexora; a `clients` section appeared. A document written for the old page is
+ * not stale copy that an editor could tidy up — every string in it is about a
+ * page that no longer exists, and merging it over the new defaults produced
+ * exactly what you would expect: the new layout wearing all the old words, the
+ * old name and the old three prices. That is what this bump discards.
+ */
+export const DOCUMENT_VERSION = 2;
 
 /**
  * A whole document, serialised, may not exceed this. The page is copy, not a

