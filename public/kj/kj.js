@@ -403,7 +403,7 @@ function renderHero() {
 
   const image = document.querySelector('[data-hero-image]');
   if (image) {
-    const fallback = `/kj/shots/pos-${language}.webp`;
+    const fallback = '/kj/brand/banner.jpg';
     const custom = safeAsset(doc.hero?.image);
     const wanted = custom || fallback;
     // The frame around the hero is a BROWSER WINDOW — three dots and a title
@@ -442,22 +442,7 @@ function renderSteps() {
   });
 }
 
-function renderAudience() {
-  const yes = pairs(doc.audience?.yes);
-  const no = pairs(doc.audience?.no);
-  showSection('audience', enabled(doc.audience) && (yes.length > 0 || no.length > 0));
-  renderList(document.querySelector('[data-list="audience.yes"]'), yes, fillItem);
-  renderList(document.querySelector('[data-list="audience.no"]'), no, fillItem);
-  // A column with nothing in it is a heading over a void.
-  setHidden(document.querySelector('.aud-yes'), yes.length === 0);
-  setHidden(document.querySelector('.aud-no'), no.length === 0);
-}
 
-function renderVersus() {
-  const rows = list(doc.versus?.rows);
-  showSection('versus', enabled(doc.versus) && rows.length > 0);
-  renderList(document.querySelector('[data-list="versus.rows"]'), rows, fillItem);
-}
 
 function renderPackages() {
   const items = list(doc.packages?.items);
@@ -657,8 +642,6 @@ function render() {
   renderHero();
   renderOverview();
   renderSteps();
-  renderAudience();
-  renderVersus();
   renderPackages();
   renderShots();
   renderClients();
@@ -824,7 +807,7 @@ function wireReveal() {
  * from the console, so the tab keeps the icon the document shipped with.
  */
 function paintTheme() {
-  applyTheme(document.documentElement, { accent: doc.brand?.accent, dark: true });
+  applyTheme(document.documentElement, { accent: doc.brand?.accent, dark: true, night: true });
 }
 
 captureProtos();

@@ -1,81 +1,63 @@
 <!doctype html>
 <!--
-  NEXORA — the company page.
+  KJEVORA SOFTWARE SOLUTIONS — the company page.
 
-  This page used to sell one product (KJ, the shop ERP) and now sells the
-  company that builds three of them: the retail ERP and its storefront,
-  ChemCost for compounding and manufacturing, and High Level for fit-out
-  contractors. The machinery underneath did not change, and the comments
-  below still describe it exactly.
+  This page used to sell one product (KJ, the shop ERP), then briefly carried
+  the Nexora name, and now carries the company's own: KJEVORA. What has never
+  changed is the machinery, and the notes below still describe it exactly.
 
-  ONE FILE, WRITTEN OUT IN ARABIC. Every word of the offer and the phone
-  number are in this document as text, not fetched and not rendered by a
-  script: a business owner opening this from a WhatsApp message on Egyptian
-  mobile data gets the whole page on the first paint, and gets it even if
-  `kj.js` never arrives. The script adds English, the derived palette, the
-  reveal, the WhatsApp composer — and, when the owner has edited the page from
-  his console, whatever he changed.
+  ONE FILE, WRITTEN OUT IN ARABIC. Every word of the offer and the phone number
+  are in this document as text, not fetched and not rendered by a script: a
+  business owner opening this from a WhatsApp message on Egyptian mobile data
+  gets the whole page on the first paint, and gets it even if `kj.js` never
+  arrives. The script adds English, the derived palette, the reveal, the
+  WhatsApp composer — and whatever the owner has edited from his console.
 
-  THE DOCUMENT IS AN OVERRIDE, NEVER THE SOURCE. `kj.js` carries the same
-  content as this file, in the shape of the landing document, as its DEFAULTS.
-  On boot it fetches `GET /api/landing` and merges what comes back OVER those
-  defaults. Where the two agree — which is every deployment nobody has edited,
-  and every deployment whose control plane is unreachable — the render writes
-  nothing, because it only ever touches a node whose text actually differs.
-  There is no loading state on this page and there is nothing to wait for.
+  THE DOCUMENT IS AN OVERRIDE, NEVER THE SOURCE. `kj.js` carries this same
+  content, in the shape of the landing document, as its DEFAULTS, then merges
+  `GET /api/landing` over the top. Where the two agree — every deployment
+  nobody has edited — the render writes nothing, because it only touches a node
+  whose text actually differs. There is no loading state here.
 
-  Every string below that the owner can edit carries `data-t="path"`, and that
-  path is where the same string lives in the document. Every list carries
-  `data-list="path"`, and its first child is the prototype the renderer clones
-  when the owner adds a sixth bullet. The two files are kept honest by
-  `tests/kj-landing-check.mjs`, which boots this page with no API at all and
-  fails if the render mutates one single node.
+  Every editable string carries `data-t="path"`, and that path is where the same
+  string lives in the document. Every list carries `data-list="path"`, and its
+  first child is the prototype the renderer clones. `tests/kj-landing-check.mjs`
+  boots this page with no API at all and fails if the render mutates one node.
 
   `lang="ar" dir="rtl"` is set HERE, before anything runs, so a slow connection
   never shows a flash of left-to-right layout. `kj.css` has no `left`, no
   `right` and no `[dir=rtl]` block: flipping this one attribute mirrors the
   entire page.
 
-  NO PRICE IS PRINTED ANYWHERE ON THIS PAGE, and that is a decision rather
-  than an omission. Three systems sold to three different kinds of business
-  do not have one number between them, so every card ends in a quote request.
-  The price markup is still here, `hidden`, and the renderer unhides it the
-  moment a package in the document carries a price — so the page can grow a
-  price list again without being rebuilt.
+  NO PRICE IS PRINTED ANYWHERE, and that is a decision rather than an omission.
+  Three systems sold to three different kinds of business do not have one number
+  between them, so every card ends in a quote request. The price markup is still
+  here, `hidden`, and the renderer unhides it the moment a system in the
+  document carries a price.
 -->
 <html lang="ar" dir="rtl">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <!-- The strip at the very top of the page is the sticky header, and it is white. -->
-  <meta name="theme-color" content="#ffffff">
+  <meta name="theme-color" content="#070f18">
 
-  <title data-t="seo.title">نكسورا — أنظمة إدارة وبرمجيات للشركات في مصر</title>
-  <meta name="description" content="نكسورا بتبني وبتشغّل أنظمة إدارة كاملة للشركات في مصر: نظام محلات وموقع بيع أونلاين، ونظام تصنيع وتكاليف، ونظام لشركات التشطيب — عربي بالكامل، بتركيب وتدريب ودعم.">
+  <title data-t="seo.title">KJEVORA SOFTWARE SOLUTIONS — أنظمة إدارة وبرمجيات للشركات في مصر</title>
+  <meta name="description" content="KJEVORA SOFTWARE SOLUTIONS — بنبني أنظمة إدارة كاملة للشركات في مصر وبنركّبها وندرّب فريقك: نظام محلات وموقع بيع أونلاين، نظام تصنيع وتكاليف، ونظام لشركات التشطيب.">
 
   <meta property="og:type" content="website">
-  <meta property="og:site_name" content="Nexora">
+  <meta property="og:site_name" content="KJEVORA SOFTWARE SOLUTIONS">
   <meta property="og:locale" content="ar_EG">
-  <meta property="og:title" content="نكسورا — أنظمة إدارة وبرمجيات للشركات في مصر">
-  <meta property="og:description" content="نكسورا بتبني وبتشغّل أنظمة إدارة كاملة للشركات في مصر: نظام محلات وموقع بيع أونلاين، ونظام تصنيع وتكاليف، ونظام لشركات التشطيب — عربي بالكامل، بتركيب وتدريب ودعم.">
-  <!-- The share card is the company mark, not a screen from one of the three
-       systems: a page that sells three of them may not wear one of their
-       faces. Root-relative: this repo ships to one host and the page is
-       always at /kj on it. -->
-  <meta property="og:image" content="/kj/brand/nexora-share.png">
-  <meta property="og:image:width" content="1200">
-  <meta property="og:image:height" content="630">
-  <meta property="og:image:alt" content="شعار نكسورا — أنظمة إدارة وبرمجيات للشركات في مصر.">
+  <meta property="og:title" content="KJEVORA SOFTWARE SOLUTIONS — أنظمة إدارة وبرمجيات للشركات في مصر">
+  <meta property="og:description" content="KJEVORA SOFTWARE SOLUTIONS — بنبني أنظمة إدارة كاملة للشركات في مصر وبنركّبها وندرّب فريقك: نظام محلات وموقع بيع أونلاين، نظام تصنيع وتكاليف، ونظام لشركات التشطيب.">
+  <meta property="og:image" content="/kj/brand/banner.jpg">
+  <meta property="og:image:width" content="1600">
+  <meta property="og:image:height" content="589">
+  <meta property="og:image:alt" content="شعار كي چيفورا على جدار مكتب الشركة.">
   <meta name="twitter:card" content="summary_large_image">
 
   <link rel="stylesheet" href="/kj/kj.css">
-  <!--
-    The company's own mark, shipped as a file rather than drawn from a
-    monogram: Nexora has a logo and a page that sells software should not be
-    the one place it does not appear. `kj.js` no longer overwrites this.
-  -->
-  <link rel="icon" href="/kj/brand/nexora-icon.png" type="image/png">
-  <link rel="apple-touch-icon" href="/kj/brand/nexora-icon.png">
+  <link rel="icon" href="/kj/brand/kjevora-icon.png" type="image/png">
+  <link rel="apple-touch-icon" href="/kj/brand/kjevora-icon.png">
 
   <script type="module" src="/kj/kj.js"></script>
 </head>
@@ -83,8 +65,6 @@
 <body>
   <a class="skip-link" href="#main" data-t="ui.skipToContent">تخطَّ إلى المحتوى</a>
 
-  <!-- Every icon on the page, once. `aria-hidden` throughout: not one of them
-       carries meaning that is not already in the words beside it. -->
   <svg class="sprite" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg">
     <symbol id="i-till" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
       <rect x="3" y="4" width="18" height="12" rx="2"></rect>
@@ -103,29 +83,18 @@
       <circle cx="12" cy="14.5" r="3.5"></circle>
       <path d="M8.5 14.5h7M12 11c1.6 1.9 1.6 5.1 0 7M12 11c-1.6 1.9-1.6 5.1 0 7"></path>
     </symbol>
-    <!-- ChemCost: a measuring flask. The system weighs a recipe out of its
-         ingredients, so the icon is the thing that does the weighing. -->
     <symbol id="i-flask" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
       <path d="M9.5 3h5"></path>
       <path d="M10.5 3v6.2L5.6 17.8A2 2 0 0 0 7.3 21h9.4a2 2 0 0 0 1.7-3.2L13.5 9.2V3"></path>
       <path d="M8 15.5h8"></path>
     </symbol>
-    <!-- High Level: a plan on a drawing board, which is what a fit-out
-         company sells before it sells a finished flat. -->
     <symbol id="i-blueprint" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
       <rect x="3" y="3.5" width="18" height="17" rx="2"></rect>
-      <path d="M3 9h18"></path>
-      <path d="M9 9v11.5"></path>
+      <path d="M3 9h18"></path><path d="M9 9v11.5"></path>
       <path d="M12.5 13h5M12.5 16.5h5"></path>
     </symbol>
-    <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+    <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
       <path d="M4.5 12.5 9.5 17.5 19.5 6.5"></path>
-    </symbol>
-    <!-- The "before" mark on the paper-and-Excel list, and the one that heads
-         the honest column. A cross, not a thumb-down: it says "this is not
-         it", not "this is bad". -->
-    <symbol id="i-cross" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M6.5 6.5 17.5 17.5M17.5 6.5 6.5 17.5"></path>
     </symbol>
     <symbol id="i-phone" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
       <path d="M6.2 3.5h3l1.5 4-2 1.4a12 12 0 0 0 6.4 6.4l1.4-2 4 1.5v3a2 2 0 0 1-2.2 2A17.5 17.5 0 0 1 4.2 5.7a2 2 0 0 1 2-2.2Z"></path>
@@ -138,31 +107,22 @@
       <path d="m3.5 7 8.5 6 8.5-6"></path>
     </symbol>
     <symbol id="i-clock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-      <circle cx="12" cy="12" r="9"></circle>
-      <path d="M12 7v5.2l3.2 2"></path>
+      <circle cx="12" cy="12" r="9"></circle><path d="M12 7v5.2l3.2 2"></path>
     </symbol>
   </svg>
 
   <header class="site-head">
     <div class="wrap head-inner">
-      <a class="brand" href="#top" data-t-label="brand.tagline" aria-label="نكسورا — أنظمة إدارة وبرمجيات للشركات في مصر">
+      <a class="brand" href="#top" data-t-label="brand.tagline" aria-label="KJEVORA SOFTWARE SOLUTIONS — أنظمة إدارة وبرمجيات للشركات في مصر">
         <span class="brand-mark" aria-hidden="true">
-          <!-- The company mark as it ships. `kj.js` swaps in an uploaded logo
-               over it and puts this back if those bytes fail to arrive, which
-               is the same contract the monogram had before it. -->
-          <img class="brand-default" src="/kj/brand/nexora-mark.webp" alt="" width="40" height="28">
-          <img class="brand-logo" data-brand-logo alt="" hidden width="40" height="40">
+          <!-- The company's own mark as it ships. `kj.js` swaps in an uploaded
+               logo over it and puts this back if those bytes fail to arrive. -->
+          <img class="brand-default" src="/kj/brand/kjevora-mark.png" alt="" width="46" height="35">
+          <img class="brand-logo" data-brand-logo alt="" hidden width="46" height="35">
         </span>
-        <span class="brand-word" data-t="brand.name">Nexora</span>
+        <span class="brand-word" data-t="brand.name">KJEVORA</span>
       </a>
 
-      <!--
-        FOUR LINKS ON A PAGE THIS LONG, AND ONE OF THEM ON A PHONE.
-
-        From anywhere on a page this tall the systems are one tap away, not
-        four thumb-flicks. The other three earn their room at 768, where there
-        is room.
-      -->
       <nav class="head-nav" data-t-label="ui.navLabel" aria-label="روابط الصفحة">
         <a class="nav-lead" href="#systems" data-t="ui.navSystems">أنظمتنا</a>
         <a href="#clients" data-t="ui.navClients">عملاؤنا</a>
@@ -171,18 +131,12 @@
       </nav>
 
       <div class="head-actions">
-        <!--
-          Hidden until `kj.js` unhides it: with no script there is no second
-          language to switch to, and a dead control is worse than none. Its
-          label is the language it switches TO, which is what it announces.
-        -->
         <button class="lang-btn" type="button" data-lang-toggle hidden
                 data-t-label="ui.langSwitchLabel" aria-label="Switch to English">
-          <span class="lang-globe" aria-hidden="true">🌐</span>
           <span data-t="ui.langSwitch">English</span>
         </button>
         <a class="btn btn-primary head-cta" href="#demo" data-t="hero.primaryCta">اطلب عرض سعر</a>
-        <a class="btn btn-icon head-wa" href="https://wa.me/201552526142" data-wa
+        <a class="btn btn-icon head-wa" href="https://wa.me/201121249801" data-wa
            data-t-label="ui.contactWa" aria-label="كلّمنا على واتساب">
           <svg class="icon" width="20" height="20" aria-hidden="true"><use href="#i-whatsapp"></use></svg>
         </a>
@@ -194,101 +148,90 @@
 
     <!-- ============================================================ 1 · HERO -->
     <section class="hero" id="top">
+      <!-- The company's own photograph, behind a scrim heavy enough that the
+           type over it never depends on which part of the picture it lands on.
+           It is `data-hero-image`, so the owner can replace it from the
+           console the same way he replaces any other picture here. -->
+      <div class="hero-bg" aria-hidden="true">
+        <img data-hero-image src="/kj/brand/banner.jpg" width="1600" height="589"
+             fetchpriority="high" decoding="async" alt="">
+      </div>
       <div class="wrap hero-inner">
-        <div class="hero-copy">
-          <p class="eyebrow" data-t="hero.eyebrow">نكسورا — حلول برمجية مصرية</p>
-          <h1 class="hero-title" data-t="hero.title">أنظمة بتمسك شغلك كله، مش بس بتسجّله</h1>
-          <p class="hero-sub" data-t="hero.subtitle">بنبني وبنشغّل أنظمة إدارة كاملة للشركات في مصر — من المحل والمخزن، للتصنيع والتكاليف، لشركات التشطيب. عربي بالكامل، وبنركّبها وندرّب فريقك وبنفضل معاك بعدها.</p>
+        <p class="eyebrow" data-t="hero.eyebrow">أنظمة إدارة وبرمجيات للشركات</p>
+        <h1 class="hero-title" data-t="hero.title">بنبني الأنظمة اللي بتشغّل شركتك</h1>
+        <p class="hero-sub" data-t="hero.subtitle">مش بنبيع برنامج وننصرف. بنفهم شغلك، نبني عليه نظام كامل، نركّبه، ندرّب فريقك، ونفضل معاك بعد ما يشتغل.</p>
 
-          <div class="hero-actions">
-            <a class="btn btn-primary btn-lg" href="#demo" data-t="hero.primaryCta">اطلب عرض سعر</a>
-            <a class="btn btn-ghost btn-lg" href="#systems" data-t="hero.secondaryCta">شوف أنظمتنا</a>
-          </div>
-
-          <ul class="trust" data-list="hero.trust">
-            <li><span class="tick" aria-hidden="true">✔</span><span data-t-item>تلات أنظمة شغالة عند عملاء حقيقيين</span></li>
-            <li><span class="tick" aria-hidden="true">✔</span><span data-t-item>عربي وإنجليزي بالكامل</span></li>
-            <li><span class="tick" aria-hidden="true">✔</span><span data-t-item>تركيب وتدريب ودعم من غير رسوم إضافية</span></li>
-          </ul>
+        <div class="hero-actions">
+          <a class="btn btn-primary btn-lg" href="#demo" data-t="hero.primaryCta">اطلب عرض سعر</a>
+          <a class="btn btn-ghost btn-lg" href="#systems" data-t="hero.secondaryCta">شوف أنظمتنا</a>
         </div>
 
-        <!-- The one image above the fold, and the only one that is not lazy. -->
-        <div class="hero-shot">
-          <figure class="frame">
-            <div class="frame-bar" aria-hidden="true"><span></span><span></span><span></span></div>
-            <img data-hero-image src="/kj/shots/pos-ar.webp" width="1280" height="821"
-                 fetchpriority="high" decoding="async" data-t-alt="ui.alt.pos"
-                 alt="شاشة نقطة البيع في نظام المحلات: خانة الباركود فوق، وسلة فيها أربع قطع بأسعارها، والإجمالي ٥٬٤٤٩٫٢٠ جنيه، وزر إتمام البيع تحته.">
-          </figure>
-        </div>
+        <ul class="trust" data-list="hero.trust">
+          <li><span class="tick" aria-hidden="true">✔</span><span data-t-item>تلات أنظمة شغالة عند عملاء حقيقيين</span></li>
+          <li><span class="tick" aria-hidden="true">✔</span><span data-t-item>عربي وإنجليزي بالكامل</span></li>
+          <li><span class="tick" aria-hidden="true">✔</span><span data-t-item>تركيب وتدريب ودعم من غير رسوم إضافية</span></li>
+        </ul>
       </div>
     </section>
 
     <!-- ======================================================== 2 · SYSTEMS -->
-    <!--
-      The page's centrepiece, and the first thing after the hero: a visitor
-      who lands on a company page is asking "what do you actually sell", and
-      the three cards are the answer. `data-sec="packages"` and the `plan`
-      classes are the same slots the price cards used, so the owner's console
-      edits them as it always did.
-    -->
     <section class="section" id="systems" data-sec="packages" aria-labelledby="systems-title">
       <div class="wrap">
         <div class="section-head" data-reveal>
+          <p class="kicker" data-t="packages.kicker">أنظمتنا</p>
           <h2 class="section-title" id="systems-title" data-t="packages.title">تلات أنظمة، كل واحد اتبنى لشغل مختلف</h2>
-          <p class="section-lede" data-t="packages.note">مش قالب واحد بنبيعه لكل الناس. كل نظام من التلاتة شغّال دلوقتي عند عميل حقيقي، وبيتظبط على طريقة شغلك قبل ما يبدأ.</p>
+          <p class="section-lede" data-t="packages.note">مش قوالب. كل نظام من التلاتة شغّال دلوقتي عند عميل، وبيتظبط على طريقة شغلك قبل ما يبدأ عندك.</p>
         </div>
 
         <!--
-          THREE CARDS OF ONE SHAPE. Every card below carries the same elements
-          in the same order — badge, name, price, one-liner, the inherits
-          line, the features, the button — and the ones a card does not use
-          are `hidden`. That is what lets the renderer clone card one to build
-          a fourth system, and it is why the featured card differs from its
-          neighbours by a class rather than by its markup.
+          A BENTO, NOT THREE EQUAL CARDS. The lead system takes the wide cell
+          and the two others share the row beneath it — which is the shape of
+          the business, not a layout preference. Every cell carries the same
+          elements in the same order, so the renderer can clone cell one to
+          build a fourth system.
         -->
         <ul class="plans" data-list="packages.items">
-          <li class="plan" data-plan="retail" data-reveal>
+          <li class="plan plan-wide" data-plan="retail" data-reveal>
+            <span class="plan-icon" aria-hidden="true"><svg class="icon" width="22" height="22"><use href="#i-till"></use></svg></span>
             <p class="plan-badge" data-t-item="badge">لمحلات التجزئة</p>
             <h3 class="plan-name" data-t-item="name">نظام المحلات + موقع بيع أونلاين</h3>
             <p class="plan-price" data-plan-price-row hidden>
               <span class="plan-amount" data-plan-price></span>
               <span class="plan-period" data-t="packages.period">/ شهريًا</span>
             </p>
-            <p class="plan-line" data-t-item="oneLiner">لمحلات الملابس والإكسسوارات والعطور والهدايا — كاشير ومخزن وفواتير وتقارير، وموقع بيع باسم محلك.</p>
+            <p class="plan-line" data-t-item="oneLiner">كاشير ومخزن وفواتير وتقارير، وموقع بيع باسم محلك — والطلب من الموقع بيتخصم من نفس المخزون.</p>
             <p class="feature-lead" data-t-item="inherits" hidden></p>
             <ul class="plan-features" data-plan-features>
-              <li><svg class="icon tick-icon" width="16" height="16" aria-hidden="true"><use href="#i-check"></use></svg><span data-t-item>شاشة كاشير كاملة مع قارئ الباركود، وبتشتغل في المحل حتى لو النت قطع</span></li>
+              <li><svg class="icon tick-icon" width="16" height="16" aria-hidden="true"><use href="#i-check"></use></svg><span data-t-item>كاشير كامل مع قارئ الباركود، وبيشتغل في المحل حتى لو النت قطع</span></li>
               <li><svg class="icon tick-icon" width="16" height="16" aria-hidden="true"><use href="#i-check"></use></svg><span data-t-item>مخزون بمقاسات وألوان ومتغيرات، وتنبيه قبل ما الصنف يخلص</span></li>
-              <li><svg class="icon tick-icon" width="16" height="16" aria-hidden="true"><use href="#i-check"></use></svg><span data-t-item>موقع بيع أونلاين باسم محلك وبألوانك، والطلب بيدخل على نفس المخزون</span></li>
               <li><svg class="icon tick-icon" width="16" height="16" aria-hidden="true"><use href="#i-check"></use></svg><span data-t-item>فواتير ومرتجعات وتبديلات وموردين وتقفيل وردية بأرقام صح</span></li>
               <li><svg class="icon tick-icon" width="16" height="16" aria-hidden="true"><use href="#i-check"></use></svg><span data-t-item>تقارير أرباح ومبيعات ومخزون، وفروع متعددة لما الشغل يكبر</span></li>
             </ul>
             <a class="btn btn-ghost plan-cta" href="#demo" data-t-item="cta">اطلب عرض سعر</a>
           </li>
 
-          <li class="plan plan-featured" data-plan="chemcost" data-reveal>
+          <li class="plan" data-plan="chemcost" data-reveal>
+            <span class="plan-icon" aria-hidden="true"><svg class="icon" width="22" height="22"><use href="#i-flask"></use></svg></span>
             <p class="plan-badge" data-t-item="badge">لتركيب العطور ومستحضرات التجميل</p>
             <h3 class="plan-name" data-t-item="name">ChemCost — نظام التصنيع والتكاليف</h3>
             <p class="plan-price" data-plan-price-row hidden>
               <span class="plan-amount" data-plan-price></span>
               <span class="plan-period" data-t="packages.period">/ شهريًا</span>
             </p>
-            <p class="plan-line" data-t-item="oneLiner">لو بتصنّع منتجاتك بنفسك — بيحسبلك تكلفة كل منتج من مكوناته بالمليم، قبل ما تحط سعر البيع.</p>
+            <p class="plan-line" data-t-item="oneLiner">لو بتصنّع اللي بتبيعه: بيحسبلك تكلفة كل منتج من مكوناته بالمليم، قبل ما تحط سعر البيع.</p>
             <p class="feature-lead" data-t-item="inherits" hidden></p>
             <ul class="plan-features" data-plan-features>
-              <li><svg class="icon tick-icon" width="16" height="16" aria-hidden="true"><use href="#i-check"></use></svg><span data-t-item>تركيبة لكل منتج بمكوناتها وكمياتها، والتكلفة بتتحسب لوحدها وبتتحدّث مع كل شراء</span></li>
-              <li><svg class="icon tick-icon" width="16" height="16" aria-hidden="true"><use href="#i-check"></use></svg><span data-t-item>مخزون خامات بتشغيلات، لكل تشغيلة كميتها المتبقية وتاريخ صلاحيتها</span></li>
-              <li><svg class="icon tick-icon" width="16" height="16" aria-hidden="true"><use href="#i-check"></use></svg><span data-t-item>أوامر إنتاج بأكتر من منتج، والخامات بتتخصم من المخزن لوحدها</span></li>
-              <li><svg class="icon tick-icon" width="16" height="16" aria-hidden="true"><use href="#i-check"></use></svg><span data-t-item>جرد وحركة مخزون وهدر، وتقارير تكاليف وأرباح لكل منتج</span></li>
-              <li><svg class="icon tick-icon" width="16" height="16" aria-hidden="true"><use href="#i-check"></use></svg><span data-t-item>مقاسات وأحجام وعبوات لنفس المنتج، كل واحدة بتكلفتها وسعرها</span></li>
+              <li><svg class="icon tick-icon" width="16" height="16" aria-hidden="true"><use href="#i-check"></use></svg><span data-t-item>تركيبة لكل منتج، والتكلفة بتتحسب لوحدها وبتتحدّث مع كل شراء</span></li>
+              <li><svg class="icon tick-icon" width="16" height="16" aria-hidden="true"><use href="#i-check"></use></svg><span data-t-item>خامات بتشغيلات، لكل تشغيلة كميتها المتبقية وتاريخ صلاحيتها</span></li>
+              <li><svg class="icon tick-icon" width="16" height="16" aria-hidden="true"><use href="#i-check"></use></svg><span data-t-item>أوامر إنتاج، وجرد وهدر، وتقارير تكاليف وأرباح لكل منتج</span></li>
             </ul>
-            <a class="btn btn-primary plan-cta" href="#demo" data-t-item="cta">اطلب عرض سعر</a>
+            <a class="btn btn-ghost plan-cta" href="#demo" data-t-item="cta">اطلب عرض سعر</a>
           </li>
 
           <li class="plan" data-plan="highlevel" data-reveal>
+            <span class="plan-icon" aria-hidden="true"><svg class="icon" width="22" height="22"><use href="#i-blueprint"></use></svg></span>
             <p class="plan-badge" data-t-item="badge">لشركات التشطيب والديكور</p>
-            <h3 class="plan-name" data-t-item="name">High Level — موقع ولوحة تحكم شركات التشطيب</h3>
+            <h3 class="plan-name" data-t-item="name">High Level — موقع ولوحة تحكم</h3>
             <p class="plan-price" data-plan-price-row hidden>
               <span class="plan-amount" data-plan-price></span>
               <span class="plan-period" data-t="packages.period">/ شهريًا</span>
@@ -297,23 +240,15 @@
             <p class="feature-lead" data-t-item="inherits" hidden></p>
             <ul class="plan-features" data-plan-features>
               <li><svg class="icon tick-icon" width="16" height="16" aria-hidden="true"><use href="#i-check"></use></svg><span data-t-item>موقع شركة كامل بباقاتك وخدماتك وأعمالك، عربي وإنجليزي</span></li>
-              <li><svg class="icon tick-icon" width="16" height="16" aria-hidden="true"><use href="#i-check"></use></svg><span data-t-item>محرك تقسيط ذكي: العميل يحسب تكلفة وحدته وقسطه الشهري بنفسه قبل ما يكلّمك</span></li>
-              <li><svg class="icon tick-icon" width="16" height="16" aria-hidden="true"><use href="#i-check"></use></svg><span data-t-item>طلبات المعاينة والاستفسارات بتوصلك مجمّعة، مش رسايل متفرقة</span></li>
-              <li><svg class="icon tick-icon" width="16" height="16" aria-hidden="true"><use href="#i-check"></use></svg><span data-t-item>لوحة تحكم بتغيّر منها الباقات والأسعار والمحتوى من غير ما تستنى مبرمج</span></li>
-              <li><svg class="icon tick-icon" width="16" height="16" aria-hidden="true"><use href="#i-check"></use></svg><span data-t-item>صفحات خدمات ومدونة متظبطة لجوجل، عشان الناس توصلك من البحث</span></li>
+              <li><svg class="icon tick-icon" width="16" height="16" aria-hidden="true"><use href="#i-check"></use></svg><span data-t-item>محرك تقسيط: العميل يحسب تكلفته وقسطه بنفسه قبل ما يكلّمك</span></li>
+              <li><svg class="icon tick-icon" width="16" height="16" aria-hidden="true"><use href="#i-check"></use></svg><span data-t-item>تغيّر الباقات والأسعار والمحتوى من غير ما تستنى مبرمج</span></li>
             </ul>
             <a class="btn btn-ghost plan-cta" href="#demo" data-t-item="cta">اطلب عرض سعر</a>
           </li>
         </ul>
 
-        <!-- ========================================= 3 · IN EVERY SYSTEM -->
-        <!--
-          Under the cards and before the reassurance line, because these six
-          are not features — they are the six things a buyer is afraid the
-          quote does not include.
-        -->
         <div class="included" data-sec="included" data-reveal>
-          <h3 class="included-title" data-t="included.title">في كل نظام من نكسورا، من غير فلوس زيادة</h3>
+          <h3 class="included-title" data-t="included.title">في كل نظام، من غير فلوس زيادة</h3>
           <ul class="included-list" data-list="included.items">
             <li><svg class="icon tick-icon" width="16" height="16" aria-hidden="true"><use href="#i-check"></use></svg><span data-t-item>التركيب والتجهيز</span></li>
             <li><svg class="icon tick-icon" width="16" height="16" aria-hidden="true"><use href="#i-check"></use></svg><span data-t-item>نقل بياناتك القديمة</span></li>
@@ -328,35 +263,36 @@
       </div>
     </section>
 
-    <!-- ===================================================== 4 · WHY NEXORA -->
+    <!-- ================================================== 3 · CUSTOM / WHY -->
     <section class="section section-band" id="why" data-sec="overview" aria-labelledby="why-title">
       <div class="wrap">
         <div class="section-head" data-reveal>
-          <h2 class="section-title" id="why-title" data-t="overview.title">ليه نكسورا؟</h2>
-          <p class="section-lede" data-t="overview.intro">في السوق أنظمة كتير جاهزة، بس أغلبها مكتوب لشغل مش شغلك: مصطلحات مش بتاعتك، وشاشات فيها حاجات عمرك ما هتفتحها، وحاجات إنت محتاجها مش موجودة أصلًا. إحنا بنشتغل بالعكس — بنفهم شغلك الأول، وبنظبّط النظام عليه، وبنفضل معاك بعد ما يشتغل.</p>
+          <p class="kicker" data-t="overview.kicker">نظام مخصص</p>
+          <h2 class="section-title" id="why-title" data-t="overview.title">شغلك مختلف؟ بنبنيه من الأول</h2>
+          <p class="section-lede" data-t="overview.intro">التلات أنظمة فوق كلهم بدأوا كده — شركة محتاجة حاجة مش موجودة في السوق. لو شغلك مش شبه أي واحد فيهم، ده بالظبط اللي بنعمله.</p>
         </div>
 
         <ul class="blocks" data-list="overview.blocks">
           <li class="block" data-reveal>
             <span class="block-icon" aria-hidden="true">
-              <svg class="icon" width="28" height="28"><use href="#i-till" data-block-icon></use></svg>
+              <svg class="icon" width="26" height="26"><use href="#i-till" data-block-icon></use></svg>
             </span>
-            <h3 class="block-title" data-t-item="title">نظام على مقاس شغلك</h3>
-            <p class="block-body" data-t-item="body">كل نظام من التلاتة اتبنى مع عميل حقيقي وهو شغال، مش في مكتب. ولما ييجي لك، بيتظبط على أصنافك وأسعارك وطريقة شغلك إنت قبل ما تشوفه.</p>
+            <h3 class="block-title" data-t-item="title">تحليل قبل أي كود</h3>
+            <p class="block-body" data-t-item="body">بنقعد معاك ونطلع بتوصيف مكتوب لكل شاشة وكل حالة قبل ما نكتب سطر واحد.</p>
           </li>
           <li class="block" data-reveal>
             <span class="block-icon" aria-hidden="true">
-              <svg class="icon" width="28" height="28"><use href="#i-boxes" data-block-icon></use></svg>
+              <svg class="icon" width="26" height="26"><use href="#i-boxes" data-block-icon></use></svg>
             </span>
-            <h3 class="block-title" data-t-item="title">كل حاجة مربوطة ببعضها</h3>
-            <p class="block-body" data-t-item="body">المخزن والبيع والتكاليف والتقارير جوه نظام واحد. الرقم اللي بتشوفه في التقرير جاي من نفس الحركة اللي حصلت على الأرض، مش من ملف تاني حد بيملاه بالإيد.</p>
+            <h3 class="block-title" data-t-item="title">بناء على مراحل</h3>
+            <p class="block-body" data-t-item="body">بتشوف النظام شغال أول بأول، مش في الآخر. تعدّل وإحنا بنبني، مش بعد ما نخلص.</p>
           </li>
           <li class="block" data-reveal>
             <span class="block-icon" aria-hidden="true">
-              <svg class="icon" width="28" height="28"><use href="#i-globe-bag" data-block-icon></use></svg>
+              <svg class="icon" width="26" height="26"><use href="#i-globe-bag" data-block-icon></use></svg>
             </span>
-            <h3 class="block-title" data-t-item="title">بنفضل معاك بعد التسليم</h3>
-            <p class="block-body" data-t-item="body">التركيب والتدريب والدعم مش بنود إضافية في العرض. وأي سؤال بعد كده، اتصل أو ابعت واتساب — بنرد بنفسنا، مش روبوت ولا تذكرة.</p>
+            <h3 class="block-title" data-t-item="title">النظام بتاعك</h3>
+            <p class="block-body" data-t-item="body">الكود والبيانات بتاعتك وبنسلّمهم. ومفيش حاجة بتقف لو بطّلنا نشتغل مع بعض.</p>
           </li>
         </ul>
 
@@ -364,21 +300,15 @@
       </div>
     </section>
 
-    <!-- ==================================================== 5 · SCREENSHOTS -->
+    <!-- ==================================================== 4 · SCREENSHOTS -->
     <section class="section" id="screens" data-sec="shots" aria-labelledby="screens-title">
       <div class="wrap">
         <div class="section-head" data-reveal>
+          <p class="kicker" data-t="shots.kicker">من جوه الأنظمة</p>
           <h2 class="section-title" id="screens-title" data-t="shots.title">شوفها شغّالة قبل ما تقرر</h2>
           <p class="section-lede" data-t="shots.note">دي شاشات حقيقية من أنظمة شغالة عند عملائنا دلوقتي، مش رسومات.</p>
         </div>
 
-        <!--
-          The system screens first, then the phones together: the system, and
-          then the thing his customer holds. The phones are separate figures
-          rather than one group, because each one is its own slot the owner
-          can replace with a capture of his own — the CSS is what stands them
-          side by side, not the markup.
-        -->
         <div class="shots" data-list="shots.items">
           <figure class="shot shot-desktop" data-reveal>
             <div class="frame">
@@ -398,16 +328,6 @@
                    alt="لوحة التحكم: مربعات بمبيعات اليوم وإيرادات الشهر وقيمة المخزون، ورسم بياني لمبيعات آخر ٣٠ يومًا، وتنبيه بأصناف قربت تخلص.">
             </div>
             <figcaption data-t-item="caption">أرقام شغلك في لمحة</figcaption>
-          </figure>
-
-          <figure class="shot shot-desktop" data-reveal>
-            <div class="frame">
-              <div class="frame-bar" aria-hidden="true"><span></span><span></span><span></span></div>
-              <img data-shot="products" src="/kj/shots/products-ar.webp" width="1280" height="693"
-                   loading="lazy" decoding="async" data-t-alt="ui.alt.products"
-                   alt="شاشة المنتجات: جدول فيه كود كل صنف واسمه وعدد متغيراته وسعره وكميته في المخزن ومورده وحالته.">
-            </div>
-            <figcaption data-t-item="caption">كل صنف بمقاساته وكمياته</figcaption>
           </figure>
 
           <figure class="shot shot-desktop" data-reveal>
@@ -463,17 +383,12 @@
       </div>
     </section>
 
-    <!-- ======================================================== 6 · CLIENTS -->
-    <!--
-      REAL NAMES ONLY. This section ships with four because there are four,
-      and it holds nothing a visitor could not verify: the business, what it
-      does, and which of the three systems it runs. No logos we do not own,
-      no "and 200 others", no counter that counts nothing.
-    -->
+    <!-- ======================================================== 5 · CLIENTS -->
     <section class="section section-band" id="clients" data-sec="clients" aria-labelledby="clients-title">
       <div class="wrap">
         <div class="section-head" data-reveal>
-          <h2 class="section-title" id="clients-title" data-t="clients.title">شغّالين علينا دلوقتي</h2>
+          <p class="kicker" data-t="clients.kicker">عملاؤنا</p>
+          <h2 class="section-title" id="clients-title" data-t="clients.title">شركات بتشتغل بأنظمتنا</h2>
           <p class="section-lede" data-t="clients.note">مش أسماء على صفحة — دي أنظمة بتشتغل كل يوم في شغل حقيقي.</p>
         </div>
 
@@ -502,19 +417,22 @@
       </div>
     </section>
 
-    <!-- ==================================================== 7 · HOW IT WORKS -->
+    <!-- ==================================================== 6 · HOW IT WORKS -->
     <section class="section" id="steps" data-sec="steps" aria-labelledby="steps-title">
       <div class="wrap">
         <div class="section-head" data-reveal>
-          <h2 class="section-title" id="steps-title" data-t="steps.title">من أول مكالمة لحد ما النظام يشتغل — أربع خطوات</h2>
+          <p class="kicker" data-t="steps.kicker">إزاي بنشتغل</p>
+          <h2 class="section-title" id="steps-title" data-t="steps.title">من أول مكالمة لحد ما النظام يشتغل</h2>
           <p class="section-lede" data-t="steps.note">مفيش حاجة فيهم إنت اللي هتعملها لوحدك.</p>
         </div>
 
+        <!-- Numbered because this IS a sequence: each step depends on the one
+             before it, and the reader needs the order. -->
         <ol class="steps" data-list="steps.items">
           <li class="step" data-reveal>
             <span class="step-num" aria-hidden="true" data-step-num>١</span>
             <h3 class="step-title" data-t-item="title">نتكلم ونفهم شغلك</h3>
-            <p class="step-body" data-t-item="body">مكالمة قصيرة نفهم منها بتشتغل إزاي دلوقتي، وإيه اللي واجعك بالظبط، وأنهي نظام من التلاتة هو اللي يفيدك.</p>
+            <p class="step-body" data-t-item="body">مكالمة قصيرة نفهم منها بتشتغل إزاي دلوقتي، وإيه اللي واجعك بالظبط، وأنهي نظام هو اللي يفيدك.</p>
           </li>
           <li class="step" data-reveal>
             <span class="step-num" aria-hidden="true" data-step-num>٢</span>
@@ -535,91 +453,19 @@
       </div>
     </section>
 
-    <!-- ========================================= 8 · WHY NOT PAPER AND EXCEL -->
-    <section class="section section-band" id="versus" data-sec="versus" aria-labelledby="versus-title">
-      <div class="wrap">
-        <div class="section-head" data-reveal>
-          <h2 class="section-title" id="versus-title" data-t="versus.title">الورق والإكسل بيشتغلوا… لحد لما الشغل يكبر</h2>
-        </div>
-
-        <ul class="versus" data-list="versus.rows">
-          <li class="vs-row" data-reveal>
-            <p class="vs-side vs-before"><svg class="icon vs-mark" width="18" height="18" aria-hidden="true"><use href="#i-cross"></use></svg><span data-t-item="before">بتعرف عملت كام لما تقفل وتحسب بالإيد</span></p>
-            <p class="vs-side vs-after"><svg class="icon vs-mark" width="18" height="18" aria-hidden="true"><use href="#i-check"></use></svg><span data-t-item="after">الرقم قدامك وإنت واقف</span></p>
-          </li>
-          <li class="vs-row" data-reveal>
-            <p class="vs-side vs-before"><svg class="icon vs-mark" width="18" height="18" aria-hidden="true"><use href="#i-cross"></use></svg><span data-t-item="before">بتعرف الصنف أو الخامة خلصت لما تحتاجها وملاقيهاش</span></p>
-            <p class="vs-side vs-after"><svg class="icon vs-mark" width="18" height="18" aria-hidden="true"><use href="#i-check"></use></svg><span data-t-item="after">بيقولك قبل ما تخلص بكذا يوم</span></p>
-          </li>
-          <li class="vs-row" data-reveal>
-            <p class="vs-side vs-before"><svg class="icon vs-mark" width="18" height="18" aria-hidden="true"><use href="#i-cross"></use></svg><span data-t-item="before">كل واحد في الفريق ماسك ملف لوحده، والأرقام مش بتطابق</span></p>
-            <p class="vs-side vs-after"><svg class="icon vs-mark" width="18" height="18" aria-hidden="true"><use href="#i-check"></use></svg><span data-t-item="after">نظام واحد، وكل واحد بصلاحيته</span></p>
-          </li>
-          <li class="vs-row" data-reveal>
-            <p class="vs-side vs-before"><svg class="icon vs-mark" width="18" height="18" aria-hidden="true"><use href="#i-cross"></use></svg><span data-t-item="before">لو الدفتر أو الملف ضاع، ضاع كل حاجة</span></p>
-            <p class="vs-side vs-after"><svg class="icon vs-mark" width="18" height="18" aria-hidden="true"><use href="#i-check"></use></svg><span data-t-item="after">نسخة احتياطية تلقائية كل يوم</span></p>
-          </li>
-        </ul>
-      </div>
-    </section>
-
-    <!-- =================================================== 9 · WHO THIS IS FOR -->
-    <section class="section" id="audience" data-sec="audience" aria-labelledby="audience-title">
-      <div class="wrap">
-        <div class="section-head" data-reveal>
-          <h2 class="section-title" id="audience-title" data-t="audience.title">مناسب لشغلك؟</h2>
-        </div>
-
-        <div class="audience">
-          <div class="aud-col aud-yes" data-reveal>
-            <h3 class="aud-title" data-t="audience.yesTitle">أيوه، لو إنت</h3>
-            <ul class="aud-list" data-list="audience.yes">
-              <li><svg class="icon aud-mark" width="18" height="18" aria-hidden="true"><use href="#i-check"></use></svg><span data-t-item>محل ملابس أو أحذية أو إكسسوارات أو عطور أو هدايا</span></li>
-              <li><svg class="icon aud-mark" width="18" height="18" aria-hidden="true"><use href="#i-check"></use></svg><span data-t-item>بتصنّع أو بتركّب عطور ومستحضرات تجميل</span></li>
-              <li><svg class="icon aud-mark" width="18" height="18" aria-hidden="true"><use href="#i-check"></use></svg><span data-t-item>شركة تشطيب أو ديكور أو مقاولات</span></li>
-              <li><svg class="icon aud-mark" width="18" height="18" aria-hidden="true"><use href="#i-check"></use></svg><span data-t-item>أي شغل ماسك مخزن وتكاليف وعايز أرقامه تبقى مظبوطة</span></li>
-            </ul>
-          </div>
-
-          <!-- The honest column. It is quieter than the one beside it, and it
-               is not hidden behind a "learn more": a visitor who reads "not
-               for restaurants" and leaves was never a customer, and the one
-               who reads it and stays now trusts the other column. -->
-          <div class="aud-col aud-no" data-reveal>
-            <h3 class="aud-title" data-t="audience.noTitle">بصراحة، مش مناسب لـ</h3>
-            <ul class="aud-list" data-list="audience.no">
-              <li><svg class="icon aud-mark" width="18" height="18" aria-hidden="true"><use href="#i-cross"></use></svg><span data-t-item>مطاعم وكافيهات — دي محتاجة نظام مطبخ وطاولات، وده مش شغلنا</span></li>
-              <li><svg class="icon aud-mark" width="18" height="18" aria-hidden="true"><use href="#i-cross"></use></svg><span data-t-item>حد عايز نظام ينزل بكرة من غير ما نفهم شغله الأول</span></li>
-            </ul>
-          </div>
-        </div>
-
-        <p class="section-close" data-reveal data-t="audience.closing">لو مش متأكد، اتصل واسألنا. لو مش هنفيدك هنقولك، أحسن من إنك تدفع وتكتشف بنفسك.</p>
-      </div>
-    </section>
-
-    <!-- ========================================= 10 · WHAT CLIENTS SAY -->
-    <!--
-      SHIPS EMPTY AND HIDDEN, ON PURPOSE. No client has said a quote for
-      publication yet, and a made-up testimonial on a page that sells trust is
-      the fastest way to lose it — in a market this small the reader may know
-      the business being quoted. The section renders only once a real quote is
-      entered, and the prototype below lives in a `<template>` so that with no
-      script at all there is not even an empty card here.
-    -->
+    <!-- ================================================ 7 · WHAT CLIENTS SAY -->
+    <!-- SHIPS EMPTY AND HIDDEN, ON PURPOSE. No client has given a quote for
+         publication yet, and an invented testimonial on a page that sells trust
+         is the fastest way to lose it — in a market this small the reader may
+         know the business being quoted. The prototype lives in a `<template>`
+         so a page with no script has no empty card here either. -->
     <section class="section" id="quotes" data-sec="quotes" hidden aria-labelledby="quotes-title">
       <div class="wrap">
         <div class="section-head" data-reveal>
-          <h2 class="section-title" id="quotes-title" data-t="quotes.title">ناس شغالة علينا</h2>
+          <h2 class="section-title" id="quotes-title" data-t="quotes.title">عملاؤنا بيقولوا إيه</h2>
         </div>
-
         <ul class="quotes" data-list="quotes.items" hidden>
           <template data-proto>
-            <!-- `dir="auto"` on all three, and it is not decoration: a client
-                 called "Maryam Bags" and one called "سليم للأحذية" both appear
-                 in this list, and on a page running the other way round a name
-                 with no direction of its own comes out backwards. Each line
-                 takes its direction from its own first letter. -->
             <li class="quote" data-reveal>
               <blockquote class="quote-body" dir="auto" data-t-item="quote"></blockquote>
               <p class="quote-who">
@@ -632,32 +478,27 @@
       </div>
     </section>
 
-    <!-- ================================================ 11 · REQUEST A QUOTE -->
-    <!--
-      One band, one offer, one button. No links out of it, no menu and no
-      second ask — the only thing that can happen in this section is a quote
-      request.
-    -->
+    <!-- ================================================ 8 · REQUEST A QUOTE -->
     <section class="demo band-accent" id="demo" aria-labelledby="demo-title">
       <div class="wrap demo-inner">
         <div class="demo-head" data-reveal>
-          <h2 class="section-title" id="demo-title" data-t="demo.title">اطلب عرض سعر، من غير أي التزام</h2>
-          <p class="demo-body" data-t="demo.body">احجز نص ساعة معانا. هنفهم شغلك، ونوريك النظام المناسب شغّال على بيانات شبه بتاعتك، ونبعتلك عرض سعر مكتوب — وبعدها إنت اللي تقرر.</p>
+          <p class="kicker" data-t="demo.kicker">كلّمنا</p>
+          <h2 class="section-title" id="demo-title" data-t="demo.title">ابدأ بمكالمة</h2>
+          <p class="demo-body" data-t="demo.body">هنفهم شغلك، ونوريك النظام المناسب شغّال على بيانات شبه بتاعتك، ونبعتلك عرض سعر مكتوب في نفس اليوم — وبعدها إنت اللي تقرر.</p>
         </div>
 
         <!--
-          A WhatsApp composer, not a form with a server behind it. `kj.js`
-          turns the answers into a message and opens WhatsApp with it already
-          written; the button carries the WhatsApp mark so what is about to
-          happen is on the button itself. The number in `action` is the number
-          in the document — change it in the console and this form, the header
-          button, the contact cards and every `tel:` on the page all move.
+          A WhatsApp composer, not a form with a server behind it. `kj.js` turns
+          the answers into a message and opens WhatsApp with it already written.
+          The number in `action` is the number IN THE DOCUMENT — change it in
+          the console and this form, the header button, the contact cards and
+          every `tel:` on the page all move together.
 
-          Not one field carries a `name`, which is deliberate: with the script
-          gone this is a plain GET to wa.me and it opens the same conversation
-          — empty, but open. It never silently swallows a lead.
+          Not one field carries a `name`, deliberately: with the script gone
+          this is a plain GET to wa.me and opens the same conversation — empty,
+          but open. It never silently swallows a lead.
         -->
-        <form class="demo-form" data-demo-form method="get" action="https://wa.me/201552526142"
+        <form class="demo-form" data-demo-form method="get" action="https://wa.me/201121249801"
               data-wa-action target="_blank" rel="noopener">
           <p class="field">
             <label for="demo-name" data-t="demo.fields.name">الاسم</label>
@@ -668,7 +509,7 @@
             <input id="demo-phone" type="tel" inputmode="tel" autocomplete="tel" required>
           </p>
           <p class="field">
-            <label for="demo-shop-type" data-t="demo.fields.shopType">النظام اللي يهمك (محلات / ChemCost / High Level)</label>
+            <label for="demo-shop-type" data-t="demo.fields.shopType">النظام اللي يهمك</label>
             <input id="demo-shop-type" type="text">
           </p>
           <p class="field">
@@ -686,7 +527,7 @@
           <div class="demo-submit">
             <button class="btn btn-solid btn-lg" type="submit">
               <svg class="icon" width="20" height="20" aria-hidden="true"><use href="#i-whatsapp"></use></svg>
-              <span data-t="demo.button">اطلب عرض سعر على واتساب</span>
+              <span data-t="demo.button">ابعت على واتساب</span>
             </button>
             <p class="demo-note" data-t="demo.small">بنرد في نفس اليوم. من غير بيانات بنك ولا دفع مقدم.</p>
           </div>
@@ -694,10 +535,11 @@
       </div>
     </section>
 
-    <!-- =========================================================== 12 · FAQ -->
+    <!-- =========================================================== 9 · FAQ -->
     <section class="faq-band" id="faq" data-sec="faq" aria-labelledby="faq-title">
       <div class="wrap">
         <div class="section-head" data-reveal>
+          <p class="kicker" data-t="faq.kicker">أسئلة</p>
           <h2 class="section-title" id="faq-title" data-t="faq.title">أسئلة بتتسأل كتير</h2>
         </div>
 
@@ -734,7 +576,7 @@
       </div>
     </section>
 
-    <!-- ======================================================= 13 · CONTACT -->
+    <!-- ======================================================= 10 · CONTACT -->
     <section class="section" id="contact" aria-labelledby="contact-title">
       <div class="wrap">
         <div class="section-head" data-reveal>
@@ -744,17 +586,17 @@
 
         <ul class="contacts" data-reveal>
           <li>
-            <a class="contact-card" href="tel:+201552526142" data-tel>
+            <a class="contact-card" href="tel:+201121249801" data-tel>
               <span class="contact-icon" aria-hidden="true"><svg class="icon" width="22" height="22"><use href="#i-phone"></use></svg></span>
               <span class="contact-label" data-t="ui.contactPhone">تليفون</span>
-              <span class="contact-value" dir="ltr" data-val="phone">01552526142</span>
+              <span class="contact-value" dir="ltr" data-val="phone">01121249801</span>
             </a>
           </li>
           <li>
-            <a class="contact-card" href="https://wa.me/201552526142" data-wa>
+            <a class="contact-card" href="https://wa.me/201121249801" data-wa>
               <span class="contact-icon" aria-hidden="true"><svg class="icon" width="22" height="22"><use href="#i-whatsapp"></use></svg></span>
               <span class="contact-label" data-t="ui.contactWhatsapp">واتساب</span>
-              <span class="contact-value" dir="ltr" data-val="whatsapp">01552526142</span>
+              <span class="contact-value" dir="ltr" data-val="whatsapp">01121249801</span>
             </a>
           </li>
           <li>
@@ -768,15 +610,15 @@
 
         <p class="hours" data-reveal>
           <svg class="icon" width="18" height="18" aria-hidden="true"><use href="#i-clock"></use></svg>
-          <span data-t="contact.hours">من السبت للخميس، من ١٠ ص لـ ٨ م</span>
+          <span data-t="contact.hours">من السبت للخميس، من ١٠ ص لـ ٨ م — الجيزة، مصر</span>
         </p>
 
         <div class="contact-actions" data-reveal>
-          <a class="btn btn-primary btn-lg" href="tel:+201552526142" data-tel>
+          <a class="btn btn-primary btn-lg" href="tel:+201121249801" data-tel>
             <svg class="icon" width="20" height="20" aria-hidden="true"><use href="#i-phone"></use></svg>
             <span data-t="ui.contactCall">اتصل بينا دلوقتي</span>
           </a>
-          <a class="btn btn-ghost btn-lg" href="https://wa.me/201552526142" data-wa>
+          <a class="btn btn-ghost btn-lg" href="https://wa.me/201121249801" data-wa>
             <svg class="icon" width="20" height="20" aria-hidden="true"><use href="#i-whatsapp"></use></svg>
             <span data-t="ui.contactWa">كلّمنا على واتساب</span>
           </a>
@@ -784,17 +626,14 @@
       </div>
     </section>
 
-    <!-- =================================================== 14 · THE LAST ASK -->
-    <!-- A page this long must not end on an address block. One line, two
-         buttons, and the same accent the quote band wears — the page's two
-         asks look like each other on purpose. -->
+    <!-- =================================================== 11 · THE LAST ASK -->
     <section class="closing band-accent" id="closing" data-sec="closing" aria-labelledby="closing-title">
       <div class="wrap closing-inner" data-reveal>
         <h2 class="section-title" id="closing-title" data-t="closing.title">شغلك يستاهل يبقى مرتب</h2>
         <p class="closing-body" data-t="closing.body">ابدأ بمكالمة. لو النظام مش هيفيدك هنقولك.</p>
         <div class="closing-actions">
           <a class="btn btn-solid btn-lg" href="#demo" data-t="closing.primaryCta">اطلب عرض سعر</a>
-          <a class="btn btn-outline btn-lg" href="https://wa.me/201552526142" data-wa>
+          <a class="btn btn-outline btn-lg" href="https://wa.me/201121249801" data-wa>
             <svg class="icon" width="20" height="20" aria-hidden="true"><use href="#i-whatsapp"></use></svg>
             <span data-t="closing.secondaryCta">كلّمنا على واتساب</span>
           </a>
@@ -803,16 +642,15 @@
     </section>
   </main>
 
-  <!-- =========================================================== FOOTER -->
   <footer class="site-foot">
     <div class="wrap foot-inner">
       <div class="foot-brand">
         <span class="brand-mark" aria-hidden="true">
-          <img class="brand-default" src="/kj/brand/nexora-mark.webp" alt="" width="40" height="28">
-          <img class="brand-logo" data-brand-logo alt="" hidden width="40" height="40">
+          <img class="brand-default" src="/kj/brand/kjevora-mark.png" alt="" width="42" height="32">
+          <img class="brand-logo" data-brand-logo alt="" hidden width="42" height="32">
         </span>
-        <p class="foot-tagline" data-t="footer.line">نكسورا — أنظمة إدارة وبرمجيات للشركات في مصر</p>
-        <p class="foot-made" data-t="footer.madeIn">صُنع في مصر، لشغل في مصر</p>
+        <p class="foot-tagline" data-t="footer.line">KJEVORA SOFTWARE SOLUTIONS</p>
+        <p class="foot-made" data-t="footer.madeIn">Driving Innovation Forward</p>
       </div>
 
       <nav class="foot-nav" data-t-label="ui.footNavLabel" aria-label="روابط التذييل">
@@ -822,7 +660,7 @@
         <a href="#contact" data-t="ui.navContact">كلّمنا</a>
       </nav>
 
-      <p class="foot-rights" data-t="footer.rights">© 2026 Nexora. كل الحقوق محفوظة.</p>
+      <p class="foot-rights" data-t="footer.rights">© 2026 KJEVORA SOFTWARE SOLUTIONS. كل الحقوق محفوظة.</p>
     </div>
   </footer>
 </body>

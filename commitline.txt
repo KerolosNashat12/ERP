@@ -1,52 +1,71 @@
-The Nexora page was live but still wearing KJ's words, and a stale logo with them
+KJEVORA SOFTWARE SOLUTIONS: the page renamed, rebuilt dark, and rebuilt around a bento
 
-WHAT HE SAW
-The new page deployed and the live site still said "KJ", the old hero, the old
-three prices, the old indigo. "nothing changes ????????? why"
+THE ASK
+"the logo is not right ... try to improve the colours and design a bit ...
+and remove the 'an Egyptian software house - from Giza' line ...
+whatsApp : 01121249801" - and, on the name: a real rename
+from Nexora to KJEVORA SOFTWARE SOLUTIONS, confirmed rather than assumed.
 
-WHAT WAS ACTUALLY HAPPENING
-The new page HAD shipped. Its structure was all there - the systems section,
-the clients row, the Nexora mark, the new favicon. What was covering it was
-the stored landing document.
+THE LOGO IS HIS OWN NOW
+He sent the company's actual logo as a render on an office wall. The symbol is
+cut out of that render to a transparent PNG and ships as the page's mark - in
+the header, the footer and the tab icon. The cut is a FLOOD FILL from the
+border rather than a luminance threshold, because the mark's own specular
+highlights are as pale as the wall: a threshold punches holes through them, a
+flood fill never reaches them. A first pass left a rim of pale wall pixels at
+partial alpha, which at 46px reads as a light box behind the mark rather than
+as a soft edge; any partially transparent pixel that is also pale is wall, not
+artwork, and is dropped.
 
-This page renders its own defaults and then merges the owner's saved document
-over the top, per key. That is the whole design and it is the right one - until
-the page stops being the same page. Every key in the stored document described
-the old KJ product page: brand.name "KJ", the old SEO title, the old hero, the
-three priced packages. Merged over the new defaults, it produced exactly what
-he was looking at: the new layout wearing all the old words.
+The second render he sent was tried first and abandoned: its wall is textured
+concrete and its K is silver, so no single test separates them and the cut ate
+half the letter. Two of his images, and only one of them is a usable source.
 
-WHAT CHANGES
-DOCUMENT_VERSION 1 -> 2.
+The banner he sent is the hero's background. Blurred and dropped to a third,
+deliberately: at full strength the wall-mounted wordmark sits directly behind
+the headline and the reader meets the company name twice, in two typefaces, at
+once. It is atmosphere, not a second logo.
 
-That field already existed for precisely this, and its own comment says so:
-"bump only when the shape changes in a way an older page cannot render." The
-stored document is validated on READ as well as on write, and `version` is a
-literal in the schema - so a document written under 1 now fails that read, and
-the service serves the page's own defaults instead. No console clicks, no
-section-by-section restore, no data migration. It takes effect the moment this
-deploys.
+THE PAGE
+Dark throughout rather than a dark hero on a white page, on the palette the
+theme derives from the cyan in the mark. The three systems are a BENTO - the
+lead system takes the whole top row and the two others share the one beneath,
+which is the shape of the business rather than a layout whim. The "an
+Egyptian software house - from Giza" line is gone from the eyebrow, as asked. `versus` and `audience`
+are gone entirely - removed rather than switched off, because a section
+switched off is still in the HTML and the no-JS page would show what the
+rendered page hides. Sections gained a `kicker`, which is in the contract and
+editable like any other copy rather than baked into the markup.
 
-AND THE SECOND HALF, WHICH IS THE PART THAT WOULD HAVE BEEN MISSED
-The logo does not live in the document. It lives in the asset table, and it was
-still being minted into brand.logo - so discarding the old words alone would
-have left the new page under the old "KJ SOFTWARE COMPANY" mark, which is a
-worse result than either. A discarded document now discards its pictures too:
-when the stored content is thrown away, the assets uploaded for it are withheld
-from the served document.
+WhatsApp and phone are 01121249801 everywhere - the header button, both contact
+cards, the closing band and the demo form's own wa.me action, which all move
+together off the one field in the document.
 
-NOTHING IS DELETED. The bytes stay exactly where they are. The moment a document
-at the current version is saved from the console, every upload is minted again
-on the next read. A stale picture is hidden, not destroyed.
+DOCUMENT_VERSION 2 -> 3
+Same mechanism as the 1 -> 2 bump two hours earlier, same reason: a document
+saved from the console under the Nexora cut describes a page that no longer
+exists, and merging it over the new defaults would put that name and those
+words straight back over the top. He had in fact saved one.
 
-npm test 1307 -> 1309. The new test stores a picture and a document that is
-valid in every respect EXCEPT its version, and asserts both halves: not one word
-of the old document survives, and the picture is withheld - then that the same
-picture comes straight back once a current document is saved. Verified by
-reverting the asset half alone and watching it fail before restoring it. The
-tests that spelled the version number as a literal now read the constant, and
-the two rows forced into the table to prove read-side validation carry the
-CURRENT version deliberately, so the markup and the bad price are what fails
-rather than the version number.
+THREE THINGS THE BROWSER CHECK CAUGHT, ALL REAL
+ - A CASCADE COLLISION in the header. `.btn` sets `display: inline-flex` and is
+   declared further down the sheet than `.head-cta { display: none }`, so the
+   quote button stayed on a 390px header and pushed the page 49px sideways.
+   Scoping the hide to `.head-actions .head-cta` wins on specificity instead of
+   hoping for order.
+ - `og:description` is written from `seo.description`, so the HTML has to ship
+   exactly that string. It shipped a shorter social variant, and the render
+   rewrote it on boot - a DOM mutation on a page that is supposed to perform
+   none.
+ - The hero's built-in fallback still pointed at a screen capture. It is the
+   company's banner now, and one file for both languages: a photograph has no
+   language.
 
-Also: node tests/kj-landing-check.mjs, all checks passed.
+npm test 1309 passing, 0 failing. node tests/kj-landing-check.mjs: all checks
+passed, including "rendered the defaults without touching one node" and, with
+JavaScript off, "identical to the rendered default, word for word".
+
+The check itself needed three honest updates: it asserted against `versus`,
+which the page no longer has (moved to `closing`, which nothing else in that
+run touches - `faq` was tried first and collided with the same run's
+FAQ-trimmed-to-two assertion), and it expected the old hero capture.

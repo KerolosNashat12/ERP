@@ -1,5 +1,5 @@
 /**
- * The words the Nexora landing page ships with.
+ * The words the KJEVORA landing page ships with.
  *
  * This is the whole page as a document: every string in both languages, every
  * system and its bullets, every FAQ entry, every caption. `kj.js` renders it,
@@ -39,51 +39,51 @@ export const DEFAULTS = {
 
   brand: {
     // A company name is not translated; both halves are the same on purpose.
-    name: { ar: 'Nexora', en: 'Nexora' },
+    name: { ar: 'KJEVORA', en: 'KJEVORA' },
     tagline: {
-      ar: 'نكسورا — أنظمة إدارة وبرمجيات للشركات في مصر',
-      en: 'Nexora — business systems and software, built in Egypt',
+      ar: 'KJEVORA SOFTWARE SOLUTIONS — أنظمة إدارة وبرمجيات للشركات في مصر',
+      en: 'KJEVORA SOFTWARE SOLUTIONS — business systems and software, built in Egypt',
     },
-    /** ONE hex, taken from the blue in the company mark. Every shade the
-        sheet paints with is derived from it. */
-    accent: '#0a5f96',
+    /** ONE hex, taken from the cyan in the company mark. Every shade the sheet
+        paints with is derived from it. */
+    accent: '#1b8fd0',
     logo: null,
   },
 
   contact: {
-    phone: '01552526142',
-    whatsapp: '01552526142',
+    phone: '01121249801',
+    whatsapp: '01121249801',
     email: 'kerolosnashatestfanous@gmail.com',
     hours: {
-      ar: 'من السبت للخميس، من ١٠ ص لـ ٨ م',
-      en: 'Saturday to Thursday, 10am – 8pm',
+      ar: 'من السبت للخميس، من ١٠ ص لـ ٨ م — الجيزة، مصر',
+      en: 'Saturday to Thursday, 10am – 8pm — Giza, Egypt',
     },
   },
 
   seo: {
     title: {
-      ar: 'نكسورا — أنظمة إدارة وبرمجيات للشركات في مصر',
-      en: 'Nexora — business systems and software, built in Egypt',
+      ar: 'KJEVORA SOFTWARE SOLUTIONS — أنظمة إدارة وبرمجيات للشركات في مصر',
+      en: 'KJEVORA SOFTWARE SOLUTIONS — business systems and software, built in Egypt',
     },
     description: {
-      ar: 'نكسورا بتبني وبتشغّل أنظمة إدارة كاملة للشركات في مصر: نظام محلات وموقع بيع أونلاين، ونظام تصنيع وتكاليف، ونظام لشركات التشطيب — عربي بالكامل، بتركيب وتدريب ودعم.',
-      en: 'Nexora builds and runs complete business systems in Egypt: a retail system with its own online shop, a manufacturing and costing system, and a system for fit-out contractors — fully Arabic, with setup, training and support.',
+      ar: 'KJEVORA SOFTWARE SOLUTIONS — بنبني أنظمة إدارة كاملة للشركات في مصر وبنركّبها وندرّب فريقك: نظام محلات وموقع بيع أونلاين، نظام تصنيع وتكاليف، ونظام لشركات التشطيب.',
+      en: 'KJEVORA SOFTWARE SOLUTIONS builds complete business systems in Egypt, installs them and trains your team: a retail system with its own online shop, a manufacturing and costing system, and a system for fit-out contractors.',
     },
   },
 
   // --- 1 · hero ----------------------------------------------------------
   hero: {
     eyebrow: {
-      ar: 'نكسورا — حلول برمجية مصرية',
-      en: 'Nexora — software built in Egypt',
+      ar: 'أنظمة إدارة وبرمجيات للشركات',
+      en: 'Business systems and software',
     },
     title: {
-      ar: 'أنظمة بتمسك شغلك كله، مش بس بتسجّله',
-      en: 'Systems that run your business, not just record it',
+      ar: 'بنبني الأنظمة اللي بتشغّل شركتك',
+      en: 'We build the systems that run your business',
     },
     subtitle: {
-      ar: 'بنبني وبنشغّل أنظمة إدارة كاملة للشركات في مصر — من المحل والمخزن، للتصنيع والتكاليف، لشركات التشطيب. عربي بالكامل، وبنركّبها وندرّب فريقك وبنفضل معاك بعدها.',
-      en: 'We build and run complete business systems in Egypt — from the shop floor and the stockroom to manufacturing costs and contracting. Fully Arabic, installed by us, taught to your team, and supported afterwards.',
+      ar: 'مش بنبيع برنامج وننصرف. بنفهم شغلك، نبني عليه نظام كامل، نركّبه، ندرّب فريقك، ونفضل معاك بعد ما يشتغل.',
+      en: 'We do not sell you software and disappear. We learn how you work, build the system around it, install it, train your team, and stay once it is running.',
     },
     primaryCta: { ar: 'اطلب عرض سعر', en: 'Request a quote' },
     secondaryCta: { ar: 'شوف أنظمتنا', en: 'See our systems' },
@@ -101,13 +101,14 @@ export const DEFAULTS = {
   // changed is what a card MEANS — one of three products, not one of three
   // price tiers of the same one.
   packages: {
+    kicker: { ar: 'أنظمتنا', en: 'Our systems' },
     title: {
       ar: 'تلات أنظمة، كل واحد اتبنى لشغل مختلف',
       en: 'Three systems, each built for a different kind of business',
     },
     note: {
-      ar: 'مش قالب واحد بنبيعه لكل الناس. كل نظام من التلاتة شغّال دلوقتي عند عميل حقيقي، وبيتظبط على طريقة شغلك قبل ما يبدأ.',
-      en: 'Not one template sold to everybody. Each of the three is live with a real client today, and it is fitted to the way you work before it starts.',
+      ar: 'مش قوالب. كل نظام من التلاتة شغّال دلوقتي عند عميل، وبيتظبط على طريقة شغلك قبل ما يبدأ عندك.',
+      en: 'Not templates. Each of the three is live with a client today, and it is fitted to the way you work before it starts.',
     },
     reassure: {
       ar: 'مش متأكد أنهي نظام يناسبك؟ اطلب مكالمة، نشوف شغلك مع بعض ونقولك بصراحة إنت محتاج إيه.',
@@ -118,87 +119,49 @@ export const DEFAULTS = {
     items: [
       {
         id: 'retail',
-        name: {
-          ar: 'نظام المحلات + موقع بيع أونلاين',
-          en: 'Retail system + online shop',
-        },
+        name: { ar: 'نظام المحلات + موقع بيع أونلاين', en: 'Retail system + online shop' },
         badge: { ar: 'لمحلات التجزئة', en: 'For retail shops' },
         featured: false,
         oneLiner: {
-          ar: 'لمحلات الملابس والإكسسوارات والعطور والهدايا — كاشير ومخزن وفواتير وتقارير، وموقع بيع باسم محلك.',
-          en: 'For clothing, accessories, perfume and gift shops — till, stock, invoices and reports, plus an online shop under your own name.',
+          ar: 'كاشير ومخزن وفواتير وتقارير، وموقع بيع باسم محلك — والطلب من الموقع بيتخصم من نفس المخزون.',
+          en: 'Till, stock, invoices and reports, plus an online shop in your own name — and an order from it comes off the same stock.',
         },
         inherits: null,
         features: [
-          {
-            ar: 'شاشة كاشير كاملة مع قارئ الباركود، وبتشتغل في المحل حتى لو النت قطع',
-            en: 'A full till with barcode-scanner support that keeps selling even when the connection drops',
-          },
-          {
-            ar: 'مخزون بمقاسات وألوان ومتغيرات، وتنبيه قبل ما الصنف يخلص',
-            en: 'Stock with sizes, colours and variants, and a warning before a line runs out',
-          },
-          {
-            ar: 'موقع بيع أونلاين باسم محلك وبألوانك، والطلب بيدخل على نفس المخزون',
-            en: 'An online shop in your name and colours, with orders landing against the same stock',
-          },
-          {
-            ar: 'فواتير ومرتجعات وتبديلات وموردين وتقفيل وردية بأرقام صح',
-            en: 'Invoices, returns, exchanges, suppliers, and an end-of-day close that adds up',
-          },
-          {
-            ar: 'تقارير أرباح ومبيعات ومخزون، وفروع متعددة لما الشغل يكبر',
-            en: 'Profit, sales and stock reports — and multiple branches when the business grows',
-          },
+          { ar: 'كاشير كامل مع قارئ الباركود، وبيشتغل في المحل حتى لو النت قطع',
+            en: 'A full till with barcode scanning that keeps selling when the connection drops' },
+          { ar: 'مخزون بمقاسات وألوان ومتغيرات، وتنبيه قبل ما الصنف يخلص',
+            en: 'Stock with sizes, colours and variants, and a warning before a line runs out' },
+          { ar: 'فواتير ومرتجعات وتبديلات وموردين وتقفيل وردية بأرقام صح',
+            en: 'Invoices, returns, exchanges, suppliers, and an end-of-day close that adds up' },
+          { ar: 'تقارير أرباح ومبيعات ومخزون، وفروع متعددة لما الشغل يكبر',
+            en: 'Profit, sales and stock reports — and multiple branches when the business grows' },
         ],
         cta: { ar: 'اطلب عرض سعر', en: 'Request a quote' },
       },
       {
         id: 'chemcost',
-        name: {
-          ar: 'ChemCost — نظام التصنيع والتكاليف',
-          en: 'ChemCost — manufacturing and costing',
-        },
-        badge: {
-          ar: 'لتركيب العطور ومستحضرات التجميل',
-          en: 'For perfume and cosmetics compounding',
-        },
-        featured: true,
+        name: { ar: 'ChemCost — نظام التصنيع والتكاليف', en: 'ChemCost — manufacturing and costing' },
+        badge: { ar: 'لتركيب العطور ومستحضرات التجميل', en: 'For perfume and cosmetics compounding' },
+        featured: false,
         oneLiner: {
-          ar: 'لو بتصنّع منتجاتك بنفسك — بيحسبلك تكلفة كل منتج من مكوناته بالمليم، قبل ما تحط سعر البيع.',
-          en: 'If you make what you sell — it costs every product out of its own ingredients, to the piastre, before you set a price.',
+          ar: 'لو بتصنّع اللي بتبيعه: بيحسبلك تكلفة كل منتج من مكوناته بالمليم، قبل ما تحط سعر البيع.',
+          en: 'If you make what you sell: it costs every product out of its own ingredients, to the piastre, before you set a price.',
         },
         inherits: null,
         features: [
-          {
-            ar: 'تركيبة لكل منتج بمكوناتها وكمياتها، والتكلفة بتتحسب لوحدها وبتتحدّث مع كل شراء',
-            en: 'A recipe per product with its ingredients and quantities; the cost computes itself and moves with every purchase',
-          },
-          {
-            ar: 'مخزون خامات بتشغيلات، لكل تشغيلة كميتها المتبقية وتاريخ صلاحيتها',
-            en: 'Raw-material stock in batches, each with its remaining quantity and its expiry date',
-          },
-          {
-            ar: 'أوامر إنتاج بأكتر من منتج، والخامات بتتخصم من المخزن لوحدها',
-            en: 'Production orders covering more than one product, with materials drawn down automatically',
-          },
-          {
-            ar: 'جرد وحركة مخزون وهدر، وتقارير تكاليف وأرباح لكل منتج',
-            en: 'Stock counts, stock movement and wastage, with cost and profit reports per product',
-          },
-          {
-            ar: 'مقاسات وأحجام وعبوات لنفس المنتج، كل واحدة بتكلفتها وسعرها',
-            en: 'Sizes, volumes and pack formats of the same product, each with its own cost and price',
-          },
+          { ar: 'تركيبة لكل منتج، والتكلفة بتتحسب لوحدها وبتتحدّث مع كل شراء',
+            en: 'A recipe per product; the cost computes itself and moves with every purchase' },
+          { ar: 'خامات بتشغيلات، لكل تشغيلة كميتها المتبقية وتاريخ صلاحيتها',
+            en: 'Raw materials in batches, each with its remaining quantity and expiry date' },
+          { ar: 'أوامر إنتاج، وجرد وهدر، وتقارير تكاليف وأرباح لكل منتج',
+            en: 'Production orders, stock counts and wastage, and cost and profit per product' },
         ],
         cta: { ar: 'اطلب عرض سعر', en: 'Request a quote' },
       },
       {
         id: 'highlevel',
-        name: {
-          ar: 'High Level — موقع ولوحة تحكم شركات التشطيب',
-          en: 'High Level — website and dashboard for fit-out companies',
-        },
+        name: { ar: 'High Level — موقع ولوحة تحكم', en: 'High Level — website and dashboard' },
         badge: { ar: 'لشركات التشطيب والديكور', en: 'For fit-out and interiors' },
         featured: false,
         oneLiner: {
@@ -207,26 +170,12 @@ export const DEFAULTS = {
         },
         inherits: null,
         features: [
-          {
-            ar: 'موقع شركة كامل بباقاتك وخدماتك وأعمالك، عربي وإنجليزي',
-            en: 'A complete company website with your packages, services and portfolio, in Arabic and English',
-          },
-          {
-            ar: 'محرك تقسيط ذكي: العميل يحسب تكلفة وحدته وقسطه الشهري بنفسه قبل ما يكلّمك',
-            en: 'A financing calculator: a client works out the cost of their unit and their monthly instalment before they call you',
-          },
-          {
-            ar: 'طلبات المعاينة والاستفسارات بتوصلك مجمّعة، مش رسايل متفرقة',
-            en: 'Site-visit requests and enquiries arrive together, not scattered across messages',
-          },
-          {
-            ar: 'لوحة تحكم بتغيّر منها الباقات والأسعار والمحتوى من غير ما تستنى مبرمج',
-            en: 'A dashboard for changing packages, prices and content without waiting on a developer',
-          },
-          {
-            ar: 'صفحات خدمات ومدونة متظبطة لجوجل، عشان الناس توصلك من البحث',
-            en: 'Service pages and a blog built for search, so people find you through Google',
-          },
+          { ar: 'موقع شركة كامل بباقاتك وخدماتك وأعمالك، عربي وإنجليزي',
+            en: 'A complete company website with your packages, services and portfolio, in Arabic and English' },
+          { ar: 'محرك تقسيط: العميل يحسب تكلفته وقسطه بنفسه قبل ما يكلّمك',
+            en: 'A financing calculator: a client works out their own cost and instalment before they call' },
+          { ar: 'تغيّر الباقات والأسعار والمحتوى من غير ما تستنى مبرمج',
+            en: 'Change packages, prices and content without waiting on a developer' },
         ],
         cta: { ar: 'اطلب عرض سعر', en: 'Request a quote' },
       },
@@ -236,10 +185,7 @@ export const DEFAULTS = {
   // --- 3 · in every system ------------------------------------------------
   included: {
     enabled: true,
-    title: {
-      ar: 'في كل نظام من نكسورا، من غير فلوس زيادة',
-      en: 'In every Nexora system, at no extra cost',
-    },
+    title: { ar: 'في كل نظام، من غير فلوس زيادة', en: 'In every system, at no extra cost' },
     items: [
       { ar: 'التركيب والتجهيز', en: 'Setup and installation' },
       { ar: 'نقل بياناتك القديمة', en: 'Moving your existing data' },
@@ -252,34 +198,35 @@ export const DEFAULTS = {
 
   // --- 4 · why Nexora -----------------------------------------------------
   overview: {
-    title: { ar: 'ليه نكسورا؟', en: 'Why Nexora?' },
+    kicker: { ar: 'نظام مخصص', en: 'Custom builds' },
+    title: { ar: 'شغلك مختلف؟ بنبنيه من الأول', en: 'Business not like the others? We build it from scratch' },
     intro: {
-      ar: 'في السوق أنظمة كتير جاهزة، بس أغلبها مكتوب لشغل مش شغلك: مصطلحات مش بتاعتك، وشاشات فيها حاجات عمرك ما هتفتحها، وحاجات إنت محتاجها مش موجودة أصلًا. إحنا بنشتغل بالعكس — بنفهم شغلك الأول، وبنظبّط النظام عليه، وبنفضل معاك بعد ما يشتغل.',
-      en: 'There is no shortage of off-the-shelf systems, and most of them were written for somebody else’s business: words you do not use, screens you will never open, and the one thing you actually need missing. We work the other way round — understand the business first, fit the system to it, and stay once it is running.',
+      ar: 'التلات أنظمة فوق كلهم بدأوا كده — شركة محتاجة حاجة مش موجودة في السوق. لو شغلك مش شبه أي واحد فيهم، ده بالظبط اللي بنعمله.',
+      en: 'All three systems above started exactly that way — a company needing something the market did not have. If your work is not like any of them, this is precisely what we do.',
     },
     blocks: [
       {
         icon: 'till',
-        title: { ar: 'نظام على مقاس شغلك', en: 'Fitted to your business' },
+        title: { ar: 'تحليل قبل أي كود', en: 'Analysis before any code' },
         body: {
-          ar: 'كل نظام من التلاتة اتبنى مع عميل حقيقي وهو شغال، مش في مكتب. ولما ييجي لك، بيتظبط على أصنافك وأسعارك وطريقة شغلك إنت قبل ما تشوفه.',
-          en: 'Each of the three was built alongside a real business while it was trading, not in an office. When it reaches you it is fitted to your products, your prices and your way of working before you ever see it.',
+          ar: 'بنقعد معاك ونطلع بتوصيف مكتوب لكل شاشة وكل حالة قبل ما نكتب سطر واحد.',
+          en: 'We sit with you and produce a written spec for every screen and every case before a single line is written.',
         },
       },
       {
         icon: 'boxes',
-        title: { ar: 'كل حاجة مربوطة ببعضها', en: 'One system, not five files' },
+        title: { ar: 'بناء على مراحل', en: 'Built in stages' },
         body: {
-          ar: 'المخزن والبيع والتكاليف والتقارير جوه نظام واحد. الرقم اللي بتشوفه في التقرير جاي من نفس الحركة اللي حصلت على الأرض، مش من ملف تاني حد بيملاه بالإيد.',
-          en: 'Stock, selling, costs and reports live in one system. The number in the report comes from the movement that actually happened, not from a second file somebody fills in by hand.',
+          ar: 'بتشوف النظام شغال أول بأول، مش في الآخر. تعدّل وإحنا بنبني، مش بعد ما نخلص.',
+          en: 'You see it working as it grows, not at the end. You change your mind while we build, not after.',
         },
       },
       {
         icon: 'globe-bag',
-        title: { ar: 'بنفضل معاك بعد التسليم', en: 'We stay after handover' },
+        title: { ar: 'النظام بتاعك', en: 'The system is yours' },
         body: {
-          ar: 'التركيب والتدريب والدعم مش بنود إضافية في العرض. وأي سؤال بعد كده، اتصل أو ابعت واتساب — بنرد بنفسنا، مش روبوت ولا تذكرة.',
-          en: 'Setup, training and support are not extra lines on the quote. Any question afterwards — call or WhatsApp, and you get us, not a bot and not a ticket number.',
+          ar: 'الكود والبيانات بتاعتك وبنسلّمهم. ومفيش حاجة بتقف لو بطّلنا نشتغل مع بعض.',
+          en: 'The code and the data are yours and we hand them over. Nothing stops if we stop working together.',
         },
       },
     ],
@@ -291,6 +238,7 @@ export const DEFAULTS = {
 
   // --- 5 · screenshots ----------------------------------------------------
   shots: {
+    kicker: { ar: 'من جوه الأنظمة', en: 'Inside the systems' },
     title: { ar: 'شوفها شغّالة قبل ما تقرر', en: 'See them working before you decide' },
     note: {
       ar: 'دي شاشات حقيقية من أنظمة شغالة عند عملائنا دلوقتي، مش رسومات.',
@@ -300,10 +248,7 @@ export const DEFAULTS = {
       {
         key: 'pos',
         kind: 'desktop',
-        caption: {
-          ar: 'نظام المحلات — امسح الباركود والفاتورة جاهزة',
-          en: 'The retail system — scan, and the invoice is ready',
-        },
+        caption: { ar: 'نظام المحلات — امسح الباركود والفاتورة جاهزة', en: 'The retail system — scan, and the invoice is ready' },
         enabled: true,
         custom: null,
       },
@@ -315,29 +260,16 @@ export const DEFAULTS = {
         custom: null,
       },
       {
-        key: 'products',
-        kind: 'desktop',
-        caption: { ar: 'كل صنف بمقاساته وكمياته', en: 'Every product, every size, every quantity' },
-        enabled: true,
-        custom: null,
-      },
-      {
         key: 'highlevel-home',
         kind: 'desktop',
-        caption: {
-          ar: 'High Level — موقع الشركة اللي بيجيب العملاء',
-          en: 'High Level — the company website that brings the clients',
-        },
+        caption: { ar: 'High Level — موقع الشركة اللي بيجيب العملاء', en: 'High Level — the company website that brings the clients' },
         enabled: true,
         custom: null,
       },
       {
         key: 'highlevel-calc',
         kind: 'desktop',
-        caption: {
-          ar: 'العميل بيحسب قسطه بنفسه قبل ما يكلّمك',
-          en: 'A client works out their own instalment before calling you',
-        },
+        caption: { ar: 'العميل بيحسب قسطه بنفسه قبل ما يكلّمك', en: 'A client works out their own instalment before calling you' },
         enabled: true,
         custom: null,
       },
@@ -371,7 +303,8 @@ export const DEFAULTS = {
   // facts a visitor could check. No borrowed logos, no "and 200 others".
   clients: {
     enabled: true,
-    title: { ar: 'شغّالين علينا دلوقتي', en: 'Running on Nexora today' },
+    kicker: { ar: 'عملاؤنا', en: 'Clients' },
+    title: { ar: 'شركات بتشتغل بأنظمتنا', en: 'Businesses running on our systems' },
     note: {
       ar: 'مش أسماء على صفحة — دي أنظمة بتشتغل كل يوم في شغل حقيقي.',
       en: 'Not names on a page — these are systems working every day in real businesses.',
@@ -403,20 +336,15 @@ export const DEFAULTS = {
   // --- 7 · how it works ---------------------------------------------------
   steps: {
     enabled: true,
-    title: {
-      ar: 'من أول مكالمة لحد ما النظام يشتغل — أربع خطوات',
-      en: 'From the first call to a system that runs — four steps',
-    },
-    note: {
-      ar: 'مفيش حاجة فيهم إنت اللي هتعملها لوحدك.',
-      en: 'Not one of them is a thing you do on your own.',
-    },
+    kicker: { ar: 'إزاي بنشتغل', en: 'How we work' },
+    title: { ar: 'من أول مكالمة لحد ما النظام يشتغل', en: 'From the first call to a system that runs' },
+    note: { ar: 'مفيش حاجة فيهم إنت اللي هتعملها لوحدك.', en: 'Not one of them is a thing you do on your own.' },
     items: [
       {
         title: { ar: 'نتكلم ونفهم شغلك', en: 'We talk, and we learn the business' },
         body: {
-          ar: 'مكالمة قصيرة نفهم منها بتشتغل إزاي دلوقتي، وإيه اللي واجعك بالظبط، وأنهي نظام من التلاتة هو اللي يفيدك.',
-          en: 'A short call: how you work today, what actually hurts, and which of the three is the one that helps.',
+          ar: 'مكالمة قصيرة نفهم منها بتشتغل إزاي دلوقتي، وإيه اللي واجعك بالظبط، وأنهي نظام هو اللي يفيدك.',
+          en: 'A short call: how you work today, what actually hurts, and which system is the one that helps.',
         },
       },
       {
@@ -443,81 +371,7 @@ export const DEFAULTS = {
     ],
   },
 
-  // --- 8 · why not paper and Excel ----------------------------------------
-  versus: {
-    enabled: true,
-    title: {
-      ar: 'الورق والإكسل بيشتغلوا… لحد لما الشغل يكبر',
-      en: 'Paper and a spreadsheet work — until the business grows',
-    },
-    rows: [
-      {
-        before: {
-          ar: 'بتعرف عملت كام لما تقفل وتحسب بالإيد',
-          en: 'You learn what you made by closing up and adding it by hand',
-        },
-        after: { ar: 'الرقم قدامك وإنت واقف', en: 'The number is in front of you while you stand there' },
-      },
-      {
-        before: {
-          ar: 'بتعرف الصنف أو الخامة خلصت لما تحتاجها وملاقيهاش',
-          en: 'You learn a line or a material ran out when you reach for it and it is gone',
-        },
-        after: { ar: 'بيقولك قبل ما تخلص بكذا يوم', en: 'It warns you days before it runs out' },
-      },
-      {
-        before: {
-          ar: 'كل واحد في الفريق ماسك ملف لوحده، والأرقام مش بتطابق',
-          en: 'Everyone keeps their own file, and the numbers never agree',
-        },
-        after: { ar: 'نظام واحد، وكل واحد بصلاحيته', en: 'One system, and each person with their own permissions' },
-      },
-      {
-        before: {
-          ar: 'لو الدفتر أو الملف ضاع، ضاع كل حاجة',
-          en: 'If the notebook or the file goes missing, everything goes with it',
-        },
-        after: { ar: 'نسخة احتياطية تلقائية كل يوم', en: 'Backed up automatically, every day' },
-      },
-    ],
-  },
 
-  // --- 9 · who this is for ------------------------------------------------
-  audience: {
-    enabled: true,
-    title: { ar: 'مناسب لشغلك؟', en: 'Is it right for your business?' },
-    yesTitle: { ar: 'أيوه، لو إنت', en: 'Yes, if you are' },
-    yes: [
-      {
-        ar: 'محل ملابس أو أحذية أو إكسسوارات أو عطور أو هدايا',
-        en: 'A clothing, footwear, accessories, perfume or gift shop',
-      },
-      {
-        ar: 'بتصنّع أو بتركّب عطور ومستحضرات تجميل',
-        en: 'Manufacturing or compounding perfume and cosmetics',
-      },
-      { ar: 'شركة تشطيب أو ديكور أو مقاولات', en: 'A fit-out, interiors or contracting company' },
-      {
-        ar: 'أي شغل ماسك مخزن وتكاليف وعايز أرقامه تبقى مظبوطة',
-        en: 'Any business holding stock and costs that wants its numbers to be right',
-      },
-    ],
-    noTitle: { ar: 'بصراحة، مش مناسب لـ', en: 'Honestly, not built for' },
-    no: [
-      {
-        ar: 'مطاعم وكافيهات — دي محتاجة نظام مطبخ وطاولات، وده مش شغلنا',
-        en: 'Restaurants and cafés — those need kitchen and table management, which is not what we do',
-      },
-      {
-        ar: 'حد عايز نظام ينزل بكرة من غير ما نفهم شغله الأول',
-        en: 'Anyone who wants a system live tomorrow without us understanding the business first',
-      },
-    ],
-    closing: {
-      ar: 'لو مش متأكد، اتصل واسألنا. لو مش هنفيدك هنقولك، أحسن من إنك تدفع وتكتشف بنفسك.',
-      en: 'Not sure? Call and ask. If it will not help you we will say so — better than you paying to find out.',
-    },
-  },
 
   // --- 10 · what clients say ----------------------------------------------
   // SHIPS EMPTY, and therefore invisible. No client has given one of these for
@@ -527,18 +381,19 @@ export const DEFAULTS = {
   // section appears the day a real quote is entered.
   quotes: {
     enabled: true,
-    title: { ar: 'ناس شغالة علينا', en: 'What our clients say' },
+    title: { ar: 'عملاؤنا بيقولوا إيه', en: 'What our clients say' },
     items: [],
   },
 
   // --- 11 · request a quote -----------------------------------------------
   demo: {
-    title: { ar: 'اطلب عرض سعر، من غير أي التزام', en: 'Ask for a quote, with no commitment' },
+    kicker: { ar: 'كلّمنا', en: 'Contact' },
+    title: { ar: 'ابدأ بمكالمة', en: 'Start with a call' },
     body: {
-      ar: 'احجز نص ساعة معانا. هنفهم شغلك، ونوريك النظام المناسب شغّال على بيانات شبه بتاعتك، ونبعتلك عرض سعر مكتوب — وبعدها إنت اللي تقرر.',
-      en: 'Book half an hour with us. We will understand the business, show you the right system running on data like yours, and send you a written quote — then you decide.',
+      ar: 'هنفهم شغلك، ونوريك النظام المناسب شغّال على بيانات شبه بتاعتك، ونبعتلك عرض سعر مكتوب في نفس اليوم — وبعدها إنت اللي تقرر.',
+      en: 'We will learn the business, show you the right system running on data like yours, and send you a written quote the same day — then you decide.',
     },
-    button: { ar: 'اطلب عرض سعر على واتساب', en: 'Request a quote on WhatsApp' },
+    button: { ar: 'ابعت على واتساب', en: 'Send on WhatsApp' },
     small: {
       ar: 'بنرد في نفس اليوم. من غير بيانات بنك ولا دفع مقدم.',
       en: 'We reply the same day. No bank details, nothing paid up front.',
@@ -546,10 +401,7 @@ export const DEFAULTS = {
     fields: {
       name: { ar: 'الاسم', en: 'Name' },
       phone: { ar: 'رقم الموبايل', en: 'Mobile number' },
-      shopType: {
-        ar: 'النظام اللي يهمك (محلات / ChemCost / High Level)',
-        en: 'Which system interests you (Retail / ChemCost / High Level)',
-      },
+      shopType: { ar: 'النظام اللي يهمك', en: 'Which system interests you' },
       branches: { ar: 'نوع نشاطك', en: 'What your business does' },
       message: { ar: 'حابب تسألنا عن إيه؟', en: 'Anything you want to ask?' },
     },
@@ -558,6 +410,7 @@ export const DEFAULTS = {
   // --- 12 · FAQ -----------------------------------------------------------
   faq: {
     enabled: true,
+    kicker: { ar: 'أسئلة', en: 'Questions' },
     title: { ar: 'أسئلة بتتسأل كتير', en: 'Questions we get a lot' },
     items: [
       {
@@ -625,11 +478,11 @@ export const DEFAULTS = {
   },
 
   footer: {
-    line: {
-      ar: 'نكسورا — أنظمة إدارة وبرمجيات للشركات في مصر',
-      en: 'Nexora — business systems and software, built in Egypt',
+    line: { ar: 'KJEVORA SOFTWARE SOLUTIONS', en: 'KJEVORA SOFTWARE SOLUTIONS' },
+    madeIn: { ar: 'Driving Innovation Forward', en: 'Driving Innovation Forward' },
+    rights: {
+      ar: '© 2026 KJEVORA SOFTWARE SOLUTIONS. كل الحقوق محفوظة.',
+      en: '© 2026 KJEVORA SOFTWARE SOLUTIONS. All rights reserved.',
     },
-    madeIn: { ar: 'صُنع في مصر، لشغل في مصر', en: 'Made in Egypt, for businesses in Egypt' },
-    rights: { ar: '© 2026 Nexora. كل الحقوق محفوظة.', en: '© 2026 Nexora. All rights reserved.' },
   },
 };

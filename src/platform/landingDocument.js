@@ -53,6 +53,13 @@ import { normalizeHexColor } from '../shared/branding.js';
  * serves the page's own defaults instead. That is the whole mechanism, and it
  * is the reason this field exists rather than being decoration.
  *
+ * ── 2 → 3, on 2026-09-12 ─────────────────────────────────────────────────────
+ * The company renamed again — Nexora to KJEVORA SOFTWARE SOLUTIONS — and the
+ * page was rebuilt around it: a new palette, a bento of systems, `versus` and
+ * `audience` gone entirely, and a `kicker` on most sections. A document saved
+ * from the console under the Nexora cut would have put that name and those
+ * words straight back over the top, which is exactly what this field prevents.
+ *
  * ── 1 → 2, on 2026-09-12 ─────────────────────────────────────────────────────
  * The page stopped selling one product and started selling the company that
  * builds three. `packages` went from three PRICE TIERS of the ERP to the three
@@ -63,7 +70,7 @@ import { normalizeHexColor } from '../shared/branding.js';
  * exactly what you would expect: the new layout wearing all the old words, the
  * old name and the old three prices. That is what this bump discards.
  */
-export const DOCUMENT_VERSION = 2;
+export const DOCUMENT_VERSION = 3;
 
 /**
  * A whole document, serialised, may not exceed this. The page is copy, not a
@@ -179,6 +186,7 @@ export const landingDocumentSchema = z.object({
   }).optional(),
 
   overview: z.object({
+    kicker: pair(120).optional(),
     title: pair(200).optional(),
     intro: pair(1200).optional(),
     blocks: list(z.object({
@@ -191,6 +199,7 @@ export const landingDocumentSchema = z.object({
 
   steps: z.object({
     enabled: flag.optional(),
+    kicker: pair(120).optional(),
     title: pair(200).optional(),
     note: pair(600).optional(),
     items: list(z.object({
@@ -219,6 +228,7 @@ export const landingDocumentSchema = z.object({
   }).optional(),
 
   packages: z.object({
+    kicker: pair(120).optional(),
     title: pair(200).optional(),
     note: pair(600).optional(),
     reassure: pair(600).optional(),
@@ -249,6 +259,7 @@ export const landingDocumentSchema = z.object({
   }).optional(),
 
   shots: z.object({
+    kicker: pair(120).optional(),
     title: pair(200).optional(),
     note: pair(600).optional(),
     items: list(z.object({
@@ -270,6 +281,7 @@ export const landingDocumentSchema = z.object({
    */
   clients: z.object({
     enabled: flag.optional(),
+    kicker: pair(120).optional(),
     title: pair(200).optional(),
     note: pair(600).optional(),
     items: list(z.object({
@@ -291,6 +303,7 @@ export const landingDocumentSchema = z.object({
   }).optional(),
 
   demo: z.object({
+    kicker: pair(120).optional(),
     title: pair(200).optional(),
     body: pair(1200).optional(),
     button: pair(80).optional(),
@@ -306,6 +319,7 @@ export const landingDocumentSchema = z.object({
 
   faq: z.object({
     enabled: flag.optional(),
+    kicker: pair(120).optional(),
     title: pair(200).optional(),
     items: list(z.object({
       q: pair(300).optional(),

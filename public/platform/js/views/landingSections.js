@@ -39,7 +39,7 @@ function list(host, key) {
 
 /**
  * A list whose every entry is nothing but a `{ en, ar }` pair — the hero's
- * three reassurances, the two audience lists, the "in every package" strip and
+ * three reassurances, the "in every system" strip and
  * a package's own bullets are all this shape.
  */
 function pairList({
@@ -279,63 +279,9 @@ function stepsSection(doc, defaults, onChange) {
   );
 }
 
-// ════════════════════════════════════════════════════════════════ audience
 
-function audienceSection(doc, defaults, onChange) {
-  const a = doc.audience;
-  return stack(
-    sub(t('secAudienceSub')),
-    biField({ label: t('fAudienceTitle'), pair: ensurePair(a, 'title'), onChange }),
-    h('div', { class: 'panel stack' },
-      biField({ label: t('fYesTitle'), pair: ensurePair(a, 'yesTitle'), onChange }),
-      pairList({
-        items: list(a, 'yes'),
-        label: t('fYesItems'),
-        itemName: (i) => `${t('fAudienceItem')} ${i + 1}`,
-        onChange,
-        empty: { title: t('listEmptyTitle'), message: t('sectionEmptyWarn') },
-      })),
-    h('div', { class: 'panel stack' },
-      biField({ label: t('fNoTitle'), pair: ensurePair(a, 'noTitle'), onChange }),
-      pairList({
-        items: list(a, 'no'),
-        label: t('fNoItems'),
-        itemName: (i) => `${t('fAudienceItem')} ${i + 1}`,
-        onChange,
-        empty: { title: t('listEmptyTitle'), message: t('sectionEmptyWarn') },
-      })),
-    biField({ label: t('fAudienceClosing'), pair: ensurePair(a, 'closing'), area: true, rows: 2, onChange }),
-  );
-}
 
-// ══════════════════════════════════════════════════════════════════ versus
 
-function versusSection(doc, defaults, onChange) {
-  const v = doc.versus;
-  return stack(
-    sub(t('secVersusSub')),
-    biField({ label: t('fVersusTitle'), pair: ensurePair(v, 'title'), onChange }),
-    listEditor({
-      items: list(v, 'rows'),
-      label: t('fVersusRows'),
-      addLabel: t('fVersusRow'),
-      itemName: (i) => `${t('fVersusRow')} ${i + 1}`,
-      onChange,
-      makeItem: () => ({ before: emptyPair(), after: emptyPair() }),
-      empty: { title: t('listEmptyTitle'), message: t('sectionEmptyWarn') },
-      renderItem: (item, index) => [
-        biField({
-          label: `${t('fBefore')} — ${t('fVersusRow')} ${index + 1}`,
-          pair: ensurePair(item, 'before'), area: true, rows: 2, onChange,
-        }),
-        biField({
-          label: `${t('fAfter')} — ${t('fVersusRow')} ${index + 1}`,
-          pair: ensurePair(item, 'after'), area: true, rows: 2, onChange,
-        }),
-      ],
-    }),
-  );
-}
 
 // ════════════════════════════════════════════════════════════════ packages
 
@@ -809,22 +755,6 @@ export const SECTIONS = [
     toggle: true,
     build: stepsSection,
     warn: (doc) => [emptyListWarn(doc.steps?.items)],
-  },
-  {
-    key: 'audience',
-    label: 'secAudience',
-    toggle: true,
-    build: audienceSection,
-    warn: (doc) => [
-      (doc.audience?.yes?.length === 0 && doc.audience?.no?.length === 0) ? t('sectionEmptyWarn') : null,
-    ],
-  },
-  {
-    key: 'versus',
-    label: 'secVersus',
-    toggle: true,
-    build: versusSection,
-    warn: (doc) => [emptyListWarn(doc.versus?.rows)],
   },
   {
     key: 'packages',

@@ -336,7 +336,7 @@ served = {
         name: 'مريم فؤاد', shop: 'Maryam Bags', city: 'الإسكندرية' },
     ],
   },
-  versus: { enabled: false },
+  closing: { enabled: false },
 };
 for (const lang of LANGS) {
   for (const width of WIDTHS) {
@@ -352,8 +352,8 @@ for (const lang of LANGS) {
       faqCount: document.querySelectorAll('.faq-item').length,
       quotesHidden: document.querySelector('[data-sec="quotes"]').hidden,
       quoteCount: document.querySelectorAll('.quote').length,
-      versusHidden: document.querySelector('[data-sec="versus"]').hidden,
-      versusHeight: document.querySelector('[data-sec="versus"]').getBoundingClientRect().height,
+      closingHidden: document.querySelector('[data-sec="closing"]').hidden,
+      closingHeight: document.querySelector('[data-sec="closing"]').getBoundingClientRect().height,
       tels: [...new Set([...document.querySelectorAll('[data-tel]')].map((a) => a.getAttribute('href')))],
       was: [...new Set([...document.querySelectorAll('[data-wa]')].map((a) => a.getAttribute('href')))],
       formAction: document.querySelector('[data-demo-form]').getAttribute('action'),
@@ -369,8 +369,8 @@ for (const lang of LANGS) {
     if (seen.growthSixth !== sixth) fail(`${label}: the added feature reads "${seen.growthSixth}"`);
     if (seen.faqCount !== 2) fail(`${label}: ${seen.faqCount} FAQ entries, expected 2`);
     if (seen.quotesHidden || seen.quoteCount !== 2) fail(`${label}: quotes hidden=${seen.quotesHidden} count=${seen.quoteCount}`);
-    if (!seen.versusHidden || seen.versusHeight !== 0) {
-      fail(`${label}: the disabled section still occupies ${seen.versusHeight}px`);
+    if (!seen.closingHidden || seen.closingHeight !== 0) {
+      fail(`${label}: the disabled section still occupies ${seen.closingHeight}px`);
     }
     if (seen.tels.join() !== 'tel:+201000000001') fail(`${label}: tel links ${seen.tels.join(', ')}`);
     if (seen.was.join() !== 'https://wa.me/201000000002') fail(`${label}: wa links ${seen.was.join(', ')}`);
@@ -483,7 +483,7 @@ served = {
   }));
   if (!seen.logoHidden || seen.monogram) fail('assets: the missing logo did not fall back to the shipped mark');
   else ok('assets: the missing logo fell back to the shipped mark');
-  if (seen.hero !== '/kj/shots/pos-ar.webp' || seen.heroBroken) {
+  if (seen.hero !== '/kj/brand/banner.jpg' || seen.heroBroken) {
     fail(`assets: the hero is "${seen.hero}" broken=${seen.heroBroken}`);
   } else ok('assets: the missing hero fell back to the built-in capture');
 

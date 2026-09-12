@@ -1,1164 +1,457 @@
-/* =============================================================================
-   KJ — the landing page's own sheet.
-
-   SAME LADDERS, OWN SHEET. Every scale below — four radius rungs, eight
-   spacing rungs, seven fixed type steps plus two responsive ones, three
-   durations, one ease, one lift, one shadow step, one ring — is the
-   storefront's (`public/shop/shop.css`), taken deliberately so that a shop
-   owner who sees this page and then sees the product is looking at one
-   company. What is NOT taken is the storefront's components: a marketing page
-   has a hero, a pricing table and a screenshot rhythm that a shop does not,
-   and the two files have to be free to move apart without breaking each other.
-
-   ONE SHEET, BOTH DIRECTIONS. There is no `left`, no `right` and no
-   `[dir=rtl]` block anywhere below. Every edge is an inline-start, an
-   inline-end or a block edge, so `dir` on `<html>` mirrors the entire page and
-   nothing here has to know which language is being read.
-
-   MOBILE FIRST. Most of these buyers open this page on a phone, from a
-   WhatsApp message. Every base rule is the phone rule; the media queries only
-   ever add width.
-   ========================================================================== */
+/*
+ * KJEVORA SOFTWARE SOLUTIONS — the landing page's whole stylesheet.
+ *
+ * NO `left`, NO `right`, NO `[dir=rtl]` BLOCK. Every edge below is written as
+ * an inline-start or an inline-end, so flipping `dir` on <html> mirrors the
+ * entire page and nothing here has to know which way it is running. That is
+ * also why the language switch is one attribute and not a second stylesheet.
+ *
+ * THE TOKENS IN `:root` ARE NOT A SECOND PALETTE. They are exactly what
+ * `themeVariables('#1b8fd0', true, { night: true })` returns — the same call
+ * `kj.js` makes on boot — written out so that a page whose script never
+ * arrives is the same colour as a page whose script did. If the accent in the
+ * document changes, `kj.js` overwrites these and the page follows; these are
+ * the floor, not a competing opinion.
+ */
 
 :root {
-  /* ====================================================================
-     THE PALETTE — every value generated, not chosen.
+  /* ---- derived from the accent, and kept identical to the runtime call ---- */
+  --accent: #1b8fd0;
+  --accent-strong: #1b8fd0;
+  --accent-bright: #1c95d9;
+  --accent-soft: #0c2636;
+  --accent-deep: #020d12;
+  --accent-ink: #08090a;          /* ink ON a solid fill of the accent */
+  --accent-rgb: 27 143 208;
 
-     KJ's colour is ONE hex, the indigo the platform's own console wears: #4f46e5.
-     Everything below is what `palette('#4f46e5', true)` in
-     `public/shared/brandTheme.js` answers for it — the same function the
-     storefront paints a shop with and the ERP previews a shop with. These
-     literals exist for exactly one reason: they are what the page wears in
-     the moment before `kj.js` loads and sets the identical values on
-     `<html>`. Nothing here was picked by eye, and nothing here may be
-     edited by hand — change the hex in `kj.js` and re-derive.
+  --bg: #08090a;
+  --bg-2: #0a0c0d;
+  --surface: #101416;
+  --ink: #e9f0f4;
+  --ink-2: #afbfc8;
+  --ink-3: #5f676c;
+  --line: rgba(27, 143, 208, 0.22);
+  --line-2: rgba(27, 143, 208, 0.12);
+  --shadow-rgb: 0 0 0;
 
-     Two of them look like mistakes and are not: `--accent-strong` and
-     `--accent-deep` come back as the accent itself, because indigo already
-     passes 4.5:1 and 6:1 against white without being darkened. A paler
-     accent would get two darker siblings; this one needs neither.
-     ==================================================================== */
-  /*
-   * Nexora's blue, taken from the company mark. These seven are EXACTLY what
-   * `palette('#0a5f96', { dark: true })` derives, written out rather than
-   * computed — `kj.js` sets the same values on the root element the moment it
-   * runs, and a page with no script must not wear a different colour from the
-   * same page with one.
-   */
-  --accent: #0a5f96;           /* on paper: headings, links, the tick */
-  --accent-strong: #0a5f96;    /* the same colour, dark enough to be words */
-  --accent-bright: #0f8fe3;    /* on the dark footer band */
-  --accent-soft: #d8e5ee;      /* a wash for a badge or a soft panel */
-  --accent-deep: #0a5f96;      /* the far end of the gradient */
-  --accent-ink: #ffffff;       /* ink ON a solid fill of the accent (6.8:1) */
-  --accent-rgb: 10 95 150;     /* for rgb(... / alpha) scrims */
+  --chrome: #0a0c0d;
+  --on-chrome: #e9f0f4;
+  --on-chrome-2: #afbfc8;
+  --on-chrome-3: #5f676c;
+  --chrome-line: rgba(27, 143, 208, 0.22);
 
-  --bg: #f0f0f0;               /* the page: grey, never white */
-  --bg-2: #e4e4e4;             /* one step deeper */
-  --surface: #ffffff;          /* a card, a band, the header */
-  --ink: #2a2a2a;
-  --ink-2: #474747;
-  --ink-3: #848484;
-  --line: #e0e0e0;
-  --line-2: #ebebeb;
-  --shadow-rgb: 20 20 20;      /* three channels, not a colour */
+  /* ---- the page's own, not derived ---- */
+  --radius-xs: 6px;
+  --radius-sm: 12px;
+  --radius: 20px;
+  --radius-pill: 999px;
 
-  --chrome: #2a2a2a;           /* the filled band: the footer */
-  --on-chrome: #ffffff;
-  --on-chrome-2: #d3d3d3;
-  --on-chrome-3: #a7a7a7;
-  --chrome-line: #464646;
+  --sp-1: 2px;  --sp-2: 4px;  --sp-3: 8px;  --sp-4: 12px;
+  --sp-5: 16px; --sp-6: 24px; --sp-7: 32px; --sp-8: 48px; --sp-9: 72px;
+  --sp-10: 104px;
 
-  /*
-   * The one gradient the page is built on, and it is the storefront's token
-   * verbatim: the accent falling towards its own deep sibling at 135°. The
-   * angle is 135 rather than a `to right` on purpose — a diagonal reads the
-   * same in Arabic and in English, which is the only reason a physical angle
-   * is allowed in a sheet with no `left` in it. For this particular hex the
-   * two stops are the same colour, so the fill is flat indigo; the depth on
-   * the demo band comes from a symmetric wash over the top of it, not from
-   * a second colour invented here.
-   */
-  --accent-grad: linear-gradient(135deg, var(--accent), var(--accent-deep) 240%);
+  --tap-sm: 36px; --tap: 44px; --tap-lg: 52px;
+  --well: 52px;
 
-  /* ---- THE RADIUS LADDER. Four rungs, and picking one is answering
-     "what kind of thing is this?" ---------------------------------------- */
-  --radius-xs: 6px;            /* the outline a browser draws round something */
-  --radius-sm: 12px;           /* a small thing inside something bigger */
-  --radius: 20px;              /* a surface the page is built out of */
-  --radius-pill: 999px;        /* a control */
+  --fs-xs: 12px;  --fs-sm: 13px;  --fs-base: 14px; --fs-md: 15px;
+  --fs-lg: 16px;  --fs-xl: 18px;  --fs-2xl: 22px;
+  --fs-title: clamp(24px, 4.4vw, 38px);
+  --fs-display: clamp(31px, 7.4vw, 60px);
 
-  /* ---- THE SPACING LADDER. Eight rungs, for every gap, pad and margin.
-     A step means a RELATIONSHIP, not a number of pixels. -------------------- */
-  --sp-1: 2px;                 /* two things that are nearly one thing */
-  --sp-2: 4px;                 /* inside one line: an icon and its word */
-  --sp-3: 8px;                 /* two parts of one control */
-  --sp-4: 12px;                /* two controls in a row */
-  --sp-5: 16px;                /* two cards in a grid; the page's own gutter */
-  --sp-6: 24px;                /* two blocks; the inner padding of a surface */
-  --sp-7: 32px;                /* two sections of a block */
-  --sp-8: 48px;                /* the page's own air */
-
-  /* ---- CONTROL SIZE. Three rungs, and the middle one is the floor: 44px is
-     the smallest target a thumb finds reliably. --------------------------- */
-  --tap-sm: 36px;
-  --tap: 44px;
-  --tap-lg: 52px;
-  --well: 56px;                /* the round badge a block leads with */
-
-  /* ---- THE TYPE LADDER. Seven fixed steps and two responsive ones. ------ */
-  --fs-xs: 12px;
-  --fs-sm: 13px;
-  --fs-base: 14px;
-  --fs-md: 15px;
-  --fs-lg: 16px;
-  --fs-xl: 18px;
-  --fs-2xl: 22px;
-  --fs-title: clamp(22px, 5.2vw, 28px);    /* every heading that tops a block */
-  --fs-display: clamp(27px, 8vw, 46px);    /* where a sentence IS the picture */
-
-  /*
-   * A marketing page leans on its two headings harder than a shop does, and
-   * the answer is to SCALE the two responsive steps rather than to add a
-   * third one nobody can place. Both multipliers are 1 on a phone — the
-   * clamp is already right there — and step up once at 768, which is exactly
-   * the mechanism `shop.css` uses for its hero.
-   */
-  --display-scale: 1;
-  --title-scale: 1;
-
-  /* ---- MOTION. Three durations, one ease, one lift. --------------------- */
-  --dur-fast: 120ms;           /* a COLOUR changing */
-  --dur-base: 220ms;           /* a thing MOVING */
-  --dur-slow: 600ms;           /* a section arriving on screen */
-  --ease: cubic-bezier(.2, .7, .3, 1);
-  --lift: -4px;                /* a SURFACE rises this far; a control, half */
-
-  --shadow: 0 4px 20px rgb(var(--shadow-rgb) / .07);
-  --shadow-lift: 0 12px 36px rgb(var(--shadow-rgb) / .18);
-  --shadow-head: 0 2px 14px rgb(var(--shadow-rgb) / .08);
-
-  /* ---- ONE focus ring for the whole page. A band re-points it rather than
-     drawing a second one of its own. ------------------------------------- */
-  --ring: var(--accent);
-  --ring-w: 2px;
-
-  --wrap: 1180px;
-  --wrap-prose: 720px;         /* where a paragraph stops being readable */
-  --stick: 88px;               /* the sticky header, plus a rung of air */
-  --section-pad: var(--sp-8);
-
-  /*
-   * Cairo first for Arabic — used if the device has it, quietly skipped if
-   * not. Nothing is downloaded: a webfont would be a third-party request on
-   * the critical path of a page most of whose visitors are on mobile data,
-   * and this page is already carrying screenshots.
-   */
-  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  --font-ar: "Cairo", "Segoe UI", "Noto Naskh Arabic", "Dubai", Tahoma, sans-serif;
-  --font-display: var(--font);
+  --wrap: 1200px;
+  --font: 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
+  --shadow: 0 1px 2px rgb(var(--shadow-rgb) / .4), 0 24px 60px -28px rgb(var(--shadow-rgb) / .8);
+  --shadow-lg: 0 2px 6px rgb(var(--shadow-rgb) / .5), 0 46px 90px -34px rgb(var(--shadow-rgb) / .95);
 }
-
-html[lang="ar"] { --font-display: var(--font-ar); }
-
-/* ------------------------------------------------------------------ base -- */
 
 *, *::before, *::after { box-sizing: border-box; }
 
-html {
-  -webkit-text-size-adjust: 100%;
-  /* An in-page link must not land under the sticky header. Said once, here,
-     rather than per section. */
-  scroll-padding-block-start: var(--stick);
-}
+html { scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
 
 body {
   margin: 0;
-  background: var(--bg);
-  color: var(--ink);
   font-family: var(--font);
   font-size: var(--fs-lg);
-  line-height: 1.6;
+  line-height: 1.75;
+  color: var(--ink);
+  background: var(--bg);
   -webkit-font-smoothing: antialiased;
-  /* A 34-character email address and an Arabic sentence with no spaces in the
-     right places both have to stay inside their card at 320px. */
-  overflow-wrap: break-word;
 }
 
-html[lang="ar"] body { font-family: var(--font-ar); }
-
-h1, h2, h3 { margin: 0; font-weight: 700; line-height: 1.25; letter-spacing: -.01em; }
+h1, h2, h3 { margin: 0; line-height: 1.3; font-weight: 700; }
 p { margin: 0; }
-ul, ol { margin: 0; padding: 0; }
-li { list-style: none; }
-figure, blockquote { margin: 0; }
-a { color: inherit; text-decoration: none; }
-img { max-width: 100%; display: block; }
-button, input, select, textarea { font: inherit; color: inherit; }
-[hidden] { display: none !important; }
+ul, ol { margin: 0; padding: 0; list-style: none; }
+img { max-inline-size: 100%; block-size: auto; display: block; }
+a { color: inherit; }
 
-/* THE two heading ranks, said once. DISPLAY is the one place a sentence is
-   the picture; TITLE is the top of every block below it. */
-.hero-title {
-  font-family: var(--font-display);
-  font-size: calc(var(--fs-display) * var(--display-scale));
-  font-weight: 800;
-  line-height: 1.15;
-  letter-spacing: -.02em;
-}
+/* Arabic stacks marks ABOVE the letter and a Latin-tuned leading slices them
+   inside any box that clips. Nothing here goes under 1.35, and no heading
+   gets tracking — it pulls apart the joins that make the word. */
+h1, h2, h3 { line-height: 1.42; letter-spacing: 0; }
 
-.section-title {
-  font-family: var(--font-display);
-  font-size: calc(var(--fs-title) * var(--title-scale));
-  font-weight: 700;
-  line-height: 1.25;
-  letter-spacing: -.015em;
-}
-
-/*
- * THE focus ring. One rule, one accent, every focusable thing on the page.
- * Offset so it never sits on the control's own edge, and it inherits the
- * control's corner, because `outline` follows `border-radius`.
- */
-:focus-visible {
-  outline: var(--ring-w) solid var(--ring);
-  outline-offset: var(--sp-1);
-  border-radius: var(--radius-xs);
-}
-
-/* The two filled bands re-point the ring instead of drawing their own: the
-   page accent is invisible on itself, and too deep to read on near-black. */
-.demo, .closing { --ring: #ffffff; }
-.site-foot { --ring: var(--accent-bright); }
-
-/* The icon sprite. Not `display: none` — a hidden `<svg>` still has to be a
-   rendering context for every `<use>` that points into it. */
-.sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
-.icon { flex: none; }
-
-.wrap {
-  max-width: var(--wrap);
-  margin-inline: auto;
-  padding-inline: var(--sp-5);
-}
+.wrap { max-inline-size: var(--wrap); margin-inline: auto; padding-inline: var(--sp-5); }
 
 .skip-link {
-  position: absolute;
-  inset-block-start: var(--sp-3);
-  inset-inline-start: var(--sp-3);
-  z-index: 20;
-  padding: var(--sp-3) var(--sp-5);
-  border-radius: var(--radius-pill);
-  background: var(--surface);
-  box-shadow: var(--shadow-lift);
-  font-size: var(--fs-base);
-  font-weight: 700;
-  /* Off-screen until a keyboard finds it — never `display: none`, which would
-     take it out of the tab order and defeat the point of it. */
-  transform: translateY(-200%);
+  position: absolute; inset-block-start: -100%; inset-inline-start: var(--sp-5); z-index: 99;
+  padding: var(--sp-4) var(--sp-6);
+  background: var(--accent); color: var(--accent-ink);
+  border-radius: 0 0 var(--radius-sm) var(--radius-sm); font-weight: 600;
 }
-.skip-link:focus-visible { transform: none; }
+.skip-link:focus { inset-block-start: 0; }
 
-/* --------------------------------------------------------------- buttons -- */
+/* Not `display:none` — a hidden <svg> still has to be a rendering context for
+   every <use> that points into it. */
+.sprite { position: absolute; inline-size: 0; block-size: 0; overflow: hidden; }
+.icon { flex: none; }
 
-.btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--sp-3);
-  min-height: var(--tap);
-  padding-inline: var(--sp-5);
-  border: 1px solid transparent;
-  border-radius: var(--radius-pill);
-  font-size: var(--fs-base);
-  font-weight: 700;
-  line-height: 1.2;
-  text-align: center;
-  cursor: pointer;
-}
-
-.btn-lg {
-  min-height: var(--tap-lg);
-  padding-inline: var(--sp-6);
-  font-size: var(--fs-md);
-}
-
-.btn-primary { background: var(--accent-grad); color: var(--accent-ink); }
-.btn-ghost { background: var(--surface); color: var(--ink); border-color: var(--line); }
-/* On the accent band the roles swap: the page's surface becomes the fill and
-   the accent becomes the ink. */
-.btn-solid { background: var(--surface); color: var(--accent-strong); }
-/* The second button on a filled band: the same shape, drawn in the band's own
-   ink rather than filled, so it reads as the quieter of the two. */
-.btn-outline { background: transparent; color: var(--accent-ink); border-color: rgb(255 255 255 / .55); }
-
-.btn-icon {
-  min-width: var(--tap);
-  padding-inline: 0;
-  background: var(--accent-soft);
-  color: var(--accent-strong);
-}
-
-/* --------------------------------------------------------------- header -- */
+/* ══════════════════════════════════════════════════════════════════ header */
 
 .site-head {
-  position: sticky;
-  inset-block-start: 0;
-  z-index: 10;
-  background: var(--surface);
-  box-shadow: var(--shadow-head);
+  position: sticky; inset-block-start: 0; z-index: 40;
+  background: rgb(8 9 10 / .82);
+  backdrop-filter: blur(16px);
+  border-block-end: 1px solid var(--line-2);
 }
+.head-inner { display: flex; align-items: center; gap: var(--sp-5); block-size: 70px; }
 
-.head-inner {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-4);
-  min-height: 64px;
-}
-
-.brand { display: inline-flex; align-items: center; gap: var(--sp-3); }
-
-/*
- * THE MARK IS A PICTURE, NOT A MONOGRAM ON A TILE.
- *
- * This box used to be a square of accent gradient with two letters drawn in
- * it, because the page sold a product whose name was two letters. Nexora has
- * a mark of its own, so the box is now a frame around a transparent image and
- * carries no fill: an accent tile behind a logo that already has its own
- * colours is two brands fighting in 40 pixels.
- *
- * The box is WIDER THAN IT IS TALL because the mark is — an arrow rising out
- * of an N, about 1.46:1 — and a square frame would letterbox it down to
- * nothing. The ratio is written here rather than left to the image so the
- * header reserves the right space before the picture has loaded.
- */
+.brand { display: inline-flex; align-items: center; gap: var(--sp-4); text-decoration: none; }
 .brand-mark {
-  position: relative;
-  overflow: hidden;
-  display: grid;
-  place-items: center;
-  block-size: var(--tap-sm);
-  inline-size: calc(var(--tap-sm) * 1.46);
-  border-radius: var(--radius-sm);
+  position: relative; display: grid; place-items: center;
+  block-size: 35px; inline-size: 46px; border-radius: var(--radius-sm);
 }
-
-/* The shipped mark, and — over the top of it — the owner's own logo when he
-   has uploaded one. `contain` on both, so a wide wordmark is never cropped.
-   Absolute, so the two occupy the same frame and swapping one for the other
-   moves nothing on the page. */
-.brand-default,
-.brand-logo {
-  position: absolute;
-  inset: 0;
-  inline-size: 100%;
-  block-size: 100%;
-  object-fit: contain;
+.brand-default, .brand-logo {
+  position: absolute; inset: 0; inline-size: 100%; block-size: 100%; object-fit: contain;
 }
-/* An uploaded logo gets a ground of its own, because it may be dark artwork
-   on the dark footer or light artwork on the white header. The shipped mark
-   needs neither: it was drawn to sit on both. */
-.has-logo .site-head .brand-mark { background: var(--surface); }
-.has-logo .site-foot .brand-mark { background: rgb(255 255 255 / .12); }
-
-/*
- * The wordmark is the SECOND time this page says Nexora in the space of 40px
- * — the mark beside it already says it — so on the narrowest phone sold it is
- * the thing that goes, and the header keeps the brand, the systems link, the
- * language and WhatsApp instead. It comes back at 380, which is under every
- * phone anybody is actually holding.
- */
+/* An uploaded logo gets a ground of its own — it may be dark artwork on this
+   dark header. The shipped mark needs none: it was drawn to sit on it. */
+.has-logo .brand-mark { background: rgb(255 255 255 / .1); }
 .brand-word {
   display: none;
-  font-family: var(--font);
-  font-size: var(--fs-xl);
-  font-weight: 800;
-  letter-spacing: .06em;
+  font-size: var(--fs-xl); font-weight: 700; letter-spacing: .1em; color: var(--ink);
 }
 
-/*
- * FOUR LINKS, AND ONE OF THEM AT EVERY WIDTH.
- *
- * The page used to be six sections long and the header carried nothing but
- * the brand on a phone, because everything was one thumb-scroll away. It is
- * twelve sections long now and it is not: the prices sit behind four of them.
- * So the one link that decides whether a visit is worth anything — the
- * packages — is in the header at 320px, and the other three earn their room
- * at 768, where there is room to earn.
- */
-.head-nav {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-5);
-  font-size: var(--fs-base);
-  font-weight: 700;
-}
-.head-nav a {
-  display: none;
-  align-items: center;
-  min-height: var(--tap);
-  color: var(--ink-2);
-}
-.head-nav .nav-lead {
-  display: inline-flex;
-  padding-inline: var(--sp-4);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-pill);
-  color: var(--accent-strong);
-}
+.head-nav { display: none; margin-inline-start: auto; gap: var(--sp-7); }
+.head-nav a { color: var(--ink-2); text-decoration: none; font-size: var(--fs-md); font-weight: 500; }
+.head-nav a:hover { color: var(--ink); }
 
-.head-actions {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-3);
-  margin-inline-start: auto;
-}
+.head-actions { display: flex; align-items: center; gap: var(--sp-4); margin-inline-start: auto; }
+.head-nav + .head-actions { margin-inline-start: 0; }
 
 .lang-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--sp-2);
-  min-height: var(--tap);
-  padding-inline: var(--sp-4);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-pill);
-  background: var(--surface);
-  font-size: var(--fs-base);
-  font-weight: 700;
-  cursor: pointer;
+  font-family: inherit; font-size: var(--fs-sm); font-weight: 600;
+  color: var(--ink-2); background: rgb(255 255 255 / .06);
+  border: 1px solid var(--line); border-radius: var(--radius-pill);
+  padding: 7px 14px; cursor: pointer;
 }
-.lang-globe { font-size: var(--fs-md); line-height: 1; }
+.lang-btn:hover { color: var(--ink); background: rgb(255 255 255 / .12); }
+/* SPECIFICITY, NOT ORDER. `.btn` sets `display: inline-flex` and is declared
+   further down this file, so a bare `.head-cta { display: none }` loses the
+   cascade and the quote button stays on a 390px header — which is what pushed
+   the page 49px sideways. Scoping it to the row it lives in wins cleanly, and
+   the media query below matches that specificity to turn it back on. */
+.head-actions .head-cta { display: none; }
+.head-actions .head-wa { display: inline-flex; }
 
-.head-cta { display: none; }
+/* ═════════════════════════════════════════════════════════════════ buttons */
 
-/* ----------------------------------------------------------------- hero -- */
-
-.hero {
-  padding-block: var(--sp-7) var(--section-pad);
-  /* A wash of the accent behind the top of the page, fading into the paper.
-     Vertical, so it is the same picture in both directions. */
-  background: linear-gradient(180deg, var(--accent-soft), var(--bg) 70%);
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--sp-3);
+  padding: 13px 26px; border-radius: var(--radius-pill); border: 1px solid transparent;
+  font-family: inherit; font-size: var(--fs-md); font-weight: 600;
+  text-decoration: none; cursor: pointer;
+  transition: transform .15s, filter .15s, background-color .15s;
 }
-
-.hero-inner { display: grid; gap: var(--sp-7); }
-
-.hero-copy {
-  display: grid;
-  gap: var(--sp-5);
-  max-width: var(--wrap-prose);
-  margin-inline: auto;
-  text-align: center;
+.btn-primary, .btn-solid {
+  background: linear-gradient(135deg, var(--accent-deep), var(--accent) 55%, var(--accent-bright));
+  color: #ffffff;
 }
+.btn-primary:hover, .btn-solid:hover { filter: brightness(1.14); transform: translateY(-1px); }
+.btn-ghost { background: rgb(255 255 255 / .05); border-color: var(--line); color: var(--ink); }
+.btn-ghost:hover { background: rgb(255 255 255 / .11); transform: translateY(-1px); }
+.btn-outline { background: transparent; border-color: rgb(255 255 255 / .3); color: #ffffff; }
+.btn-outline:hover { background: rgb(255 255 255 / .1); }
+.btn-lg { padding: 15px 32px; font-size: var(--fs-lg); }
+.btn-icon {
+  inline-size: var(--tap); block-size: var(--tap); padding: 0;
+  background: rgb(255 255 255 / .06); border-color: var(--line); color: var(--ink);
+}
+.btn-icon:hover { background: rgb(255 255 255 / .12); }
+
+/* ════════════════════════════════════════════════════════════════════ hero */
+
+.hero { position: relative; overflow: hidden; padding-block: var(--sp-9) var(--sp-10); }
+/* The company's own photograph, held behind a scrim heavy enough that the type
+   over it never depends on which part of the picture it lands on. The gradient
+   runs from the reading edge, so it is the copy side that is darkest. */
+.hero-bg { position: absolute; inset: 0; pointer-events: none; }
+/* ATMOSPHERE, NOT A SECOND LOGO. At full strength this photograph puts the
+   company's wall-mounted wordmark directly behind the headline, so the reader
+   meets the name twice in two typefaces at once. Blurred and dropped to a
+   third, it does what a hero photograph is for — depth — and the headline is
+   the only thing being read. */
+.hero-bg img {
+  inline-size: 100%; block-size: 100%; object-fit: cover;
+  opacity: .3; filter: blur(3px) saturate(1.15);
+  transform: scale(1.06);            /* hides the blur's soft edge */
+}
+.hero-bg::after {
+  content: ''; position: absolute; inset: 0;
+  /* Vertical and radial only. A `to left` here would be the one physical
+     direction in this file, and it would point the wrong way the moment the
+     page flips — so the scrim is heaviest at the centre-start instead, which
+     mirrors for free. */
+  background:
+    linear-gradient(to bottom, rgb(8 9 10 / .5), rgb(8 9 10 / .84) 58%, var(--bg)),
+    radial-gradient(ellipse 80% 100% at 30% 40%, rgb(8 9 10 / .88), rgb(8 9 10 / .3));
+}
+.hero-inner { position: relative; max-inline-size: 780px; }
 
 .eyebrow {
-  justify-self: center;
-  padding: var(--sp-2) var(--sp-4);
-  border-radius: var(--radius-pill);
-  background: var(--surface);
-  color: var(--accent-strong);
-  font-size: var(--fs-sm);
-  font-weight: 700;
-  box-shadow: var(--shadow);
+  display: inline-block; margin-block-end: var(--sp-6);
+  padding: 6px 16px; border-radius: var(--radius-pill);
+  background: rgb(var(--accent-rgb) / .14);
+  border: 1px solid rgb(var(--accent-rgb) / .4);
+  color: var(--accent-bright); font-size: var(--fs-sm); font-weight: 600;
 }
 
-.hero-sub { color: var(--ink-2); font-size: var(--fs-lg); }
-
-.hero-actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: var(--sp-4);
+.hero-title {
+  font-size: var(--fs-display);
+  background: linear-gradient(180deg, #ffffff 38%, #a8c9de);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
 }
-/* On the narrowest phones two 52px pills side by side leave no room for their
-   own words, so they stack and fill instead of shrinking to fit. */
-.hero-actions .btn { flex: 1 1 240px; }
+.hero-sub {
+  margin-block-start: var(--sp-6); font-size: clamp(16px, 2.1vw, 19px);
+  color: var(--ink-2); max-inline-size: 62ch;
+}
+.hero-actions { display: flex; flex-wrap: wrap; gap: var(--sp-4); margin-block-start: var(--sp-8); }
 
 .trust {
-  display: grid;
-  gap: var(--sp-3);
-  justify-items: center;
-  margin-block-start: var(--sp-2);
+  display: grid; gap: var(--sp-3);
+  margin-block-start: var(--sp-8); padding-block-start: var(--sp-6);
+  border-block-start: 1px solid var(--line-2);
 }
-.trust li {
-  display: inline-flex;
-  align-items: baseline;
-  gap: var(--sp-3);
-  color: var(--ink-2);
-  font-size: var(--fs-base);
-  text-align: start;
+.trust li { display: flex; gap: var(--sp-3); align-items: flex-start; color: var(--ink-2); font-size: var(--fs-md); }
+.tick { color: var(--accent-bright); font-weight: 700; }
+
+/* ════════════════════════════════════════════════════════════════ sections */
+
+.section { padding-block: var(--sp-9); }
+.section-band { background: var(--bg-2); border-block: 1px solid var(--line-2); }
+
+.section-head { max-inline-size: 68ch; margin-block-end: var(--sp-8); }
+.kicker {
+  color: var(--accent-bright); font-size: var(--fs-xs); font-weight: 700;
+  letter-spacing: .18em; text-transform: uppercase; margin-block-end: var(--sp-4);
 }
-.trust .tick { color: var(--accent-strong); font-weight: 700; }
+.section-title { font-size: var(--fs-title); }
+.section-lede { margin-block-start: var(--sp-5); color: var(--ink-2); font-size: var(--fs-xl); }
+.section-close { margin-block-start: var(--sp-8); color: var(--ink-3); font-size: var(--fs-md); max-inline-size: 74ch; }
 
-/* --------------------------------------------------------------- frames -- */
+/* ══════════════════════════════════════════════════════════ systems (bento) */
 
-/*
- * A screenshot is the strongest thing on this page, so it gets a window rather
- * than a border: a white card, a title bar with the three dots every buyer has
- * seen, and the picture flush inside it. Every `<img>` carries its real
- * `width` and `height`, so the box is the right shape before a single byte of
- * the image has arrived and nothing on the page reflows as they land.
- */
-.frame {
-  overflow: hidden;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--surface);
-  box-shadow: var(--shadow);
+.plans { display: grid; gap: var(--sp-5); }
+.plan {
+  display: grid; align-content: start; gap: var(--sp-4);
+  padding: var(--sp-7); border-radius: var(--radius);
+  background: var(--surface); border: 1px solid var(--line-2);
+  transition: border-color .18s, transform .18s;
 }
-
-.frame-bar {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-3);
-  height: 30px;                /* a title bar: two dot-heights plus its air */
-  padding-inline: var(--sp-4);
-  border-block-end: 1px solid var(--line-2);
-  background: var(--bg);
+.plan:hover { border-color: var(--line); transform: translateY(-2px); }
+.plan-icon {
+  display: grid; place-items: center; inline-size: var(--well); block-size: var(--well);
+  border-radius: 15px; background: rgb(var(--accent-rgb) / .12);
+  border: 1px solid rgb(var(--accent-rgb) / .28); color: var(--accent-bright);
 }
-.frame-bar span {
-  width: 9px;
-  height: 9px;
-  border-radius: var(--radius-pill);
-  background: var(--line);
+.plan-badge {
+  color: var(--ink-3); font-size: var(--fs-xs); font-weight: 600;
+  letter-spacing: .1em; text-transform: uppercase;
 }
+.plan-name { font-size: var(--fs-2xl); }
+.plan-price { display: flex; align-items: baseline; gap: var(--sp-3); }
+.plan-amount { font-size: var(--fs-2xl); font-weight: 700; color: var(--accent-bright); }
+.plan-period { color: var(--ink-3); font-size: var(--fs-sm); }
+.plan-line { color: var(--ink-2); font-size: var(--fs-md); }
+.feature-lead { color: var(--ink-3); font-size: var(--fs-sm); }
+.plan-features { display: grid; gap: var(--sp-4); margin-block: var(--sp-3); }
+.plan-features li { display: flex; gap: var(--sp-4); align-items: flex-start; font-size: var(--fs-md); color: var(--ink-2); }
+.tick-icon { margin-block-start: 5px; color: var(--accent-bright); }
+.plan-cta { justify-self: start; margin-block-start: var(--sp-3); }
+/* The recommendation says so with a class, not with different markup — which
+   is what lets any one of the three be the featured one. */
+.plan-featured { border-color: rgb(var(--accent-rgb) / .45); background: linear-gradient(165deg, rgb(var(--accent-rgb) / .1), var(--surface) 60%); }
 
-.frame img { width: 100%; height: auto; }
-
-.hero-shot { max-width: 1020px; margin-inline: auto; width: 100%; }
-/* The window chrome is honest around a capture of a screen and a lie around a
-   photograph of a shop, so an uploaded hero loses it and keeps the card. */
-.hero-shot.is-photo .frame-bar { display: none; }
-.hero-shot.is-photo .frame img { aspect-ratio: auto; }
-
-/* -------------------------------------------------------------- sections -- */
-
-.section { padding-block: var(--section-pad); }
-/* The one band that is white rather than grey: a pricing table wants to sit
-   on paper of its own so the cards can be defined by a hairline. */
-.section-band { background: var(--surface); }
-
-.section-head {
-  display: grid;
-  gap: var(--sp-4);
-  max-width: var(--wrap-prose);
-  margin-inline: auto;
-  margin-block-end: var(--sp-7);
-  text-align: center;
+.included {
+  margin-block-start: var(--sp-7); padding: var(--sp-7);
+  border-radius: var(--radius); background: var(--bg-2); border: 1px solid var(--line-2);
 }
-.section-lede { color: var(--ink-2); font-size: var(--fs-md); }
+.included-title { font-size: var(--fs-xl); margin-block-end: var(--sp-6); }
+.included-list { display: grid; gap: var(--sp-4); }
+.included-list li { display: flex; gap: var(--sp-4); align-items: flex-start; color: var(--ink-2); font-size: var(--fs-md); }
 
-.section-close {
-  max-width: var(--wrap-prose);
-  margin-inline: auto;
-  margin-block-start: var(--sp-7);
-  color: var(--ink-2);
-  font-size: var(--fs-md);
-  text-align: center;
-}
-
-/* ----------------------------------------------- 2 · business overview -- */
+/* ═══════════════════════════════════════════════════════ custom-build blocks */
 
 .blocks { display: grid; gap: var(--sp-5); }
-
-.block {
-  padding: var(--sp-6);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--surface);
-  box-shadow: var(--shadow);
-}
-
+.block { padding: var(--sp-7); border-radius: var(--radius); background: var(--surface); border: 1px solid var(--line-2); }
 .block-icon {
-  display: grid;
-  place-items: center;
-  width: var(--well);
-  height: var(--well);
-  margin-block-end: var(--sp-5);
-  border-radius: var(--radius-sm);
-  background: var(--accent-soft);
-  color: var(--accent-strong);
+  display: grid; place-items: center; inline-size: var(--well); block-size: var(--well);
+  border-radius: 15px; margin-block-end: var(--sp-5);
+  background: rgb(var(--accent-rgb) / .12); border: 1px solid rgb(var(--accent-rgb) / .28);
+  color: var(--accent-bright);
 }
-
-.block-title { font-size: var(--fs-2xl); margin-block-end: var(--sp-3); }
+.block-title { font-size: var(--fs-xl); margin-block-end: var(--sp-4); }
 .block-body { color: var(--ink-2); font-size: var(--fs-md); }
 
-/* ---------------------------------------------------- 3 · how it works -- */
+/* ═════════════════════════════════════════════════════════════ screenshots */
 
-/*
- * Four steps on a white band, and the cards are GREY on it — the exact
- * inversion of the overview's white cards on grey. Two neighbouring sections
- * that both stack cards need to be told apart at a glance while scrolling
- * past, and the ground under the card is the cheapest way to say it.
- */
+.shots { display: grid; gap: var(--sp-6); }
+.shot { margin: 0; display: grid; gap: var(--sp-4); }
+.shot figcaption { color: var(--ink-3); font-size: var(--fs-sm); }
+.frame {
+  border-radius: var(--radius); overflow: hidden;
+  border: 1px solid var(--line); background: var(--surface); box-shadow: var(--shadow-lg);
+}
+.frame-bar {
+  display: flex; gap: 6px; align-items: center;
+  padding: 10px var(--sp-5); background: var(--bg-2);
+  border-block-end: 1px solid var(--line-2);
+}
+.frame-bar span { inline-size: 9px; block-size: 9px; border-radius: 50%; background: var(--ink-3); opacity: .5; }
+.phone {
+  position: relative; max-inline-size: 250px; margin-inline: auto;
+  border-radius: 30px; overflow: hidden; padding: 9px;
+  background: #16191b; border: 1px solid var(--line); box-shadow: var(--shadow-lg);
+}
+.phone img { border-radius: 22px; }
+.phone-notch {
+  position: absolute; inset-block-start: 9px; inset-inline: 0; margin-inline: auto;
+  inline-size: 84px; block-size: 15px; border-radius: 0 0 11px 11px; background: #16191b; z-index: 2;
+}
+
+/* ════════════════════════════════════════════════════════════════ clients */
+
+.clients { display: grid; gap: var(--sp-5); grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.client { padding: var(--sp-6); border-radius: var(--radius); background: var(--surface); border: 1px solid var(--line-2); }
+.client-name { font-size: var(--fs-lg); font-weight: 700; line-height: 1.35; }
+.client-line { margin-block-start: var(--sp-1); color: var(--ink-3); font-size: var(--fs-sm); }
+.client-system {
+  margin-block-start: var(--sp-4); padding-block-start: var(--sp-4);
+  border-block-start: 1px solid var(--line-2);
+  color: var(--accent-bright); font-size: var(--fs-sm); font-weight: 600;
+}
+
+/* ══════════════════════════════════════════════════════════════════ steps */
+
 .steps { display: grid; gap: var(--sp-5); }
-
-.step {
-  display: grid;
-  gap: var(--sp-3);
-  align-content: start;
-  padding: var(--sp-6);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--bg);
-}
-
-/* The number is the only thing on this page rendered from an index rather
-   than from the document, and it is written in the reader's own numerals:
-   ١ ٢ ٣ ٤ for a reader in Arabic. */
+.step { padding: var(--sp-7); border-radius: var(--radius); background: var(--surface); border: 1px solid var(--line-2); }
 .step-num {
-  display: grid;
-  place-items: center;
-  width: var(--tap);
-  height: var(--tap);
-  margin-block-end: var(--sp-2);
-  border-radius: var(--radius-pill);
-  background: var(--accent-grad);
-  color: var(--accent-ink);
-  font-family: var(--font-display);
-  font-size: var(--fs-xl);
-  font-weight: 800;
-  line-height: 1;
+  display: grid; place-items: center; inline-size: 38px; block-size: 38px;
+  border-radius: 50%; margin-block-end: var(--sp-5);
+  background: rgb(var(--accent-rgb) / .14); color: var(--accent-bright);
+  font-weight: 700; font-size: var(--fs-md);
 }
-
-.step-title { font-size: var(--fs-xl); }
+.step-title { font-size: var(--fs-xl); margin-block-end: var(--sp-4); }
 .step-body { color: var(--ink-2); font-size: var(--fs-md); }
 
-/* ------------------------------------------------- 4 · who this is for -- */
+/* ═════════════════════════════════════════════════════════════════ quotes */
 
-.audience { display: grid; gap: var(--sp-5); }
-
-.aud-col {
-  padding: var(--sp-6);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--surface);
-  box-shadow: var(--shadow);
-}
-/*
- * The honest column is QUIETER than the one beside it, and that is the whole
- * design of this section: it is not hidden, it is not apologised for, and it
- * is not shouted. A shop owner who reads "not for restaurants" and leaves was
- * never a customer; the one who reads it and stays now believes the column
- * next to it.
- */
-.aud-no {
-  background: var(--bg-2);
-  border-color: var(--line);
-  box-shadow: none;
-  color: var(--ink-2);
-}
-
-.aud-title { font-size: var(--fs-xl); margin-block-end: var(--sp-5); }
-.aud-list { display: grid; gap: var(--sp-4); font-size: var(--fs-md); }
-.aud-list li { display: flex; gap: var(--sp-3); align-items: start; }
-.aud-mark { margin-block-start: 3px; }
-.aud-yes .aud-mark { color: var(--accent-strong); }
-.aud-no .aud-mark { color: var(--ink-3); }
-
-/* ----------------------------------------- 5 · the notebook and the till -- */
-
-/*
- * One bordered container with hairlines between the rows, rather than four
- * cards: these four lines are one argument, and four separate surfaces would
- * read as four separate points. On a phone the before sits above the after; at
- * 768 they stand side by side, which is where the contrast does its work.
- */
-.versus {
-  display: grid;
-  max-width: 900px;
-  margin-inline: auto;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  overflow: hidden;
-  background: var(--surface);
-}
-
-.vs-row { display: grid; gap: var(--sp-3); padding: var(--sp-5) var(--sp-6); }
-.vs-row + .vs-row { border-block-start: 1px solid var(--line-2); }
-
-.vs-side { display: flex; gap: var(--sp-4); align-items: start; font-size: var(--fs-md); }
-.vs-mark { margin-block-start: 3px; }
-.vs-before { color: var(--ink-3); }
-.vs-before .vs-mark { color: var(--ink-3); }
-.vs-after { font-weight: 700; }
-.vs-after .vs-mark { color: var(--accent-strong); }
-
-/* -------------------------------------------------------- 3 · packages -- */
-
-/* Stretch, not start: three cards of equal height put their three buttons on
-   one line, which is what makes a pricing table comparable at a glance. The
-   middle card gets its extra height from the negative margin below rather than
-   from being the only one that fits its content. */
-.plans { display: grid; gap: var(--sp-5); }
-
-.plan {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-4);
-  padding: var(--sp-6);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--surface);
-}
-
-/*
- * The middle card is the recommendation and it says so four ways at once: the
- * badge, the accent edge, the lifted shadow and — from 900 up, where the three
- * of them stand side by side — real extra height. "Most people pick the middle
- * card when you let them see it is the middle card."
- */
-.plan-featured {
-  border-color: var(--accent);
-  border-width: 2px;
-  box-shadow: var(--shadow-lift);
-}
-
-.plan-badge {
-  align-self: center;
-  padding: var(--sp-2) var(--sp-5);
-  border-radius: var(--radius-pill);
-  background: var(--accent-grad);
-  color: var(--accent-ink);
-  font-size: var(--fs-sm);
-  font-weight: 700;
-}
-
-.plan-name { font-size: var(--fs-2xl); }
-
-/* The period is never further than one line from the price, and it is never
-   smaller than a note: a price with no period on it makes people assume the
-   worst. */
-.plan-price {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: var(--sp-3);
-}
-.plan-amount {
-  font-family: var(--font-display);
-  font-size: var(--fs-display);
-  font-weight: 800;
-  line-height: 1.1;
-  letter-spacing: -.02em;
-  color: var(--accent-strong);
-}
-.plan-period { color: var(--ink-2); font-size: var(--fs-md); font-weight: 700; }
-
-.plan-line { color: var(--ink-2); font-size: var(--fs-md); }
-
-.plan-features {
-  display: grid;
-  gap: var(--sp-4);
-  padding-block: var(--sp-4);
-  border-block-start: 1px solid var(--line-2);
-  font-size: var(--fs-base);
-}
-.plan-features li { display: flex; gap: var(--sp-3); align-items: start; }
-.plan-features .tick-icon { color: var(--accent-strong); margin-block-start: 3px; }
-/*
- * "Everything in Starter, plus:" is not a feature — it is the sentence the
- * features underneath it hang from, so it carries no tick, it does carry the
- * weight, and it sits OUTSIDE the list rather than being its first item. That
- * is what lets the list be a list: five bullets the owner can add a sixth to
- * without the lead line being one of them. It takes the divider with it when
- * it is there, and gives it back when it is not.
- */
-.feature-lead {
-  padding-block-start: var(--sp-4);
-  border-block-start: 1px solid var(--line-2);
-  font-size: var(--fs-base);
-  font-weight: 700;
-}
-.feature-lead:not([hidden]) + .plan-features {
-  padding-block-start: 0;
-  border-block-start: 0;
-}
-
-/* Pushed to the bottom edge, so three cards of different heights still put
-   their buttons on the same line. */
-.plan-cta { margin-block-start: auto; }
-
-/* ------------------------------------------------ 7 · in every package -- */
-
-/*
- * A quiet strip under the three cards and above the reassurance line. These
- * six are not features — they are the six things a buyer is afraid the price
- * does not include, which is why they sit under all three prices rather than
- * being repeated inside each of them.
- */
-.included {
-  margin-block-start: var(--sp-7);
-  padding: var(--sp-6);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--surface);
-}
-
-.included-title {
-  font-size: var(--fs-xl);
-  margin-block-end: var(--sp-5);
-  text-align: center;
-}
-.included-list { display: grid; gap: var(--sp-4); font-size: var(--fs-base); }
-.included-list li { display: flex; gap: var(--sp-3); align-items: start; }
-.included-list .tick-icon { color: var(--accent-strong); margin-block-start: 3px; }
-
-/* ----------------------------------------------------- 4 · screenshots -- */
-
-.shots { display: grid; gap: var(--sp-8); }
-
-.shot { display: grid; gap: var(--sp-5); }
-/* A phone capture is its own slot the owner can replace, so it is its own
-   figure. Standing three of them in a row is the sheet's job, not the
-   document's — nothing in the markup knows they are a set. */
-.shot-phone { justify-items: center; align-content: start; }
-.shot figcaption {
-  color: var(--ink-2);
-  font-size: var(--fs-md);
-  font-weight: 700;
-  text-align: center;
-}
-
-/*
- * The storefront captures are phone screens and they are framed as phones — a
- * 390 × 844 picture floating in a white card would read as a cropped desktop
- * screen. The bezel is proportional to the picture rather than a fixed
- * thickness, so one phone at 280px and three phones at 220px are the same
- * object at two sizes.
- *
- * The width is DEFINITE, and that is load-bearing: these pictures are lazy and
- * have no size until they arrive, so a box sized by its own contents would
- * open at 44px and jump to 280 as it scrolled into view, taking everything
- * under it down the page with it.
- */
-.phone {
-  position: relative;
-  width: min(100%, 280px);
-  padding: var(--sp-4) var(--sp-3) var(--sp-3);
-  border-radius: var(--radius);
-  background: var(--ink);
-  box-shadow: var(--shadow-lift);
-}
-.phone-notch {
-  position: absolute;
-  inset-block-start: var(--sp-2);
-  /* `inset-inline: 0` plus an auto inline margin centres it in BOTH
-     directions — a translate would have to know which way the page runs. */
-  inset-inline: 0;
-  margin-inline: auto;
-  width: 30%;
-  max-width: 72px;
-  height: 4px;
-  border-radius: var(--radius-pill);
-  background: rgb(255 255 255 / .32);
-}
-
-.phone img {
-  width: 100%;
-  height: auto;
-  /* Belt as well as braces. The `width`/`height` attributes already carry this
-     ratio and are what actually reserve the space; saying it here too means a
-     phone frame cannot collapse even if one of those attributes is ever lost
-     in an edit. Every storefront capture is 390 × 844. */
-  aspect-ratio: 390 / 844;
-  border-radius: var(--radius-sm);
-}
-
-/* --------------------------------------------- 9 · what shop owners say -- */
-
-/*
- * Written, and empty. Nothing below paints until a real quote is entered from
- * the console — the section ships `hidden`, its list ships `hidden`, and its
- * prototype lives in a `<template>`, so a page with no script has no empty
- * card in it either.
- */
 .quotes { display: grid; gap: var(--sp-5); }
-
-.quote {
-  display: grid;
-  gap: var(--sp-5);
-  align-content: start;
-  padding: var(--sp-6);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--surface);
-  box-shadow: var(--shadow);
-}
-.quote-body { font-size: var(--fs-md); }
+.quote { display: grid; gap: var(--sp-5); padding: var(--sp-7); border-radius: var(--radius); background: var(--surface); border: 1px solid var(--line-2); }
+.quote-body { font-size: var(--fs-md); color: var(--ink-2); margin: 0; }
 .quote-who { display: grid; gap: var(--sp-1); }
 .quote-name { font-size: var(--fs-base); font-weight: 700; }
 .quote-shop { color: var(--ink-3); font-size: var(--fs-sm); }
 
-/* ------------------------------------------------------- 4b · clients -- */
+/* ══════════════════════════════════════════════════════════ the two asks */
 
-/*
- * FOUR NAMES, AND EXACTLY THE FOUR THERE ARE.
- *
- * No borrowed logos and no counter. A client is three lines — who they are,
- * what they do, and which of the three systems they run — and the third line
- * is the one doing the work: it is what turns a list of names into evidence
- * that each system has somebody on it.
- *
- * A name may be Latin or Arabic on a page running either way round, so the
- * element carries `dir="auto"` in the markup and this rule never sets a side.
- */
-.clients {
-  display: grid;
-  gap: var(--sp-4);
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-.client {
-  display: grid;
-  gap: var(--sp-2);
-  align-content: start;
-  padding: var(--sp-5);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--surface);
-  box-shadow: var(--shadow);
-}
-
-.client-name {
-  font-family: var(--font);
-  font-size: var(--fs-lg);
-  font-weight: 800;
-  line-height: 1.3;
-}
-.client-line { color: var(--ink-2); font-size: var(--fs-sm); }
-/* The system it runs, in the accent: it is the line a reader is scanning for
-   when they arrive at this section from one of the three cards above. */
-.client-system {
-  margin-block-start: var(--sp-2);
-  color: var(--accent-strong);
-  font-size: var(--fs-sm);
-  font-weight: 700;
-}
-
-/* ------------------------------------------------- 5 · request a demo -- */
-
-/*
- * THE PAGE'S TWO ASKS LOOK LIKE EACH OTHER. The demo band and the closing band
- * wear one recipe: the accent, with a symmetric wash over the top of it for
- * depth. The wash is centred rather than cornered on purpose — a corner would
- * sit on the opposite side of the band in English, and these are the one place
- * on the page where a gradient could give away which way the page runs.
- */
+/* The demo band and the closing band wear one recipe on purpose: the page's
+   two asks should look like each other. */
 .band-accent {
-  background:
-    radial-gradient(120% 90% at 50% 0%, rgb(255 255 255 / .18), transparent 60%),
-    var(--accent-grad);
-  color: var(--accent-ink);
+  position: relative; overflow: hidden;
+  background: linear-gradient(150deg, var(--accent-deep), #0b1a24 60%, var(--bg));
+  border-block: 1px solid var(--line);
 }
-
-.demo { padding-block: var(--section-pad); }
-
-.demo-inner { display: grid; gap: var(--sp-7); }
-
-.demo-head {
-  display: grid;
-  gap: var(--sp-4);
-  max-width: var(--wrap-prose);
-  margin-inline: auto;
-  text-align: center;
-}
-.demo-body { font-size: var(--fs-md); opacity: .92; }
+.demo { padding-block: var(--sp-9); }
+.demo-inner { display: grid; gap: var(--sp-8); }
+.demo-body { margin-block-start: var(--sp-5); color: var(--ink-2); font-size: var(--fs-xl); }
 
 .demo-form {
-  display: grid;
-  gap: var(--sp-5);
-  width: 100%;
-  max-width: 760px;
-  margin-inline: auto;
+  display: grid; gap: var(--sp-5); padding: var(--sp-7); align-content: start;
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
 }
-
-.field { display: grid; gap: var(--sp-3); }
-.field label { font-size: var(--fs-base); font-weight: 700; }
-.field-optional { opacity: .8; font-weight: 400; }
-
-.field input,
-.field textarea {
-  width: 100%;
-  min-height: var(--tap);
-  padding: var(--sp-3) var(--sp-5);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  background: var(--surface);
-  color: var(--ink);
-  /* 16px is what stops iOS zooming the page when a field takes focus. */
-  font-size: var(--fs-lg);
+.field { display: grid; gap: 6px; }
+.field label { font-size: var(--fs-base); font-weight: 600; color: var(--ink-2); }
+.field-optional { color: var(--ink-3); font-weight: 400; }
+.field input, .field textarea {
+  font-family: inherit; font-size: var(--fs-md); color: var(--ink);
+  padding: 11px 14px; border: 1px solid var(--line); border-radius: var(--radius-sm);
+  background: var(--bg); inline-size: 100%;
 }
-.field textarea { resize: vertical; line-height: 1.5; }
+.field textarea { resize: vertical; }
+.demo-submit { display: grid; gap: var(--sp-4); justify-items: start; }
+.demo-submit .btn { inline-size: 100%; }
+.demo-note { color: var(--ink-3); font-size: var(--fs-sm); }
 
-.demo-submit { display: grid; gap: var(--sp-4); justify-items: center; text-align: center; }
-.demo-submit .btn { width: 100%; }
-.demo-note { font-size: var(--fs-base); opacity: .9; }
+.closing { padding-block: var(--sp-9); text-align: center; }
+.closing-inner { display: grid; gap: var(--sp-5); justify-items: center; }
+.closing-body { color: var(--ink-2); font-size: var(--fs-xl); max-inline-size: 56ch; }
+.closing-actions { display: flex; flex-wrap: wrap; gap: var(--sp-4); justify-content: center; margin-block-start: var(--sp-4); }
 
-/* ------------------------------------------------------------------ FAQ -- */
+/* ════════════════════════════════════════════════════════════════════ FAQ */
 
-.faq-band { padding-block: var(--section-pad); background: var(--surface); }
-/* Seven of them now, so they get a heading and a measure of their own rather
-   than running the full width of a desktop. */
-.faq { display: grid; gap: var(--sp-4); max-width: 860px; margin-inline: auto; }
-
-.faq-item {
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  background: var(--surface);
-}
-
+.faq-band { padding-block: var(--sp-9); background: var(--bg-2); border-block: 1px solid var(--line-2); }
+.faq { display: grid; gap: var(--sp-4); max-inline-size: 80ch; }
+.faq-item { border: 1px solid var(--line-2); border-radius: var(--radius-sm); background: var(--surface); }
 .faq-item summary {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-4);
-  min-height: var(--tap);
-  padding: var(--sp-4) var(--sp-5);
-  font-size: var(--fs-md);
-  font-weight: 700;
-  cursor: pointer;
-  /* The browser's own marker is a physical triangle that does not mirror; the
-     one drawn below does. */
-  list-style: none;
+  cursor: pointer; padding: var(--sp-5) var(--sp-6); font-weight: 600;
+  list-style: none; display: flex; align-items: center; justify-content: space-between; gap: var(--sp-4);
 }
 .faq-item summary::-webkit-details-marker { display: none; }
-
-/* A plus that becomes a minus. Two bars, one of which turns — no glyph, no
-   arrow, nothing that has a direction. */
 .faq-item summary::after {
-  content: "";
-  flex: none;
-  width: 14px;
-  height: 14px;
-  margin-inline-start: auto;
-  background:
-    linear-gradient(var(--accent-strong), var(--accent-strong)) center / 14px 2px no-repeat,
-    linear-gradient(var(--accent-strong), var(--accent-strong)) center / 2px 14px no-repeat;
+  content: '+'; color: var(--accent-bright); font-size: var(--fs-2xl); line-height: 1; flex: none;
 }
-.faq-item[open] summary::after { background-size: 14px 2px, 0 0; }
+.faq-item[open] summary::after { content: '−'; }
+.faq-item p { padding: 0 var(--sp-6) var(--sp-6); color: var(--ink-2); font-size: var(--fs-md); }
 
-.faq-item p {
-  padding: 0 var(--sp-5) var(--sp-5);
-  color: var(--ink-2);
-  font-size: var(--fs-md);
-}
-
-/* -------------------------------------------------------- 6 · contact -- */
+/* ════════════════════════════════════════════════════════════════ contact */
 
 .contacts { display: grid; gap: var(--sp-5); }
-
 .contact-card {
-  display: grid;
-  gap: var(--sp-2);
-  height: 100%;
-  padding: var(--sp-6);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--surface);
-  box-shadow: var(--shadow);
+  display: grid; grid-template-columns: auto 1fr; gap: var(--sp-2) var(--sp-5);
+  align-items: center; padding: var(--sp-6);
+  border: 1px solid var(--line-2); border-radius: var(--radius);
+  background: var(--surface); text-decoration: none;
 }
-
+.contact-card:hover { border-color: var(--line); }
 .contact-icon {
-  display: grid;
-  place-items: center;
-  width: var(--tap);
-  height: var(--tap);
-  margin-block-end: var(--sp-3);
-  border-radius: var(--radius-sm);
-  background: var(--accent-soft);
-  color: var(--accent-strong);
+  grid-row: span 2; display: grid; place-items: center;
+  inline-size: var(--tap); block-size: var(--tap); border-radius: 50%;
+  background: rgb(var(--accent-rgb) / .12); color: var(--accent-bright);
 }
-.contact-label { color: var(--ink-3); font-size: var(--fs-sm); font-weight: 700; }
-.contact-value { font-size: var(--fs-xl); font-weight: 700; }
-/* One address is 34 characters with no break in it and the card is 150px wide
-   on the narrowest phone sold. */
-.contact-email { font-size: var(--fs-base); overflow-wrap: anywhere; }
+.contact-label { color: var(--ink-3); font-size: var(--fs-sm); align-self: end; }
+.contact-value { font-weight: 600; align-self: start; }
+.contact-email { font-weight: 500; font-size: var(--fs-sm); overflow-wrap: anywhere; }
+.hours { display: flex; align-items: center; gap: var(--sp-3); margin-block-start: var(--sp-6); color: var(--ink-3); font-size: var(--fs-base); }
+.hours .icon { color: var(--ink-3); }
+.contact-actions { display: flex; flex-wrap: wrap; gap: var(--sp-4); margin-block-start: var(--sp-7); }
 
-.hours {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--sp-3);
-  margin-block-start: var(--sp-6);
-  color: var(--ink-2);
-  font-size: var(--fs-base);
-}
-.hours .icon { color: var(--accent-strong); }
+/* ═════════════════════════════════════════════════════════════════ footer */
 
-.contact-actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: var(--sp-4);
-  margin-block-start: var(--sp-6);
-}
-.contact-actions .btn { flex: 1 1 240px; }
+.site-foot { border-block-start: 1px solid var(--line-2); padding-block: var(--sp-8); color: var(--ink-3); }
+.foot-inner { display: grid; gap: var(--sp-6); }
+.foot-brand { display: grid; grid-template-columns: auto 1fr; gap: var(--sp-1) var(--sp-5); align-items: center; }
+.foot-brand .brand-mark { grid-row: span 2; block-size: 32px; inline-size: 42px; }
+.foot-tagline { color: var(--ink-2); font-size: var(--fs-md); font-weight: 600; letter-spacing: .06em; align-self: end; }
+.foot-made { color: var(--accent-bright); font-size: var(--fs-sm); letter-spacing: .08em; align-self: start; }
+.foot-nav { display: flex; flex-wrap: wrap; gap: var(--sp-4) var(--sp-6); }
+.foot-nav a { color: var(--ink-3); text-decoration: none; font-size: var(--fs-base); }
+.foot-nav a:hover { color: var(--ink); }
+.foot-rights { font-size: var(--fs-sm); }
 
-/* -------------------------------------------------- 13 · the last ask -- */
-
-/*
- * A page this long must not end on an address block. One line, two buttons,
- * and the accent the demo band wears — the page's two asks are meant to look
- * like each other.
- */
-.closing { padding-block: var(--section-pad); }
-
-.closing-inner {
-  display: grid;
-  gap: var(--sp-5);
-  justify-items: center;
-  max-width: var(--wrap-prose);
-  margin-inline: auto;
-  text-align: center;
-}
-.closing-body { font-size: var(--fs-md); opacity: .92; }
-
-.closing-actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: var(--sp-4);
-  width: 100%;
-}
-.closing-actions .btn { flex: 1 1 240px; }
-
-/* ----------------------------------------------------------------- foot -- */
-
-.site-foot {
-  padding-block: var(--sp-8);
-  background: var(--chrome);
-  color: var(--on-chrome);
-}
-
-.foot-inner { display: grid; gap: var(--sp-6); text-align: center; }
-.foot-brand { display: grid; gap: var(--sp-3); justify-items: center; }
-.foot-tagline { font-size: var(--fs-md); font-weight: 700; }
-.foot-made { color: var(--on-chrome-2); font-size: var(--fs-base); }
-
-.foot-nav {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: var(--sp-3) var(--sp-6);
-}
-.foot-nav a {
-  display: inline-flex;
-  align-items: center;
-  min-height: var(--tap);
-  color: var(--on-chrome-2);
-  font-size: var(--fs-base);
-  font-weight: 700;
-}
-
-.foot-rights {
-  padding-block-start: var(--sp-5);
-  border-block-start: 1px solid var(--chrome-line);
-  color: var(--on-chrome-3);
-  font-size: var(--fs-sm);
-}
-
-/* ============================================================== WIDTH ====
-   The media queries only ever ADD. Nothing below undoes a base rule; each
-   one spends room that the phone did not have.
-   ====================================================================== */
+/* ═══════════════════════════════════════════════════════════════════ WIDTH
+   The media queries only ever ADD. Nothing below undoes a base rule; each one
+   spends room that the phone did not have. */
 
 @media (min-width: 380px) {
   .brand-word { display: inline; }
@@ -1167,149 +460,53 @@ button, input, select, textarea { font: inherit; color: inherit; }
 @media (min-width: 620px) {
   .blocks { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .steps { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .audience { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .included-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .quotes { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .contacts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  /* Two fields per row the moment two fields fit; the message keeps the row
-     to itself because three lines of typing want the width. */
+  .quotes { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .clients { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .demo-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .field-wide, .demo-submit { grid-column: 1 / -1; }
-  .demo-submit .btn { width: auto; }
+  .demo-submit { grid-template-columns: auto 1fr; align-items: center; }
+  .demo-submit .btn { inline-size: auto; }
+  .shots { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .shot-phone { grid-column: auto; }
 }
 
 @media (min-width: 768px) {
-  :root {
-    --display-scale: 1.2;
-    --title-scale: 1.2;
-    /* Two rungs of the ladder, not a number: a section on a desktop is worth
-       the page's own air plus a section gap. */
-    --section-pad: calc(var(--sp-8) + var(--sp-7));
-    --stick: 96px;
-  }
+  .head-actions .head-cta { display: inline-flex; }
+  .section { padding-block: var(--sp-10); }
+  .plan { padding: var(--sp-8); }
+}
 
-  .wrap { padding-inline: var(--sp-6); }
-  .head-inner { min-height: 72px; }
-  .head-nav { margin-inline-start: var(--sp-6); }
-  .head-nav a { display: inline-flex; }
-  /* With all four showing, the first one stops being a button and becomes a
-     link like its neighbours. */
-  .head-nav .nav-lead { padding-inline: 0; border: 0; color: var(--ink-2); }
-  .head-cta { display: inline-flex; }
-  .head-wa { display: none; }
-
-  .hero { padding-block: var(--sp-8) var(--section-pad); }
-  .hero-actions .btn { flex: 0 0 auto; }
-  .contact-actions .btn { flex: 0 0 auto; }
-  .contacts { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+@media (min-width: 960px) {
+  .head-nav { display: flex; }
+  .hero { padding-block: var(--sp-10) calc(var(--sp-10) + var(--sp-6)); }
+  /* THE BENTO. The lead system takes the whole top row and the two others
+     share the one beneath — the shape of the business, not a layout whim. */
+  .plans { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .plan-wide { grid-column: 1 / -1; }
+  .plan-wide .plan-features { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-4) var(--sp-7); }
   .blocks { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .included-list { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .closing-actions .btn { flex: 0 0 auto; }
-
-  /*
-   * Three columns, and a window spans all three. That is the whole reason the
-   * three phone captures are three separate figures: the sheet stands them in
-   * a row, so the owner can disable one, replace one, or add a fourth without
-   * anybody touching the markup.
-   */
-  .shots {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: calc(var(--sp-8) + var(--sp-6)) var(--sp-6);
-  }
-  .shot-desktop { grid-column: 1 / -1; }
-
-  .vs-row { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-6); align-items: start; }
-
-  .block { padding: var(--sp-7); }
-  .plan { padding: var(--sp-7); }
-  .step { padding: var(--sp-7); }
-  .aud-col { padding: var(--sp-7); }
-  .included { padding: var(--sp-7); }
-}
-
-@media (min-width: 900px) {
-  .plans { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--sp-6); }
-  .clients { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .steps { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .included-list { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .contacts { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .quotes { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  /*
-   * Now that the three of them stand side by side, the middle one grows out of
-   * the row in both directions by one rung — so it is taller than its
-   * neighbours AND still shares a baseline with them, instead of being the one
-   * card whose button sits somewhere else.
-   */
-  .plan-featured {
-    margin-block: calc(var(--sp-6) * -1);
-    padding-block: calc(var(--sp-6) * 2);
-  }
+  .demo-inner { grid-template-columns: 1fr 1.05fr; align-items: start; }
+  .shots { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 
-/* ============================================================= MOTION ====
-   Every animation on this page lives in this one block, and the page is
-   complete and correct without it: nothing below reveals content, changes a
-   layout or is the only signal that something is interactive. A visitor who
-   has asked their system for less motion gets the same page, still.
-   ====================================================================== */
+/* ══════════════════════════════════════════════════════════════════ REVEAL
+   Armed by `kj.js`, and entirely inside `no-preference`: a page with no script,
+   or a reader who asked for less motion, never has anything faded out. */
 
 @media (prefers-reduced-motion: no-preference) {
-  html { scroll-behavior: smooth; }
-
-  .btn, .lang-btn, .contact-card, .plan, .block, .frame, .phone,
-  .head-nav a, .foot-nav a, .faq-item, .skip-link, .field input, .field textarea {
-    transition:
-      transform var(--dur-base) var(--ease),
-      box-shadow var(--dur-base) var(--ease),
-      background-color var(--dur-fast) var(--ease),
-      border-color var(--dur-fast) var(--ease),
-      color var(--dur-fast) var(--ease),
-      opacity var(--dur-fast) var(--ease);
+  [data-reveal='armed'] [data-reveal] {
+    opacity: 0; transform: translateY(16px);
+    transition: opacity .6s ease, transform .6s ease;
   }
-
-  /* A CONTROL rises half as far as a SURFACE does — said as arithmetic on the
-     one lift token so the two can never drift apart. */
-  .btn:hover, .lang-btn:hover { transform: translateY(calc(var(--lift) / 2)); box-shadow: var(--shadow-lift); }
-  .btn:active, .lang-btn:active { transform: translateY(0); box-shadow: none; }
-
-  .contact-card:hover, .block:hover, .frame:hover, .phone:hover {
-    transform: translateY(var(--lift));
-    box-shadow: var(--shadow-lift);
-  }
-  .contact-card:active { transform: translateY(0); }
-
-  .plan:hover { border-color: var(--accent); }
-  .faq-item:hover { border-color: var(--accent); }
-  .head-nav a:hover, .foot-nav a:hover { color: var(--accent-strong); }
-  .foot-nav a:hover { color: var(--accent-bright); }
-  .field input:hover, .field textarea:hover { border-color: var(--accent); }
-
-  /*
-   * Reveal on scroll. `kj.js` puts `data-reveal="armed"` on <html> and only
-   * then does anything below apply — so with the script gone, or with an
-   * `IntersectionObserver` missing, every section is simply visible. Nothing
-   * on this page can be hidden by a script that failed to run.
-   */
-  html[data-reveal="armed"] [data-reveal] {
-    opacity: 0;
-    /*
-     * `translate`, not `transform`, and that is the whole reason this works:
-     * several of the elements that reveal are also elements that LIFT on
-     * hover, and a reveal written as a transform would outrank the hover's
-     * transform and quietly kill it once the section had arrived. The two
-     * properties compose instead of fighting.
-     *
-     * Vertical only: a horizontal slide would arrive from the wrong side of
-     * the screen in one of the two languages.
-     */
-    translate: 0 14px;
-    transition: opacity var(--dur-slow) var(--ease), translate var(--dur-slow) var(--ease);
-  }
-  html[data-reveal="armed"] [data-reveal="in"] { opacity: 1; translate: none; }
+  [data-reveal='armed'] [data-reveal='in'] { opacity: 1; transform: none; }
 }
 
-/* A pointer that cannot hover (a phone) must not keep a hover state behind
-   after a tap. Nothing here needs undoing on touch because every hover rule
-   above is inside `:hover`, which a touch device applies for one frame at
-   most — but a card the finger is ON should still answer. */
-@media (hover: none) {
-  .contact-card:active, .plan:active, .faq-item:active { border-color: var(--accent); }
+:where(a, button, input, select, textarea, summary):focus-visible {
+  outline: 2px solid var(--accent-bright); outline-offset: 2px;
 }
