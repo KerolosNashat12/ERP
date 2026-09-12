@@ -1,1 +1,17 @@
 Publish started Sat 09/12/2026 19:33:44.02
+warning: in the working copy of 'commitline.txt', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/platform/LandingContentService.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/platform/landingDocument.js', LF will be replaced by CRLF the next time Git touches it
+[main ae3f3b0] Publish from PC - Sat 09/12/2026 19:33:46.85
+ 6 files changed, 169 insertions(+), 131 deletions(-)
+ 
+--- push attempt 1 --- 
+To https://github.com/KerolosNashat12/ERP.git
+   85edf60..ae3f3b0  HEAD -> main
+PUSH SUCCEEDED on attempt 1 
+
+  Waiting for the live site to pick up commit ae3f3b0 ...
+  attempt 1 - site is still on 85edf60, waiting...
+  attempt 2 - site is still on 85edf60, waiting...
+
+  [OK] Live - the site is running commit ae3f3b0.
