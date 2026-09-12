@@ -40,7 +40,7 @@
  * storefront and the console.
  */
 
-import { applyTheme, monogramFavicon } from '../shared/brandTheme.js';
+import { applyTheme } from '../shared/brandTheme.js';
 import { DEFAULTS } from './defaults.js';
 import { intlPhone, safeEmail, safeAsset } from './guards.js';
 
@@ -65,9 +65,9 @@ const UI = {
   langSwitchLabel: { ar: 'Switch to English', en: 'التبديل إلى العربية' },
   navLabel: { ar: 'روابط الصفحة', en: 'Page links' },
   footNavLabel: { ar: 'روابط التذييل', en: 'Footer links' },
-  navPackages: { ar: 'الباقات', en: 'Packages' },
+  navSystems: { ar: 'أنظمتنا', en: 'Our systems' },
+  navClients: { ar: 'عملاؤنا', en: 'Clients' },
   navSteps: { ar: 'إزاي بنشتغل', en: 'How it works' },
-  navFaq: { ar: 'أسئلة شائعة', en: 'FAQ' },
   navContact: { ar: 'كلّمنا', en: 'Contact' },
   optional: { ar: '(اختياري)', en: '(optional)' },
 
@@ -76,8 +76,8 @@ const UI = {
   // buttons are the page's furniture around them.
   contactTitle: { ar: 'كلّمنا', en: 'Talk to us' },
   contactBody: {
-    ar: 'لو عندك سؤال قبل ما تحجز، اتصل أو ابعتلنا واتساب — هنرد عليك بنفسنا، مش روبوت.',
-    en: 'If you have a question before booking, call us or send a WhatsApp — you will get a person, not a bot.',
+    ar: 'لو عندك سؤال قبل ما تطلب عرض سعر، اتصل أو ابعتلنا واتساب — هنرد عليك بنفسنا، مش روبوت.',
+    en: 'If you have a question before asking for a quote, call us or send a WhatsApp — you will get a person, not a bot.',
   },
   contactPhone: { ar: 'تليفون', en: 'Phone' },
   contactWhatsapp: { ar: 'واتساب', en: 'WhatsApp' },
@@ -92,8 +92,8 @@ const UI = {
   // adds falls back to its caption rather than to somebody else's description.
   alt: {
     pos: {
-      ar: 'شاشة نقطة البيع في النظام: خانة الباركود فوق، وسلة فيها أربع قطع بأسعارها، والإجمالي ٥٬٤٤٩٫٢٠ جنيه، وزر إتمام البيع تحته.',
-      en: 'The point-of-sale screen: a barcode field at the top, a basket holding four items with their prices, a total of 5,449.20 EGP and a complete-sale button under it.',
+      ar: 'شاشة نقطة البيع في نظام المحلات: خانة الباركود فوق، وسلة فيها أربع قطع بأسعارها، والإجمالي ٥٬٤٤٩٫٢٠ جنيه، وزر إتمام البيع تحته.',
+      en: 'The retail system’s point-of-sale screen: a barcode field at the top, a basket holding four items with their prices, a total of 5,449.20 EGP and a complete-sale button under it.',
     },
     dashboard: {
       ar: 'لوحة التحكم: مربعات بمبيعات اليوم وإيرادات الشهر وقيمة المخزون، ورسم بياني لمبيعات آخر ٣٠ يومًا، وتنبيه بأصناف قربت تخلص.',
@@ -104,8 +104,16 @@ const UI = {
       en: 'The products screen: a table with each item’s code, name, number of variants, price, stock quantity, supplier and status.',
     },
     weborders: {
-      ar: 'شاشة طلبات الأونلاين في النظام: جدول بأرقام الطلبات وأسماء العملاء ومدنهم وإجمالي كل طلب وحالته — جديد، تم القبول، قيد التوصيل، تم التسليم.',
-      en: 'The web-orders screen: a table of order numbers, customer names, cities, order totals and each order’s stage — new, accepted, out for delivery, delivered.',
+      ar: 'شاشة طلبات الأونلاين في نظام المحلات: جدول بأرقام الطلبات وأسماء العملاء ومدنهم وإجمالي كل طلب وحالته — جديد، تم القبول، قيد التوصيل، تم التسليم.',
+      en: 'The retail system’s web-orders screen: a table of order numbers, customer names, cities, order totals and each order’s stage — new, accepted, out for delivery, delivered.',
+    },
+    'highlevel-home': {
+      ar: 'الصفحة الرئيسية لموقع شركة تشطيبات: صورة كبيرة لوحدة سكنية، وعنوان تشطيب شقق بالتقسيط في مصر، وزر ابدأ مشروعك الآن.',
+      en: 'A fit-out company’s home page: a large photograph of a finished home, a headline offering apartment fit-out in instalments, and a start-your-project button.',
+    },
+    'highlevel-calc': {
+      ar: 'محرك التقسيط الذكي في موقع شركة التشطيبات: اختيار الباقة، ومؤشرات لمساحة الوحدة ومقدم التعاقد ومدة التقسيط.',
+      en: 'The financing calculator on the fit-out company’s website: a package choice, and sliders for the size of the unit, the deposit and the instalment term.',
     },
     'shop-home': {
       ar: 'الصفحة الرئيسية للمتجر الإلكتروني على موبايل: شريط شحن مجاني فوق، بانر التشكيلة، وأقسام المنتجات تحته.',
@@ -198,7 +206,7 @@ const list = (value) => (Array.isArray(value) ? value.filter(isObject) : []);
 /** The same, for a list of `{ ar, en }` pairs. */
 const pairs = (value) => (Array.isArray(value) ? value.filter((v) => isObject(v) || typeof v === 'string') : []);
 
-const ICONS = new Set(['till', 'boxes', 'globe-bag', 'check', 'phone', 'mail', 'clock']);
+const ICONS = new Set(['till', 'boxes', 'globe-bag', 'flask', 'blueprint', 'check', 'phone', 'mail', 'clock']);
 
 // =========================================================================
 // LANGUAGE
@@ -460,8 +468,16 @@ function renderPackages() {
     fillItem(card, item);
     setAttr(card, 'data-plan', String(item.id ?? '').replace(/[^a-z0-9-]/gi, '') || null);
 
-    const price = number(item.price, language);
-    setText(card.querySelector('[data-plan-price]'), [price, currency].filter(Boolean).join(' '));
+    // A SYSTEM CARD HAS NO PRICE, and an empty price line is worse than none:
+    // it leaves a currency word floating over a card that is not for sale by
+    // the month. So the row is hidden whenever the item carries no price, and
+    // reappears — period suffix and all — the moment one is entered in the
+    // console. `item.price` may legitimately be 0 (a free tier), which is why
+    // this tests for a number rather than for truthiness.
+    const hasPrice = typeof item.price === 'number' && Number.isFinite(item.price);
+    const price = hasPrice ? number(item.price, language) : '';
+    setText(card.querySelector('[data-plan-price]'), hasPrice ? [price, currency].filter(Boolean).join(' ') : '');
+    setHidden(card.querySelector('[data-plan-price-row]'), !hasPrice);
 
     // The recommendation says so with a class, not with different markup —
     // which is what lets any one of the three be the featured one.
@@ -511,6 +527,25 @@ function renderShots() {
     },
     (item) => (item.kind === 'phone' ? 'phone' : 'desktop'),
   );
+}
+
+/**
+ * The clients row.
+ *
+ * A client's NAME is a bare string, not a translated pair — "M&M Accessories"
+ * and "Lustre" are the same in both languages, and a business whose name is
+ * Arabic must not be transliterated into something nobody would recognise.
+ * `dir="auto"` on the element is what lets a Latin name and an Arabic one sit
+ * in the same row without either coming out backwards. What it DOES and which
+ * system it runs are ordinary copy and are translated.
+ */
+function renderClients() {
+  const items = list(doc.clients?.items);
+  showSection('clients', enabled(doc.clients) && items.length > 0);
+  renderList(document.querySelector('[data-list="clients.items"]'), items, (node, item) => {
+    fillItem(node, item);
+    setTextOrHide(node.querySelector('[data-client-name]'), String(item.name ?? '').trim());
+  });
 }
 
 function renderQuotes() {
@@ -566,7 +601,7 @@ function renderContact() {
 }
 
 function renderBrand() {
-  const name = text(doc.brand?.name, language) || 'KJ';
+  const name = text(doc.brand?.name, language) || 'Nexora';
   const logo = safeAsset(doc.brand?.logo);
   for (const image of document.querySelectorAll('[data-brand-logo]')) {
     const monogram = image.previousElementSibling;
@@ -626,12 +661,13 @@ function render() {
   renderVersus();
   renderPackages();
   renderShots();
+  renderClients();
   renderQuotes();
   renderFaq();
   renderClosing();
   renderContact();
 
-  const name = renderBrand();
+  renderBrand();
   renderDocumentChrome();
 
   // The words. Four attributes, because a page has four kinds of string in
@@ -659,7 +695,6 @@ function render() {
   }
 
   observeReveals();
-  return name;
 }
 
 function setLanguage(next) {
@@ -777,19 +812,24 @@ function wireReveal() {
 /**
  * The palette, from the one hex in the document — the same function the
  * storefront paints a shop's colour with and the ERP previews it with, so
- * KJ's own page cannot derive its indigo differently from the product it is
- * selling. `brandTheme` normalises the hex itself, so a colour the owner
+ * Nexora's own page cannot derive its blue differently from the products it
+ * is selling. `brandTheme` normalises the hex itself, so a colour the owner
  * mistyped falls back rather than blanking the page.
+ *
+ * THE FAVICON IS NOT TOUCHED HERE, and that is the change. This used to draw
+ * a two-letter monogram from the brand name and write it over the `<link>` in
+ * the head — correct while the page sold one product named by two letters,
+ * and wrong now that the company has a mark of its own shipped as a file. A
+ * drawn "NE" over that mark would be a downgrade the owner could not undo
+ * from the console, so the tab keeps the icon the document shipped with.
  */
-function paintTheme(name) {
-  const accent = doc.brand?.accent;
-  applyTheme(document.documentElement, { accent, dark: true });
-  const monogram = (name || 'KJ').slice(0, 2).toUpperCase();
-  setAttr(document.querySelector('link[rel="icon"]'), 'href', monogramFavicon(monogram, { accent, dark: true }));
+function paintTheme() {
+  applyTheme(document.documentElement, { accent: doc.brand?.accent, dark: true });
 }
 
 captureProtos();
-paintTheme(render());
+render();
+paintTheme();
 wireLanguageToggle();
 wireDemoForm();
 wireReveal();
@@ -805,6 +845,7 @@ fetch(API, { cache: 'no-store', credentials: 'omit' })
   .then((stored) => {
     if (!isObject(stored)) return;
     doc = merge(DEFAULTS, stored);
-    paintTheme(render());
+    render();
+    paintTheme();
   })
   .catch(() => { /* the page is already complete; there is nothing to report */ });

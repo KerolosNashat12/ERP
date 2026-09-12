@@ -186,6 +186,39 @@ export class InventoryRepository {
   }
 
   /**
+   * Every ledger row posted under ONE document, oldest first.
+   *
+   * The forward record of what a document actually moved, which is what
+   * `SalesService#void` and `ReturnService#reverse` replay to undo it exactly.
+   * They read the LEDGER rather than the document's own lines because the two
+   * stop agreeing the moment a bundle is involved: a bundle is one line on the
+   * invoice and one movement PER COMPONENT here, each at that component's own
+   * true cost. Undoing from the lines would mean re-deriving a split that was
+   * never written down anywhere; undoing from this does not.
+   *
+   * ORDERED BY `id`, NOT BY `created_at`. Every movement under one document is
+   * written inside a single transaction and they can share a timestamp to the
+   * second, so a sort on the clock is not a stable order — and the callers
+   * depend on this order being the order they were posted in. `ReturnService`
+   * reverses this list to undo a damaged line scrap-first, receive-second; a
+   * shuffled pair takes the second movement through a negative balance.
+   *
+   * This method is what `InventoryService#movementsForReference` has been
+   * calling since bundles shipped. It did not exist: the doc comment there
+   * named it, three services called through it, and every void, every return
+   * reversal and every invoice delete answered 500 —
+   * `this.inventory.movementsByReference is not a function`.
+   */
+  async movementsByReference(referenceType, referenceId) {
+    if (!referenceType || !referenceId) return [];
+    return this.db.prepare(`
+      SELECT * FROM stock_movements
+      WHERE reference_type = ? AND reference_id = ?
+      ORDER BY id ASC
+    `).all(referenceType, referenceId);
+  }
+
+  /**
    * What the shop is holding, in one place, so no two screens can disagree
    * about it.
    *

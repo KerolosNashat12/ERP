@@ -611,6 +611,53 @@ function shotsSection(doc, defaults, onChange, assets) {
 
 // ══════════════════════════════════════════════════════════════════ quotes
 
+/**
+ * The clients row.
+ *
+ * Shaped like the quotes editor next door and for the same reason: a name is
+ * a PLAIN field, not a bilingual pair, because a business is called what it
+ * is called in either language. What it does and which system it runs are
+ * copy, so those are pairs.
+ */
+function clientsSection(doc, defaults, onChange) {
+  const c = doc.clients;
+  const items = list(c, 'items');
+  return stack(
+    sub(t('secClientsSub')),
+    biField({ label: t('fClientsTitle'), pair: ensurePair(c, 'title'), onChange }),
+    biField({ label: t('fClientsNote'), pair: ensurePair(c, 'note'), area: true, rows: 2, onChange }),
+    listEditor({
+      items,
+      label: t('fClients'),
+      addLabel: t('fClient'),
+      itemName: (i) => `${t('fClient')} ${i + 1}`,
+      onChange,
+      makeItem: () => ({ name: '', line: emptyPair(), system: emptyPair() }),
+      // The section only exists while it has something in it — so removing the
+      // last one is removing the section, and it says so.
+      confirmRemove: (item, index, count) => (count === 1
+        ? { title: t('clientRemoveLastTitle'), message: t('clientRemoveLastBody') }
+        : { title: t('removeRowTitle'), message: t('removeRowBody') }),
+      empty: { title: t('listEmptyTitle'), message: t('clientsEmptyMsg') },
+      renderItem: (item, index) => [
+        plainField({
+          label: `${t('fClientName')} — ${t('fClient')} ${index + 1}`, hideLabel: true,
+          placeholder: t('fClientName'), dir: 'auto', value: item.name,
+          onChange: (v) => { item.name = v; onChange(); },
+        }),
+        biField({
+          label: `${t('fClientLine')} — ${t('fClient')} ${index + 1}`,
+          hideLabel: true, pair: ensurePair(item, 'line'), onChange,
+        }),
+        biField({
+          label: `${t('fClientSystem')} — ${t('fClient')} ${index + 1}`,
+          hideLabel: true, pair: ensurePair(item, 'system'), onChange,
+        }),
+      ],
+    }),
+  );
+}
+
 function quotesSection(doc, defaults, onChange) {
   const q = doc.quotes;
   const items = list(q, 'items');
@@ -810,6 +857,13 @@ export const SECTIONS = [
       if (!items.length) return [t('sectionEmptyWarn')];
       return items.every((item) => item.enabled === false) ? [t('sectionEmptyWarn')] : [];
     },
+  },
+  {
+    key: 'clients',
+    label: 'secClients',
+    toggle: true,
+    build: clientsSection,
+    warn: (doc) => [doc.clients?.items?.length ? null : t('clientsEmptyMsg')],
   },
   {
     key: 'quotes',

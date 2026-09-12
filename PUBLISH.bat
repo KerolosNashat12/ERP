@@ -69,6 +69,32 @@ if exist "update-log.txt"      del /f /q "update-log.txt"      >> "%LOG%" 2>&1
 if exist "hosted-db-setup.txt" del /f /q "hosted-db-setup.txt" >> "%LOG%" 2>&1
 
 echo.
+rem ---------------------------------------------------------------------------
+rem STALE GIT LOCKS. An interrupted run leaves a .lock file behind and git then
+rem refuses the operation it guards with "Another git process seems to be running
+rem in this repository". This script used to carry straight on to the push, the
+rem push honestly reported "Everything up-to-date" because nothing had been
+rem committed, the retry loop printed PUSH SUCCEEDED, and the deploy check
+rem confirmed the site was serving the commit it was already serving. A publish
+rem that changed nothing reported success at every single step.
+rem
+rem There is MORE THAN ONE lock: index.lock guards "git add", HEAD.lock guards
+rem "git commit", and refs\heads\main.lock guards moving the branch. Clearing
+rem only index.lock got the add through and then failed on HEAD.lock - which is
+rem exactly what happened here on 12 Sep 2026. So this clears EVERY .lock under
+rem .git, which is safe precisely because no other git process is running: this
+rem script is the only thing that touches this repository.
+rem ---------------------------------------------------------------------------
+set "LOCKSFOUND="
+for /r ".git" %%L in (*.lock) do (
+  set "LOCKSFOUND=1"
+  del /f /q "%%L" >> "%LOG%" 2>&1
+)
+rem Earlier attempts renamed locks to *.lock.stale* instead of deleting them and
+rem left the renamed files sitting in .git. They do nothing; sweep them up.
+for /r ".git" %%L in (*.lock.stale*) do del /f /q "%%L" >> "%LOG%" 2>&1
+if defined LOCKSFOUND echo   Cleared a stale git lock left by an interrupted run.
+
 echo   Committing...
 git add -A >> "%LOG%" 2>&1
 git -c user.email="kerolosnashatestfanous@gmail.com" -c user.name="KerolosNashat12" commit -m "Publish from PC - %DATE% %TIME%" >> "%LOG%" 2>&1

@@ -260,6 +260,20 @@ export const landingStrings = {
     fShotCustom: 'Your own picture instead',
     shotsFixedNote: 'The pictures themselves come with the app, one for English and one for Arabic. You can reorder them, hide any of them, rewrite the caption, and put your own picture over one — but the list itself is fixed, because each slot is tied to a capture that ships in the app.',
 
+    // ── clients ──────────────────────────────────────────────────────────
+    secClients: 'Your clients',
+    secClientsSub: 'The businesses running on your systems. Real names only — a visitor who recognises one of them is the reason this section exists.',
+    fClientsTitle: 'Heading',
+    fClientsNote: 'The line under the heading',
+    fClients: 'The clients',
+    fClient: 'Client',
+    fClientName: 'Business name',
+    fClientLine: 'What they do',
+    fClientSystem: 'Which system they run',
+    clientsEmptyMsg: 'Nothing here yet, so this section is invisible on the page. Add a client once you have one whose name you may print.',
+    clientRemoveLastTitle: 'Remove the only client?',
+    clientRemoveLastBody: 'With no clients left, the whole clients section disappears from the page.',
+
     // ── quotes ───────────────────────────────────────────────────────────
     secQuotes: 'What customers say',
     secQuotesSub: 'Real quotes from real shops. Empty is fine — the section simply does not appear.',
@@ -551,6 +565,20 @@ export const landingStrings = {
     fShotShownOff: 'مخفية — الصورة دي مش هتظهر.',
     fShotCustom: 'صورة من عندك بدالها',
     shotsFixedNote: 'الصور نفسها بتيجي مع البرنامج، واحدة بالإنجليزي وواحدة بالعربي. تقدر ترتّبهم، وتخفي أي واحدة، وتغيّر الكلام تحتها، وتحط صورة من عندك فوق واحدة — لكن القايمة نفسها ثابتة، لأن كل مكان مربوط بلقطة جاية مع البرنامج.',
+
+    // ── العملاء ──────────────────────────────────────────────────────────
+    secClients: 'عملاؤك',
+    secClientsSub: 'الشركات اللي شغالة على أنظمتك. أسماء حقيقية بس — الزائر اللي يعرف واحد منهم هو سبب وجود القسم ده أصلًا.',
+    fClientsTitle: 'العنوان',
+    fClientsNote: 'السطر اللي تحت العنوان',
+    fClients: 'العملاء',
+    fClient: 'عميل',
+    fClientName: 'اسم الشركة',
+    fClientLine: 'بيشتغلوا في إيه',
+    fClientSystem: 'شغالين على أنهي نظام',
+    clientsEmptyMsg: 'مفيش حاجة هنا لسه، يعني القسم ده مش ظاهر على الصفحة. ضيف عميل لما يبقى عندك واحد تقدر تكتب اسمه.',
+    clientRemoveLastTitle: 'تشيل العميل الوحيد؟',
+    clientRemoveLastBody: 'من غير عملاء خالص، قسم العملاء هيختفي من الصفحة كله.',
 
     // ── آراء الزباين ─────────────────────────────────────────────────────
     secQuotes: 'الزباين بيقولوا إيه',

@@ -232,8 +232,17 @@ for (const lang of LANGS) {
         if (m.attr === 'data-reveal') return false;
         if (m.attr === 'hidden' && /lang-btn/.test(m.cls)) return false;
         // The enhancement arming ITSELF, all of it on <html> and none of it
-        // content: the derived palette, its dark/light flag and the favicon.
-        if (m.tag === 'HTML' && ['style', 'data-theme', 'class'].includes(m.attr)) return false;
+        // content: the derived palette, its dark/light flag, which ground the
+        // page is printed on, and the favicon.
+        //
+        // `data-paper` joined that list when `brandTheme` grew it and was not
+        // added here, so this check reported "1 DOM mutation on boot" on every
+        // Arabic run for as long as both have existed. It is the same kind of
+        // write as `data-theme` beside it — a flag on the root element that no
+        // reader can see change — and it is listed rather than excused: a
+        // `data-paper` written onto anything OTHER than <html>, or any other
+        // attribute written onto <html>, still fails.
+        if (m.tag === 'HTML' && ['style', 'data-theme', 'data-paper', 'class'].includes(m.attr)) return false;
         if (m.attr === 'href' && m.tag === 'LINK') return false;
         return true;
       });
@@ -460,7 +469,10 @@ served = {
   await page.waitForTimeout(1200);
   const seen = await page.evaluate(() => ({
     logoHidden: document.querySelector('[data-brand-logo]').hidden,
-    monogram: document.querySelector('.brand-monogram').hidden,
+    // The shipped company mark, which the uploaded logo covers and which comes
+    // back when those bytes fail to arrive. It used to be a drawn monogram
+    // (`.brand-monogram`); the contract it is under has not changed.
+    monogram: document.querySelector('.brand-default').hidden,
     hero: document.querySelector('[data-hero-image]').getAttribute('src'),
     heroBroken: document.querySelector('[data-hero-image]').naturalWidth === 0,
     figures: [...document.querySelectorAll('.shot')].map((f) => ({
@@ -469,8 +481,8 @@ served = {
       broken: f.querySelector('img')?.naturalWidth === 0,
     })),
   }));
-  if (!seen.logoHidden || seen.monogram) fail(`assets: the missing logo did not fall back to the monogram`);
-  else ok('assets: the missing logo fell back to the monogram');
+  if (!seen.logoHidden || seen.monogram) fail('assets: the missing logo did not fall back to the shipped mark');
+  else ok('assets: the missing logo fell back to the shipped mark');
   if (seen.hero !== '/kj/shots/pos-ar.webp' || seen.heroBroken) {
     fail(`assets: the hero is "${seen.hero}" broken=${seen.heroBroken}`);
   } else ok('assets: the missing hero fell back to the built-in capture');

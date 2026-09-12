@@ -97,6 +97,10 @@ const SHOPS = {
   },
 };
 
+/** This file's own brand and category, out of the way of anything seeded. */
+const FIXTURE_BRAND_ID = 9001;
+const FIXTURE_CATEGORY_ID = 9002;
+
 async function withShop(slug, fn) {
   const row = await platformDb().prepare('SELECT * FROM tenants WHERE slug = ?').get(slug);
   const connection = await openConnection({
@@ -125,18 +129,26 @@ async function fill(slug, spec) {
       await db.prepare('INSERT OR REPLACE INTO settings (key, value, value_type) VALUES (?, ?, ?)')
         .run(key, value, key === 'shop.delivery_fee' ? 'number' : 'string');
     }
-    await db.prepare('INSERT INTO brands (id, code, name_en, name_ar) VALUES (1, ?, ?, ?)')
-      .run(`B-${slug}`, spec.brand[0], spec.brand[1]);
-    await db.prepare('INSERT INTO categories (id, code, name_en, name_ar) VALUES (1, ?, ?, ?)')
-      .run(`C-${slug}`, spec.category[0], spec.category[1]);
+    // IDS OF ITS OWN, HIGH ENOUGH TO COLLIDE WITH NOTHING THE SHOP SHIPS WITH.
+    // This fixture used to take id 1 for both, which worked only while a newly
+    // provisioned shop had an empty `categories` table — until migration 032
+    // began seeding every shop a "Bundles" category, which then held id 1 and
+    // made every test in this file fail in its hook with "UNIQUE constraint
+    // failed: categories.id". A fixture that needs a specific row creates it
+    // rather than reaching for whichever id happens to be free.
+    await db.prepare('INSERT INTO brands (id, code, name_en, name_ar) VALUES (?, ?, ?, ?)')
+      .run(FIXTURE_BRAND_ID, `B-${slug}`, spec.brand[0], spec.brand[1]);
+    await db.prepare('INSERT INTO categories (id, code, name_en, name_ar) VALUES (?, ?, ?, ?)')
+      .run(FIXTURE_CATEGORY_ID, `C-${slug}`, spec.category[0], spec.category[1]);
 
     for (const p of spec.products) {
       await db.prepare(`
         INSERT INTO products (id, sku_prefix, name_en, name_ar, description_en, description_ar,
                               brand_id, category_id, base_price, is_active, is_published,
                               published_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, 1, 1, ?, 1, ?, '2026-01-05T00:00:00.000Z', '2026-01-05T00:00:00.000Z')
-      `).run(p.id, `${slug}-${p.id}`, p.en, p.ar, p.dEn, p.dAr, p.price, p.published);
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, '2026-01-05T00:00:00.000Z', '2026-01-05T00:00:00.000Z')
+      `).run(p.id, `${slug}-${p.id}`, p.en, p.ar, p.dEn, p.dAr,
+        FIXTURE_BRAND_ID, FIXTURE_CATEGORY_ID, p.price, p.published);
       await db.prepare(`
         INSERT INTO product_variants (product_id, sku, selling_price, is_active)
         VALUES (?, ?, ?, 1)
@@ -498,8 +510,8 @@ test('the sitemap is an index of bounded shards, and lists only what is public',
   assert.doesNotMatch(pages.body, /cart|checkout|favorites|search|track|order/);
 
   const taxonomy = await get('/t/mm/sitemap/taxonomy.xml');
-  assert.match(taxonomy.body, /shop\/category\/1\//);
-  assert.match(taxonomy.body, /shop\/brand\/1\//);
+  assert.match(taxonomy.body, new RegExp(`shop/category/${FIXTURE_CATEGORY_ID}/`));
+  assert.match(taxonomy.body, new RegExp(`shop/brand/${FIXTURE_BRAND_ID}/`));
 
   // Both languages are declared in the sitemap, matching the pages' own tags.
   const products = await get('/t/mm/sitemap/products-1.xml');
@@ -577,8 +589,8 @@ for (const [slug, driver] of [['mm', 'sqlite'], ['zahra', 'libsql']]) {
     assert.match(products.body, new RegExp(`/t/${slug}/shop/product/1/`));
 
     const taxonomy = await get(`/t/${slug}/sitemap/taxonomy.xml`);
-    assert.match(taxonomy.body, /shop\/category\/1\//);
-    assert.match(taxonomy.body, /shop\/brand\/1\//);
+    assert.match(taxonomy.body, new RegExp(`shop/category/${FIXTURE_CATEGORY_ID}/`));
+    assert.match(taxonomy.body, new RegExp(`shop/brand/${FIXTURE_BRAND_ID}/`));
   });
 }
 
@@ -607,13 +619,13 @@ test('the head and the page read the same dictionary, in both languages', async 
   // the sentence a shared link arrives wearing and the sentence the page
   // settles on would drift, and only one of them is ever looked at.
   const { translate } = await import('../public/shop/js/core/i18n.js');
-  const page = await get('/t/mm/shop/category/1/x');
+  const page = await get(`/t/mm/shop/category/${FIXTURE_CATEGORY_ID}/x`);
   assert.equal(
     head(page.body).description,
     translate('ar', 'metaListing', 'عقود', 'إم آند إم للإكسسوارات'),
   );
 
-  const english = await get('/t/mm/shop/category/1/x?lang=en');
+  const english = await get(`/t/mm/shop/category/${FIXTURE_CATEGORY_ID}/x?lang=en`);
   assert.equal(
     head(english.body).description,
     translate('en', 'metaListing', 'Necklaces', 'M&M Accessories'),

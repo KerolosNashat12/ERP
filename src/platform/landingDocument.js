@@ -209,7 +209,12 @@ export const landingDocumentSchema = z.object({
     items: list(z.object({
       id: slug().optional(),
       name: pair(80).optional(),
-      price: price.optional(),
+      // NULLABLE, and that is a real state rather than a missing value: a
+      // card with no price is a system quoted on request, which is what all
+      // three ship as. The console writes `null` when the owner clears the
+      // field, and refusing it there would answer "I do not sell this by the
+      // month" with a validation error.
+      price: price.nullable().optional(),
       badge: pair(40).nullable().optional(),
       featured: flag.optional(),
       oneLiner: pair(300).optional(),
@@ -235,6 +240,25 @@ export const landingDocumentSchema = z.object({
       enabled: flag.optional(),
       custom: minted.optional(),
     }), 32).optional(),
+  }).optional(),
+
+  /**
+   * The clients row.
+   *
+   * `name` is a `nameOrPair` for the same reason a quote's is: a business is
+   * called what it is called, and "M&M Accessories" does not become something
+   * else in the English column. What that business DOES, and which system it
+   * runs, are ordinary copy and are bilingual pairs.
+   */
+  clients: z.object({
+    enabled: flag.optional(),
+    title: pair(200).optional(),
+    note: pair(600).optional(),
+    items: list(z.object({
+      name: nameOrPair(120).optional(),
+      line: pair(200).optional(),
+      system: pair(200).optional(),
+    }), 24).optional(),
   }).optional(),
 
   quotes: z.object({

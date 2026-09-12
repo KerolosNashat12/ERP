@@ -1,321 +1,122 @@
-Backups: the 64 MB ceiling, and two tests that only worked by accident
+Turn the /kj page into the Nexora company page, and fix voiding a sale
 
 THE ASK
-"why ????" - a screenshot of the platform console's Backups tab for mm,
-every row for days back showing فشلت (Failed) in red, twice a day.
+"we need to chnage Logo and name first name should be Nexora second we need
+to put our systems not only the M&M also ChemCost and High level and our
+clients okay understand me company landing page not for a spsefic project"
 
-WHAT WAS HAPPENING
-Every backup is compressed into a .zip and stored inside the control-plane
-database. A hard ceiling on that stored size - MM_BACKUP_MAX_BYTES, 64 MB by
-default - aborts the run and deletes everything written the moment it is
-crossed, on purpose: a shop silently missing its backups for a month is the
-thing this feature exists to prevent, so a backup that cannot be taken has to
-be as visible as one that can.
+WHAT THE PAGE IS NOW
+It sold one product. It sells the company that builds three.
 
-mm's own shop had grown past that ceiling: its compressed backup measured
-126 MB. The 64 MB number was measured against a shop with NO product photos
-of its own - a year-old shop with 900 products, 12,000 sales and so on
-compresses to about 1.3 MB, because text compresses roughly 10:1. Product
-photos, brand logos and banners are stored as BLOBs in the same row store,
-and a JPEG or PNG is already compressed - zipping it again barely shrinks it -
-so a shop with real photography can dwarf that estimate on photos alone. Every
-scheduled run since at least September 4th had failed the same way, and left
-zero successful backups behind it.
+BRAND
+The page wears Nexora's own logo, taken from the Nexora Facebook page and cut
+out to a transparent mark: the header, the footer, the browser tab icon and
+the share card that Facebook and WhatsApp draw when the link is pasted. The
+two-letter monogram it used to draw is gone - kj.js no longer overwrites the
+favicon at all, so the tab keeps the real mark rather than a drawn "NE". The
+accent colour moved from KJ's indigo to the blue in that mark (#0a5f96), and
+the seven shades kj.css ships with are exactly what the theme derives from it,
+so the page with no JavaScript is the same colour as the page with it.
+
+THE THREE SYSTEMS, WHERE THE THREE PRICES WERE
+The price cards are now system cards, one each:
+
+  Retail + online shop - clothing, accessories, perfume and gift shops. Till,
+  stock with sizes and variants, invoices, returns, exchanges, suppliers,
+  reports, and the storefront under the shop's own name.
+
+  ChemCost - perfume and cosmetics compounding. A recipe per product that
+  costs itself out of its ingredients, raw materials in batches with expiry
+  dates, production orders, wastage, and cost and profit per product.
+
+  High Level - fit-out and interiors. The company website, the financing
+  calculator a client uses before they call, enquiries arriving together, and
+  a dashboard for changing packages and prices without a developer.
+
+NO PRICE IS PRINTED ANYWHERE. Three systems sold to three different kinds of
+business do not share one number, so every card ends in "request a quote" and
+the demo band is a quote request. The price markup is still in the page,
+hidden, and the renderer unhides it the moment a card in the document carries
+a price again - so this is a decision the console can reverse, not a rebuild.
+The document schema now accepts a null price for the same reason: clearing
+that field in the console means "quoted on request", not a validation error.
+
+CLIENTS
+A new section, and a new part of the editable document, so it is maintained
+from the console like everything else on this page. Four names, which is how
+many there are: M&M Accessories (retail), Lustre and OnlyOnce (ChemCost), and
+High Level (High Level). Each carries what the business does and which system
+it runs. A client's name is a plain field rather than a bilingual pair,
+because a business is called what it is called in either language.
+
+WHAT ELSE MOVED
+Screens from High Level's live site were captured and added to the
+screenshots section beside the ERP's own. "Why Nexora" replaced the old
+shop-specific overview, the steps, the paper-and-Excel comparison and the
+"is this for you" columns were rewritten to speak to all three kinds of
+business, and the FAQ gained the three questions a company page gets that a
+product page does not - what work do you do, is it ready or built from
+scratch, and how much.
+
+Nothing about how this page works changed: the whole page still ships written
+out in the HTML and reads identically with JavaScript switched off, the render
+on an unedited deployment still touches zero nodes, and every string is still
+editable from the console in both languages.
+
+ALSO IN THIS DROP: voiding a sale answered 500, on production
+
+Found while running the suite before shipping the above, not reported by
+anyone yet - which is the only good news in this paragraph.
+
+WHAT WAS WRONG
+The bundles release added InventoryService#movementsForReference, which reads
+back every ledger row a document posted so that a void can replay and undo it
+exactly - the right design, and the only way to undo a bundle sale correctly.
+It calls InventoryRepository#movementsByReference. That method was never
+written. Its own doc comment refers the reader to it; three services call
+through it; it does not exist.
+
+So every one of these answered 500 INTERNAL_ERROR with
+"this.inventory.movementsByReference is not a function":
+
+  - voiding a sale at the till
+  - reversing a customer return
+  - deleting an invoice (which reverses it first)
+
+This is live on the shop right now and has been since bundles shipped.
 
 WHAT CHANGES
-The ceiling is 200 MB now, comfortably over the 126 MB seen, with room for the
-photo library to keep growing before the next shop hits this again. No
-migration, no code change to the backup mechanism itself - one constant.
+The missing repository method, written: every stock_movements row under one
+reference, ordered by id. By id and not by created_at, deliberately - all the
+movements of one document are written inside one transaction and can share a
+timestamp to the second, and the callers reverse this list to undo a damaged
+return line scrap-first, receive-second. A clock sort is not a stable order
+and would take the second movement of a pair through a negative balance.
 
-If a shop ever outgrows 200 MB too: raise MM_BACKUP_MAX_BYTES again (an
-environment variable in Vercel, or this default) rather than lower it -
-retention (KEEP, in the same file) is the knob for how much control-plane
-storage backups cost over time, not this ceiling.
+No migration, no schema change, no data touched. The 36 tests that had been
+failing because of it pass again.
 
-TWO TESTS THAT ONLY WORKED BY INHERITANCE
-Verifying this meant running the full suite in a fresh checkout, which turned
-up something the project's own database file had been quietly papering over
-for a while: labels-symbology.test.js and weborder-delivery.test.js called
-initDb() and nothing else - no applySchema(), no seedBaseline(), no
-runMigrations(). Every other end-to-end test file does all three, the same
-way start() does on a real boot. These two only ever worked because the
-shared default database at data/mm-accessories.db had already been shaped and
-seeded by an earlier run and nobody had cleared it since. On a genuinely fresh
-database: "no such table: users" or "Invalid username or password", and every
-one of their subtests failed with it - fifty-five subtests across the two
-files plus a third (smoke.test.js, which had applySchema()+runMigrations()
-but not seedBaseline()) once the database was actually empty.
+ALSO IN THIS DROP: two test fixtures that the bundles release broke
 
-Fixed the same way every correctly-written sibling test file already does it:
-initDb(), applySchema(), seedBaseline(), runMigrations(), in that order,
-before the first request. None of this touches what ships to the shop -
-it is three test files becoming self-contained rather than quietly borrowing
-state from whatever ran before them.
+tests/shop-seo.test.js wrote its own brand and category at id 1, which worked
+only while a newly provisioned shop had an empty categories table. Migration
+032 now seeds every shop a "Bundles" category, which takes id 1, so all 21
+tests in that file failed in their hook with "UNIQUE constraint failed:
+categories.id". The fixture creates its ids out of the way now.
 
-npm test 1264 passing (unchanged - the ceiling fix and the test fix are
-independent; confirmed by reverting the ceiling change alone and rerunning,
-which reproduced the same fifty-five failures, proving they were already
-there and had nothing to do with it).
+tests/kj-landing-check.mjs failed every Arabic run with "1 DOM mutation on
+boot - data-paper". brandTheme grew that attribute and the check's list of
+root-element writes it expects was never updated. It is listed now, beside
+data-theme, with a note - a data-paper written on anything other than <html>
+still fails, and so does any other attribute written on <html>.
 
-ALSO IN THIS DROP: export the products list as CSV
+npm test 1307 passing, 0 failing (from 1250 passing / 57 failing on main
+before this drop - verified by running the full suite on a clean clone of
+main to be sure every one of those 57 was already there and none of them was
+mine). Plus node tests/kj-landing-check.mjs: all checks passed, including
+"rendered the defaults without touching one node" and, with JavaScript off,
+"identical to the rendered default, word for word" - which is what proves the
+page and the document behind it still say exactly the same thing.
 
-THE ASK
-"add download all products export as csv ?" - from the Products screen
-itself, next to «تصنيف النوع» and the other bulk tools.
-
-WHAT IT DOES
-A new "⭳ Export CSV" button on Products calls GET /api/products?format=csv,
-which honours every filter already on the screen (search, brand, category,
-supplier, status, gender) so the file is exactly what the grid is showing,
-not always the whole catalogue. Built on the same reportService.toCsv() the
-Reports screen already uses - one CSV encoder in the app, not two - so it
-gets the Arabic BOM and comma-escaping for free and reads correctly in
-Excel in either language. Columns: SKU, product name, brand, category,
-supplier, gender, status, on-website, variant count, stock on hand, min/max
-price. Gated by products.view, same as the screen it sits on; the export is
-audited (EXPORT / products) the same way a report export already is.
-
-THE BUG THIS PROJECT HAS ALREADY SHIPPED ONCE, CAUGHT BEFORE IT SHIPPED AGAIN
-The products repository clamps a page at 500 rows - correct for the screen,
-and exactly the shape of bug that once made the stock count sheet silently
-stop at row 1,000 with nothing on screen saying so. "Export CSV" asking for
-one page of "everything" would have quietly capped any shop over 500
-products at 500. CatalogService#exportRows pages through at that ceiling
-until it has read as many rows as the repository said there were, proven by
-a fake-repository test with a 650-row catalogue that fails if the loop is
-reverted to one call - checked by actually reverting it and watching the
-test catch it.
-
-npm test 1264 -> 1273, plus tests/products-export-check.mjs.
-
-ALSO IN THIS DROP: the product photo size limit, 400 KB -> 5 MB
-
-THE ASK
-A phone photo uploaded on a product screen was refused: "The photo is 513 KB
-- the limit is 400 KB". Asked to raise it to 5 MB.
-
-WHAT CHANGES
-ImageService's own ceiling (src/services/ImageService.js) is 5 MB now,
-decoded, up from 400 KB. The browser still resizes every photo to 1400px and
-compresses it before it ever reaches this check - most photos still land
-around 100-400 KB - this only widens the backstop for the phone photos that
-do not compress down that far, his 513 KB one included.
-
-Raising it exposed a second, narrower ceiling: the server refuses any
-request body over a flat size regardless of what is inside it
-(express.json in src/server.js), and a base64-encoded photo is about a third
-bigger than the picture it decodes to - a 5 MB photo needs close to 6.7 MB of
-body. That limit was 5 MB, which would have quietly refused any photo over
-roughly 3.5 MB with a generic "request too large" instead of the specific
-message above. Raised to 8 MB alongside it, with room for the base64
-inflation and the rest of the request.
-
-WORTH KNOWING BEFORE RAISING EITHER OF THESE AGAIN: product photos are the
-same BLOBs that made the 64 MB backup ceiling above have to move to 200 MB.
-A bigger per-photo ceiling means bigger photos are now possible on this shop,
-and every one of them rides along in every backup. This alone does not make
-backups fail again - most phone photos still compress well under the new
-5 MB limit - but it is the same weight, in the same place, and if backups
-start crossing 200 MB again, this is one of the first things worth checking.
-
-npm test 1273 passing (same count - this changed one existing pentest
-assertion rather than adding a test; the "photo far over the ceiling is
-refused" check is now sized to 5.5 MB decoded, so it still proves ImageService
-itself refuses an oversized photo rather than the request just being too big
-for any reason).
-
-ALSO IN THIS DROP: the storefront loading slowly - brand logos no longer cost
-a network round trip each
-
-THE ASK
-Two screenshots of the storefront stuck on loading skeletons - "the website
-is load very bad this is the first thing".
-
-WHAT WAS HAPPENING
-Measured against the live site rather than guessed at: the page shell itself
-loads fast (DOMContentLoaded ~1s, first byte 69ms) and every image already
-lazy-loads correctly. The slowness is round trips, not bytes or code - the
-brands rail fires one GET /api/shop/brands/:id/logo per brand the instant the
-home page paints, and a shop with dozens of brands means dozens of small
-requests competing for the same few connections, each one paying full
-serverless + database latency before its few KB of image ever start moving.
-A handful of slow seconds, not a broken page.
-
-WHAT CHANGES
-StorefrontService#brands() (and /api/shop/home, which reads brands() the same
-way) now inlines any logo at or under 20 KB directly into the JSON response
-as a data: URI, read in the same one query the brand list already runs - not
-one request per brand, one query for every logo the page needs. The browser
-then has the picture before it has finished parsing the response; nothing to
-fetch, nothing to wait on. A logo over 20 KB is left alone - has_logo stays
-true, logo_inline is simply absent, and the storefront falls back to fetching
-it by address exactly as it always has, so nothing about the large-logo path
-changed at all. Client-side, brandCard() prefers logo_inline when present and
-only falls through to the network address when it is not - a one-line change
-to the source-selection order, everything else about how a brand's mark
-renders is untouched.
-
-Nothing here touches the ERP screens, only the public storefront's brand
-list and home page.
-
-npm test 1273 -> 1279 (a new end-to-end test proves a small logo comes back
-byte-for-byte as an inline data: URI on both /api/shop/brands and
-/api/shop/home, and that a logo past the ceiling does not - checked by
-reverting #withInlineLogos to a no-op and watching both new checks fail before
-restoring it).
-
-NOT YET DONE FROM THE SAME MESSAGE: a dashboard section for social media
-links (Facebook / Instagram / TikTok, each independently switchable, shown
-somewhere on the storefront - footer suggested). Scoped, not started - and
-turned out to need no code at all: this already shipped in migration 005.
-Settings -> الموقع has a full social-links card (Facebook, Instagram,
-TikTok, YouTube, WhatsApp, X, each with its own URL and its own show/hide
-checkbox), already wired into the storefront footer. He had simply never
-opened it.
-
-ALSO IN THIS DROP (2026-09-09): the 200 MB backup ceiling, crossed again
-
-THE ASK
-"ليه كلها فشلت" ("why did they all fail") - two screenshots of the platform
-console's Backups tab for mm, the same فشلت (Failed) rows as before, this
-time against a 200 MB ceiling: "252 MB read so far against a ceiling of
-200 MB."
-
-WHAT WAS HAPPENING
-The 200 MB ceiling set two days earlier (see above) was crossed again. The
-shop's last successful backup was 128 MB, on Sep 7 at 05:46 AM - every
-scheduled run since, on Sep 8 and Sep 9, read 251-252 MB and failed the
-same way, on purpose, exactly like the first time.
-
-This almost certainly is not a coincidence: the same release that raised
-this ceiling to 200 MB also raised the product photo upload limit from
-400 KB to 5 MB (see "the product photo size limit, 400 KB -> 5 MB" above),
-and that release's own notes already flagged this exact risk - product
-photos are BLOBs in the same row store a backup has to read and compress,
-so a bigger photo ceiling means bigger backups. The timing (doubling past
-200 MB within 48 hours of that release going out) points at exactly that:
-bigger photos have evidently been getting uploaded since.
-
-No data was lost either time this has happened. A failed backup deletes
-everything it started writing and leaves nothing partial behind - the
-shop's last good backup from Sep 7 was untouched and still there the whole
-time this was failing.
-
-WHAT CHANGES
-MAX_BACKUP_BYTES raised again, 200 MB -> 400 MB - one constant in
-src/platform/BackupService.js, no migration, same shape as the first raise.
-The doc comment above the constant now records both crossings and a
-standing note for next time: if this happens a third time, that is the
-signal to stop just raising this number and look at how large product
-photos actually need to be, rather than let a backup ceiling permanently
-chase a photo ceiling upward.
-
-npm test 1279 passing (unchanged - a single constant with no dedicated
-test coverage for the exact number; verified with a fresh database and the
-full suite regardless, per the project's standing convention).
-
-ALSO IN THIS DROP (2026-09-09): scheduled-backup retention, 14 -> 2
-
-THE ASK
-"only save last 2 backups okay this will help us to less storatge" - after
-seeing the repeated ceiling failures above.
-
-WHAT CHANGES
-KEEP.scheduled (src/platform/BackupService.js) lowered from 14 to 2. This is
-a DIFFERENT knob from MAX_BACKUP_BYTES above - that one caps how big any one
-backup is allowed to be before the run fails; this one caps how many
-successful copies are kept before the oldest are pruned. Lowering it does
-nothing to help a single backup that is itself too large, but it does cut
-total stored bytes - a shop whose scheduled backups run ~250 MB each was
-storing up to 14 of them (several GB); now it stores at most 2 (roughly half
-a GB).
-
-WORTH KNOWING: this trims the safety window, not just the storage. Scheduled
-backups run twice a day (vercel.json), so keeping 2 covers roughly the last
-day rather than the last two weeks - damage noticed a few days late is no
-longer recoverable from a scheduled backup. manual (5) and pre_restore (3)
-retention were left as they were; only scheduled was touched, since that is
-what he was looking at.
-
-npm test 1279 passing (unchanged - retention count has no dedicated test
-for its literal default; the pruning LOGIC is covered by
-tests/platform-backup.test.js, which sets its own KEEP values via env vars
-and is unaffected by the default changing).
-
-ALSO IN THIS DROP (2026-09-11): Deals of the Day, and Bundles
-
-THE ASK
-"add a new section at the website and same at the dashboard called deals of
-the day, let me appear it as a section on the website or disappear, and can
-choose the specific products to add on it from my dashboard. And let me add
-bundles too at this section, more than one product and let me put a selling
-price for this bundle or calculate it from each product price. Bundle
-should appear at the dashboard with new sku and at website, maybe at
-dashboard we should add it on Category Bundles, to appear on website
-filtering with this category and can choose it to appear in the new section
-deals of the day."
-
-WHAT DEALS OF THE DAY IS
-A new home-page shelf, off by default (web.deals_enabled, same on/off
-setting pattern as the other storefront sections in Settings -> الموقع).
-Which products land on it is entirely manual - a checkbox on each product's
-own edit form (also settable in bulk from the Products grid) marks it
-is_deal_of_day; the shelf shows exactly those, nothing algorithmic. The
-storefront's existing product-listing filters also gained a dealOfDay
-option, so "everything on the deals shelf" can be browsed as its own page,
-not just seen on the home strip.
-
-WHAT A BUNDLE IS
-A product form gained an "is a bundle" checkbox. Turning it on hides the
-normal single-variant/size-matrix controls (a bundle has no sizes of its
-own) and replaces them with a component picker - search and add two or more
-existing products, each with its own quantity. The price can be typed by
-hand (fixed) or left to compute itself as the live sum of every component's
-selling price times its quantity (sum) - a toggle on the form switches
-between the two, and in sum mode the price field locks and recalculates as
-components are added, removed, or requantified. Every bundle is
-auto-filed under a "Bundles" category on save, which is what makes it
-filterable on the storefront through the category browsing that already
-existed - no new filtering code needed there. A bundle also gets its own
-new SKU and sits in the dashboard products grid like any other product,
-tagged so it is easy to pick out; it can additionally be flagged onto the
-Deals of the Day shelf like anything else.
-
-THE STOCK DECISION
-Asked directly whether a bundle should carry its own independent stock
-count or draw down its components' stock when sold: he chose the second,
-harder path - a bundle holds NO stock of its own. Selling one, returning
-one, reserving one on a web order, or cancelling a web order all expand
-into moving each component's own stock by (quantity in the recipe x units
-sold), the same components a customer could also buy individually and
-which any other bundle might also draw from. A bundle's available quantity
-is computed, not stored: the scarcest component's free stock divided by how
-many of it the recipe needs, floored - four components at "2 left, needs
-1" and "10 left, needs 3" cap the bundle at 2 available, not 3. A component
-can never itself be a bundle - nesting is refused outright, at both create
-and edit time, including a bundle that would end up listing itself as its
-own component after an edit.
-
-WHERE THIS TOUCHED STOCK-MOVING CODE
-Every place stock already moved - POS sale and void, customer returns (full
-and partial, with per-component cost tracing so a partial refund still
-knows what it is actually giving back), and the full web-order lifecycle
-(reserve on placement, release on cancel, deduct on delivery) - now expands
-a bundle line into its components before touching a single stock row,
-through one shared InventoryService method rather than four separate
-reimplementations of the same expansion. A bundle sold at POS blends its
-line cost from each component's own cost price at the moment of sale, the
-same way a normal sale already priced its cost; voiding it restores every
-component exactly, checked by selling a bundle down to the wire and voiding
-it back to its starting stock.
-
-npm test 1279 -> 1299 (a new file, tests/bundles-and-deals.test.js, 20
-subtests: bundle pricing in both modes, category auto-assignment, the four
-refusal cases above, availability arithmetic, POS sale/oversell/void,
-partial return with cost tracing plus a direct reversal check since sales
-returns have no HTTP reversal route of their own, web-order reserve
-through deliver and a separate cancel-releases-reservation check, and the
-Deals of the Day surface end to end - home shelf presence and absence, the
-settings toggle, a bundle appearing as a deal, the storefront dealOfDay and
-Bundles-category filters, the bulk-edit toggle, and the admin grid's own
-filters and summary counts).
+STILL TO COME: ChemCost has no screenshots on the page yet. Its section is
+words and a card; the capture needs a sign-in on chemcost-web.vercel.app.
