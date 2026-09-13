@@ -749,6 +749,9 @@ const dictionary = {
     paymentPaidOnline: 'Paid online',
     paymentAwaiting: 'Awaiting online payment',
     paymentFailedTag: 'Online payment failed',
+    // Not a workflow status (see STATUSES in webOrders.js) — the filter that
+    // finds orders the queue hides on purpose because nobody has paid yet.
+    awaitingPayment: 'Awaiting payment',
     pending: 'New',
     accepted: 'Accepted',
     outForDelivery: 'Out for delivery',
@@ -1752,6 +1755,7 @@ const dictionary = {
     paymentPaidOnline: 'اتدفع أونلاين',
     paymentAwaiting: 'مستنّي الدفع الأونلاين',
     paymentFailedTag: 'الدفع الأونلاين فشل',
+    awaitingPayment: 'مستني الدفع',
     pending: 'جديد',
     accepted: 'تم القبول',
     outForDelivery: 'قيد التوصيل',

@@ -72,7 +72,15 @@ export async function webOrdersView(root, route) {
     // as well be right rather than waiting for the next shell refresh.
     setBadge('pendingWebOrders', data.counts.pending);
 
-    mount(kpiHost, ...STATUSES.map((status) => kpi(tCode(status), number(data.counts[status]))));
+    mount(kpiHost,
+      ...STATUSES.map((status) => kpi(tCode(status), number(data.counts[status]))),
+      // Not a workflow status — how many online orders are sitting hidden
+      // from this very list because nobody has paid for them yet. Zero is
+      // the healthy number; anything else is stock quietly held for nothing
+      // (see `#releaseStalePendingPayments` in WebOrderService, which clears
+      // these out on its own after 30 minutes — this tile is what lets
+      // staff notice sooner, or find one on purpose via the status filter).
+      kpi(tCode('awaiting_payment'), number(data.counts.awaiting_payment)));
 
     mount(listHost, dataTable({
       columns: [
@@ -133,7 +141,12 @@ export async function webOrdersView(root, route) {
           input: selectInput({
             placeholder: t('all'),
             value: state.status,
-            options: STATUSES.map((status) => ({ value: status, label: tCode(status) })),
+            // 'awaiting_payment' rides along at the end: not a real status
+            // (see STATUSES), but the one deliberate way in to the online
+            // orders this list otherwise hides because nobody has paid for
+            // them — staff need a way to find and cancel one by hand if it
+            // is holding stock somebody else needs.
+            options: [...STATUSES, 'awaiting_payment'].map((status) => ({ value: status, label: tCode(status) })),
             onchange: (event) => { state.status = event.target.value; state.page = 1; load(); },
           }),
         })),
