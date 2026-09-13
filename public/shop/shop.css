@@ -302,6 +302,10 @@
        --dur-base  a thing MOVING. Long enough to be seen travelling.
        --dur-slow  a photograph zooming inside its frame — the one motion on
                    the site that is meant to be noticed while it happens.
+                   Spent going INTO a hover only; COMING OUT of one always
+                   spends `--dur-base` instead, so a card a pointer has
+                   already left is never still finishing a slow move underneath
+                   wherever the pointer is now (see the card-photo hover rule).
        --ease      out-cubic: leaves immediately, arrives slowly. Everything
                    uses it, so the whole page decelerates the same way.
 
@@ -317,7 +321,7 @@
      ==================================================================== */
   --dur-fast: 120ms;
   --dur-base: 220ms;
-  --dur-slow: 600ms;
+  --dur-slow: 850ms;
   --ease: cubic-bezier(.2, .7, .3, 1);
   --lift: -4px;
 
@@ -1651,6 +1655,13 @@ html[lang="ar"] .card-brand { letter-spacing: 0; text-transform: none; font-size
      ANCESTOR of the transformed element, never the element itself. Harmless
      everywhere else: a box with nothing 3D inside it just ignores it. */
   perspective: 1000px;
+  /* The night theme spins this box itself rather than the image inside it
+     (see the night-theme hover block, far below) — same reason as the `<img>`
+     rule below carries it: hides the mirror-flash at the turn's edge-on
+     midpoint. A no-op here in the light theme, where it is the `<img>` that
+     turns and this box never does. */
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
 }
 .photo > img {
   position: absolute;
@@ -1660,6 +1671,13 @@ html[lang="ar"] .card-brand { letter-spacing: 0; text-transform: none; font-size
   max-inline-size: none;
   object-fit: cover;
   object-position: center;
+  /* Only matters once something spins it in 3D (the card-hover turn, see
+     MOTION): without this, the moment the image is edge-on to the viewer —
+     the exact midpoint of a 360° turn — a browser can show its own back face,
+     which for a flat photo means a brief MIRROR-IMAGE flash. Hidden always;
+     costs nothing on an image that never turns. */
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
 }
 /* No photograph at all: the same box, the monogram in the middle of it. */
 .photo-empty { aspect-ratio: var(--photo-ratio); }
@@ -2883,10 +2901,15 @@ html[lang="ar"] .foot-col h3 { letter-spacing: .04em; text-transform: none; font
   .card.is-leaving { transition: opacity var(--dur-base) var(--ease), transform var(--dur-base) var(--ease); }
   /* One bar, five pixels tall, and the number it is drawing IS its width. */
   .free-bar > span { transition: width var(--dur-base) var(--ease); }
-  /* The slow one. The frame keeps its size and the picture grows and turns
-     inside it, which is why `.photo` clips (and now carries `perspective`,
-     so the turn has real depth instead of squashing flat). */
-  .card .photo > img { transition: transform var(--dur-slow) var(--ease); }
+  /* The BASE speed is the coming-OUT speed: `--dur-base`, quick, so a card
+     the pointer has already left is back to resting before the pointer has
+     settled anywhere else. Going IN is the slow, cinematic one — that
+     override lives on `.card:hover` itself, below, so it only ever applies
+     while the pointer is actually still on the card. The frame keeps its
+     size and the picture grows and turns inside it, which is why `.photo`
+     clips (and carries `perspective`, so the turn has real depth instead of
+     squashing flat). */
+  .card .photo > img { transition: transform var(--dur-base) var(--ease); }
 
   /* ---- the movement itself, only where there is a pointer to cause it --- */
   @media (hover: hover) {
@@ -2906,8 +2929,24 @@ html[lang="ar"] .foot-col h3 { letter-spacing: .04em; text-transform: none; font
        than just spinning like a clock hand. Bigger scale than the plain-zoom
        cards elsewhere on the site (1.06) because a photo mid-turn shows its
        edge for an instant, and a tighter zoom would let the frame's own
-       background peek past it there. */
-    .card:hover .photo > img { transform: scale(1.15) rotateY(360deg); }
+       background peek past it there.
+
+       Its own `transition` here, slower than the base rule above and with a
+       gentler, more even curve — the base rule is the coming-OUT speed, this
+       is the going-IN one, and only applies while `:hover` actually matches,
+       so it can never linger onto a card the pointer has already left. That
+       is what made a fast sweep across the grid look like "two cards
+       animating at once": the old single 600ms transition ran the same way
+       both directions, so a card's OUTGOING turn was still playing, full
+       size, a half-second after the pointer had already moved to the next
+       one — worse the faster the turn, because the eye had less time to
+       register it as one continuous motion rather than a flicker. Slow and
+       deliberate here, quick and quiet on the way out, reads as one
+       unhurried turn instead of two competing ones. */
+    .card:hover .photo > img {
+      transition: transform var(--dur-slow) cubic-bezier(.45, 0, .2, 1);
+      transform: scale(1.1) rotateY(360deg);
+    }
     .card-fav:hover { transform: scale(1.08); }
   }
 
@@ -4120,13 +4159,17 @@ html[data-paper="night"]:not([lang="ar"]) .tile-count { text-transform: uppercas
    position, an opacity or a colour, which `prefers-reduced-motion` leaves
    alone — this one is the same 360° turn as the light theme's, and a turn is
    exactly what that preference exists to switch off. See `.card:hover .photo
-   > img` in the MOTION section, far above, for the light-theme original and
-   the reasoning for the numbers. */
+   > img` in the MOTION section, far above, for the light-theme original,
+   the asymmetric in/out timing, and the reasoning for the numbers — this is
+   the same split, spent on the frame itself rather than the image inside it. */
 @media (hover: hover) and (prefers-reduced-motion: no-preference) {
   html[data-paper="night"] .card-photo .photo {
-    transition: transform .55s cubic-bezier(.4, 0, .2, 1);
+    transition: transform var(--dur-base) var(--ease);
   }
-  html[data-paper="night"] .card:hover .card-photo .photo { transform: scale(1.15) rotateY(360deg); }
+  html[data-paper="night"] .card:hover .card-photo .photo {
+    transition: transform var(--dur-slow) cubic-bezier(.45, 0, .2, 1);
+    transform: scale(1.1) rotateY(360deg);
+  }
 }
 
 /*
