@@ -1509,6 +1509,10 @@ html[dir="rtl"] .rail-next svg { transform: rotate(180deg); }
   flex: none;
   aspect-ratio: var(--photo-ratio);
   background: var(--photo-well);
+  /* Same reason as `.photo`'s own perspective, above: the night theme spins
+     `.card-photo .photo` itself rather than the `<img>` inside it (see the
+     night-theme hover block, far below), so this is the ancestor it needs. */
+  perspective: 1000px;
 }
 .card.is-out .photo { opacity: .55; }
 /* Availability and any "new" marker on the inline END; the heart on the
@@ -1642,6 +1646,11 @@ html[lang="ar"] .card-brand { letter-spacing: 0; text-transform: none; font-size
   display: grid;
   place-items: center;
   overflow: hidden;
+  /* Lets a hovered child (the card photo's rotateY spin, see MOTION) turn in
+     real depth instead of squashing flat — perspective has to sit on the
+     ANCESTOR of the transformed element, never the element itself. Harmless
+     everywhere else: a box with nothing 3D inside it just ignores it. */
+  perspective: 1000px;
 }
 .photo > img {
   position: absolute;
@@ -2801,8 +2810,9 @@ html[lang="ar"] .foot-col h3 { letter-spacing: .04em; text-transform: none; font
 
    All of it spends the four tokens at the top of the sheet: `--dur-fast` for
    a colour, `--dur-base` for a movement, `--dur-slow` for the one photograph
-   that zooms, and `--ease` for every one of them, so the whole page
-   decelerates the same way.
+   that zooms — and, since the owner asked for the card photo to turn as well
+   as grow, now spins once on the same clock — and `--ease` for every one of
+   them, so the whole page decelerates the same way.
 
    Only `transform` and `opacity` are animated on anything there can be
    sixteen of. Most of these customers are on a mid-range Android on mobile
@@ -2873,8 +2883,9 @@ html[lang="ar"] .foot-col h3 { letter-spacing: .04em; text-transform: none; font
   .card.is-leaving { transition: opacity var(--dur-base) var(--ease), transform var(--dur-base) var(--ease); }
   /* One bar, five pixels tall, and the number it is drawing IS its width. */
   .free-bar > span { transition: width var(--dur-base) var(--ease); }
-  /* The slow one. The frame keeps its size and the picture grows inside it,
-     which is why `.photo` clips. */
+  /* The slow one. The frame keeps its size and the picture grows and turns
+     inside it, which is why `.photo` clips (and now carries `perspective`,
+     so the turn has real depth instead of squashing flat). */
   .card .photo > img { transition: transform var(--dur-slow) var(--ease); }
 
   /* ---- the movement itself, only where there is a pointer to cause it --- */
@@ -2888,8 +2899,15 @@ html[lang="ar"] .foot-col h3 { letter-spacing: .04em; text-transform: none; font
     .icon-btn:hover,
     .chip:hover,
     .brand-card:hover { transform: translateY(calc(var(--lift) / 2)); }
-    /* The photograph creeps in while the card is held. */
-    .card:hover .photo > img { transform: scale(1.06); }
+    /* The photograph creeps in AND spins once around, full circle, while the
+       card is held — back to facing forward by the time the hand lets go.
+       `rotateY`, not a flat `rotate`, so `.photo`'s new `perspective` gives it
+       an actual third dimension: it foreshortens through the turn rather
+       than just spinning like a clock hand. Bigger scale than the plain-zoom
+       cards elsewhere on the site (1.06) because a photo mid-turn shows its
+       edge for an instant, and a tighter zoom would let the frame's own
+       background peek past it there. */
+    .card:hover .photo > img { transform: scale(1.15) rotateY(360deg); }
     .card-fav:hover { transform: scale(1.08); }
   }
 
@@ -4061,12 +4079,8 @@ html[data-paper="night"]:not([lang="ar"]) .tile-count { text-transform: uppercas
 
 @media (hover: hover) {
   html[data-paper="night"] .card-photo { overflow: hidden; }
-  html[data-paper="night"] .card-photo .photo {
-    transition: transform .55s cubic-bezier(.4, 0, .2, 1);
-  }
   html[data-paper="night"] .card { transition: border-color .3s cubic-bezier(.4, 0, .2, 1); }
   html[data-paper="night"] .card:hover { border-color: var(--accent); }
-  html[data-paper="night"] .card:hover .card-photo .photo { transform: scale(1.06); }
 
   html[data-paper="night"] .card-add {
     position: absolute;
@@ -4099,6 +4113,20 @@ html[data-paper="night"]:not([lang="ar"]) .tile-count { text-transform: uppercas
     opacity: 1;
     transform: translateY(0);
   }
+}
+
+/* The night theme's own copy of the card-photo spin, kept separate from the
+   `@media (hover: hover)` block above on purpose: everything up there is a
+   position, an opacity or a colour, which `prefers-reduced-motion` leaves
+   alone — this one is the same 360° turn as the light theme's, and a turn is
+   exactly what that preference exists to switch off. See `.card:hover .photo
+   > img` in the MOTION section, far above, for the light-theme original and
+   the reasoning for the numbers. */
+@media (hover: hover) and (prefers-reduced-motion: no-preference) {
+  html[data-paper="night"] .card-photo .photo {
+    transition: transform .55s cubic-bezier(.4, 0, .2, 1);
+  }
+  html[data-paper="night"] .card:hover .card-photo .photo { transform: scale(1.15) rotateY(360deg); }
 }
 
 /*
