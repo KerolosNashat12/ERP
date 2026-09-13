@@ -105,6 +105,12 @@ const CONFIG_KEYS = [
   // --- shipping. shop.delivery_fee and shop.free_delivery_over are already
   // listed above and keep their meaning; these are the round-2 additions.
   'shop.delivery_mode', 'shop.delivery_percent', 'shop.delivery_min', 'shop.delivery_max',
+
+  // --- payments. The switch only — never `payments.fawaterak_api_key` or
+  // `payments.fawaterak_vendor_key`, which have no business leaving the
+  // server at all. See FawaterakService for where those two are actually
+  // read and spent.
+  'payments.fawaterak_enabled',
 ];
 
 /**
@@ -691,6 +697,13 @@ export class StorefrontService {
         min: num('shop.delivery_min', 0) > 0 ? num('shop.delivery_min', 0) : null,
         max: num('shop.delivery_max', 0) > 0 ? num('shop.delivery_max', 0) : null,
         freeOver: freeOver > 0 ? freeOver : null,
+      },
+
+      // Whether checkout may offer "pay online" next to cash on delivery —
+      // and nothing else about it. The API key and the HMAC secret that make
+      // it actually work never leave the server; see FawaterakService.
+      payments: {
+        fawaterakEnabled: Boolean(s.get('payments.fawaterak_enabled')),
       },
     };
   }

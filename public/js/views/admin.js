@@ -1334,6 +1334,34 @@ export async function settingsView(root, route) {
     input.addEventListener('change', renderShippingCard);
   }
 
+  // --- online payment (Fawaterak) — same shape as shipping above: a switch,
+  // and fields that only matter once it is on. Off by default (see migration
+  // 033), and the two keys are sent to the server exactly like any other
+  // setting — `type: 'password'` only keeps them off the screen, the way any
+  // secret field on this page would.
+  const paymentForm = buildForm([
+    { name: 'payments.fawaterak_enabled', label: t('fawaterakEnabled'), type: 'checkbox', disabled: !editable },
+    {
+      name: 'payments.fawaterak_mode', label: t('fawaterakMode'), type: 'select', disabled: !editable,
+      options: [
+        { value: 'live', label: t('fawaterakModeLive') },
+        { value: 'staging', label: t('fawaterakModeStaging') },
+      ],
+    },
+    { name: 'payments.fawaterak_api_key', label: t('fawaterakApiKey'), type: 'password', disabled: !editable },
+    { name: 'payments.fawaterak_vendor_key', label: t('fawaterakVendorKey'), type: 'password', disabled: !editable },
+  ], settings, { columns: 2 });
+
+  function renderPaymentCard() {
+    const on = paymentForm.values()['payments.fawaterak_enabled'] === 1;
+    ['payments.fawaterak_mode', 'payments.fawaterak_api_key', 'payments.fawaterak_vendor_key']
+      .forEach((name) => { paymentForm.inputs.get(name).holder.style.display = on ? '' : 'none'; });
+  }
+  for (const [, { input }] of paymentForm.inputs) {
+    input.addEventListener('input', renderPaymentCard);
+    input.addEventListener('change', renderPaymentCard);
+  }
+
   async function saveWebsite() {
     try {
       await api.put('/api/settings', {
@@ -1346,6 +1374,7 @@ export async function settingsView(root, route) {
         ...socialForm.values(),
         ...contactForm.values(),
         ...shippingForm.values(),
+        ...paymentForm.values(),
       });
       toast(t('saved'));
     } catch (error) { toastError(error); }
@@ -1520,6 +1549,7 @@ export async function settingsView(root, route) {
       loadBannerMeta();
       loadLogoMeta();
       renderShippingCard();
+      renderPaymentCard();
       renderThemePreview();
       mount(body,
         // The shop's identity comes first: it is what every page of the
@@ -1567,6 +1597,11 @@ export async function settingsView(root, route) {
           h('div', { class: 'card-body' },
             shippingForm.node,
             shippingExample)),
+        h('div', { class: 'card', style: { marginTop: '14px' } },
+          h('div', { class: 'card-head' }, h('h3', {}, t('paymentsCard'))),
+          h('div', { class: 'card-body' },
+            h('p', { class: 'muted small', style: { marginBottom: '12px' } }, t('paymentsHint')),
+            paymentForm.node)),
         editable ? h('div', { class: 'row', style: { marginTop: '14px', justifyContent: 'flex-end' } },
           h('button', { class: 'btn primary', onclick: saveWebsite }, t('save'))) : null);
       return;

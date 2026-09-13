@@ -14,6 +14,8 @@ export function setConfig(config) {
 }
 
 export const isOpen = () => Boolean(shop.config?.shopEnabled);
+/** Whether the owner has turned online payment on. Off ⇒ checkout stays cash-only, unchanged. */
+export const paymentsEnabled = () => Boolean(shop.config?.payments?.fawaterakEnabled);
 export const deliveryFee = () => Number(shop.config?.deliveryFee || 0);
 export const freeDeliveryOver = () => {
   const value = Number(shop.config?.freeDeliveryOver);

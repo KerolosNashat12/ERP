@@ -48,6 +48,22 @@ export default function successView(root, route) {
 
   setPageMeta({ title: t('thankYou'), indexable: false });
 
+  // For an online order this page is also where Fawaterak sends the customer
+  // back to (see `WebOrderService#place`'s `returnUrl`/`redirectionUrls`) — so
+  // besides the order it remembered locally, the address itself can carry
+  // `?payment=failed` or `?payment=pending`. A plain arrival with no flag and
+  // `payment_method: 'fawaterak'` means Fawaterak's own success redirect fired,
+  // which happens before this shop's webhook is guaranteed to have landed, so
+  // it reads as "paid" optimistically rather than waiting on a confirmation
+  // the tracking page will show once it arrives.
+  const online = order.payment_method === 'fawaterak';
+  const paymentFlag = route.query?.payment;
+  const paymentNote = online
+    ? (paymentFlag === 'failed' ? t('paymentFailed')
+      : paymentFlag === 'pending' ? t('paymentPending')
+        : t('paymentPaid'))
+    : null;
+
   root.append(el('div.wrap.stack',
     el('div.success',
       el('div.success-mark', icon(ICONS.check, { size: 30 })),
@@ -62,7 +78,12 @@ export default function successView(root, route) {
       order.total_amount !== undefined && el('div.success-total',
         el('span', t('total')),
         el('strong', money(order.total_amount))),
-      order.total_amount !== undefined && el('p.success-cod', t('payOnDelivery', money(order.total_amount))),
+      // The cash reminder only ever means something for an order that is
+      // actually still cash — an online order gets its own line instead,
+      // whatever Fawaterak's redirect said about it.
+      order.total_amount !== undefined && !online
+        && el('p.success-cod', t('payOnDelivery', money(order.total_amount))),
+      paymentNote && el('p.success-cod', paymentNote),
 
       el('div.success-actions',
         el('a.btn.btn-primary', { href: href(`track?order=${encodeURIComponent(order.order_no)}`) },

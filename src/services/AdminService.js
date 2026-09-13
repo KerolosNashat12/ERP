@@ -241,6 +241,10 @@ const SETTING_ENUMS = {
   // read by `StorefrontService#dealsEnabled()` through the same tolerant test.
   'web.deals_enabled': ['0', '1'],
   'shop.delivery_mode': ['flat', 'percent'],
+  // Which Fawaterak environment to call. 'staging' lets the owner try a real
+  // checkout with Fawaterak's own test cards before a customer's money is
+  // ever actually at risk — see FawaterakService's BASE_URLS.
+  'payments.fawaterak_mode': ['live', 'staging'],
 };
 
 /** Settings that must be a number within [min, max]. Same reasoning as above. */
@@ -269,7 +273,7 @@ const SETTING_COLOURS = new Set(['web.theme_accent']);
  * text would read as `true` for ever after, in a dark-mode switch nobody could
  * turn off.
  */
-const SETTING_BOOLEANS = new Set(['web.theme_dark']);
+const SETTING_BOOLEANS = new Set(['web.theme_dark', 'payments.fawaterak_enabled']);
 
 export class SettingsService {
   constructor(deps = {}) {

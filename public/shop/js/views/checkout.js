@@ -1,8 +1,10 @@
 /**
- * Checkout. Cash on delivery, so there is no payment step and no payment field
- * anywhere on this page — that is stated plainly rather than left to be
- * discovered, because "where do I put my card" is the question that loses the
- * order.
+ * Checkout. Cash on delivery by default, so most shops see no payment step
+ * and no payment field anywhere on this page — that is stated plainly rather
+ * than left to be discovered, because "where do I put my card" is the
+ * question that loses the order. A shop that turns Fawaterak on in Settings
+ * adds exactly one choice here: pay the courier, or pay online now. Nothing
+ * else about the form changes either way.
  */
 import { el, fill, icon, ICONS } from '../core/dom.js';
 import { api, ShopError } from '../core/api.js';
@@ -11,6 +13,7 @@ import { money } from '../core/format.js';
 import { href, navigate } from '../core/router.js';
 import { setPageMeta } from '../core/seo.js';
 import * as cart from '../core/cart.js';
+import { paymentsEnabled } from '../core/store.js';
 import { emptyState } from '../ui/states.js';
 import { summaryPanel, totals } from '../ui/summary.js';
 import { field, validate, notEmpty, looksLikePhone, looksLikeEmailOrBlank } from '../ui/forms.js';
@@ -69,6 +72,52 @@ export default function checkoutView(root) {
   });
   const note = field({ name: 'note', label: t('orderNote'), rows: 2 });
 
+  // The choice only exists at all once the owner has turned Fawaterak on
+  // (`paymentsEnabled()` reads the same flag the storefront config already
+  // sends — see `core/store.js`). A shop that leaves it off gets the exact
+  // panel this page always had: one badge, no radios, cash on delivery
+  // stated as a fact rather than offered as a choice.
+  const online = paymentsEnabled();
+  const paymentDetail = el('p.prose.muted', t('codLong'));
+  let onlineRadio = null;
+
+  function getPaymentMethod() {
+    return online && onlineRadio?.checked ? 'fawaterak' : 'cash_on_delivery';
+  }
+
+  const codFoot = el('p.cod-foot', t('payOnDelivery', money(totals().total)));
+
+  function renderPaymentDetail() {
+    const isOnline = getPaymentMethod() === 'fawaterak';
+    fill(paymentDetail, isOnline ? t('payOnlineLong') : t('codLong'));
+    // The summary column's own reminder repeats the same fact in miniature —
+    // it has to agree with the panel above it, not just at first paint but the
+    // moment the customer flips the radio.
+    fill(codFoot, isOnline ? t('payOnlineFoot') : t('payOnDelivery', money(totals().total)));
+  }
+
+  const paymentPanel = online
+    ? el('section.panel.panel-cod',
+      el('h2.panel-title', icon(ICONS.truck, { size: 18 }), t('paymentTitle')),
+      (() => {
+        const codRadio = el('input', {
+          type: 'radio', name: 'payment_method', value: 'cash_on_delivery', checked: true, onChange: renderPaymentDetail,
+        });
+        onlineRadio = el('input', {
+          type: 'radio', name: 'payment_method', value: 'fawaterak', onChange: renderPaymentDetail,
+        });
+        return el('div.payment-choice',
+          el('label.payment-option', codRadio,
+            el('span.payment-option-body', icon(ICONS.wallet, { size: 18 }), el('strong', t('cashOnDelivery')))),
+          el('label.payment-option', onlineRadio,
+            el('span.payment-option-body', icon(ICONS.card, { size: 18 }), el('strong', t('payOnline')))));
+      })(),
+      paymentDetail)
+    : el('section.panel.panel-cod',
+      el('h2.panel-title', icon(ICONS.truck, { size: 18 }), t('paymentTitle')),
+      el('div.cod-badge', icon(ICONS.check, { size: 16 }), el('strong', t('cashOnDelivery'))),
+      paymentDetail);
+
   const formError = el('div.form-error', { role: 'alert', hidden: true });
   // The button lives in the summary column, outside the <form>, so it is tied
   // back to it by id: that keeps "place order" next to the total on a phone
@@ -86,10 +135,7 @@ export default function checkoutView(root) {
       el('div.field-row', city.node, area.node),
       line.node,
       addressNotes.node),
-    el('section.panel.panel-cod',
-      el('h2.panel-title', icon(ICONS.truck, { size: 18 }), t('paymentTitle')),
-      el('div.cod-badge', icon(ICONS.check, { size: 16 }), el('strong', t('cashOnDelivery'))),
-      el('p.prose.muted', t('codLong'))),
+    paymentPanel,
     // No `.panel-title` on this one: it holds a single field whose own label is
     // that same sentence, and the page was printing "Anything you want us to
     // know" twice, one line above itself.
@@ -123,12 +169,26 @@ export default function checkoutView(root) {
         },
         note: note.value || undefined,
         language: getLanguage(),
+        payment_method: getPaymentMethod(),
       });
 
       // The basket is cleared only once the order is really recorded — a failed
-      // request must leave the customer's shopping exactly where it was.
+      // request must leave the customer's shopping exactly where it was. The
+      // order itself is real the moment this response comes back (stock is
+      // already reserved) whether or not an online payment that follows ever
+      // succeeds, so there is nothing conditional about clearing it here.
       rememberOrder({ ...result, customer_name: name.value, phone: phone.value });
       cart.clear();
+
+      // An online order was not sold — it was invoiced. `payment_url` sends
+      // the customer to Fawaterak's own hosted page to finish paying; there is
+      // no confirmation to show here first, because there is nothing to
+      // confirm yet. Fawaterak sends them back to the order page itself (see
+      // `WebOrderService#place`'s `returnUrl`), success or not.
+      if (result.payment_url) {
+        window.location.href = result.payment_url;
+        return;
+      }
       navigate(`order/${encodeURIComponent(result.order_no)}`, { replace: true });
     } catch (error) {
       submit.disabled = false;
@@ -170,7 +230,7 @@ export default function checkoutView(root) {
       el('h2.panel-title', t('orderSummary')),
       basketRecap()),
     summaryPanel({ showProgress: false, action: el('div.summary-actions', submit) }),
-    el('p.cod-foot', t('payOnDelivery', money(totals().total))),
+    codFoot,
   ];
 
   const aside = el('div.checkout-aside', asideContent());

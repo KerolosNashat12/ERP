@@ -747,4 +747,10 @@ export const webOrderSchema = z.object({
   }),
   note: optionalPublicText(500),
   language: z.enum(['en', 'ar']).default('ar'),
+  // Cash on delivery unless the shopper actively chose otherwise — and
+  // `WebOrderService#place` checks the shop actually has Fawaterak switched
+  // on before it believes this, so a request that names it on a shop that
+  // never turned it on still lands as cash on delivery rather than a gateway
+  // call nobody configured.
+  payment_method: z.enum(['cash_on_delivery', 'fawaterak']).default('cash_on_delivery'),
 });

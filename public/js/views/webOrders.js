@@ -151,16 +151,29 @@ const kpi = (label, value) => h('div', { class: 'kpi' },
 const row = (label, value, cls = '') => h('div', { class: `line ${cls}` },
   h('span', {}, label), h('span', { class: 'mono' }, value));
 
+// A cash order carries none of this — `payment_method` is only ever
+// 'fawaterak' for an order placed with online payment (see migration 033),
+// so a plain cash-on-delivery order's detail page looks exactly as it always
+// has. `not_required` never reaches here for that reason.
+function paymentBadge(status) {
+  const map = { paid: 'ok', pending: 'warn', failed: 'danger' };
+  const labels = { paid: t('paymentPaidOnline'), pending: t('paymentAwaiting'), failed: t('paymentFailedTag') };
+  return tag(labels[status] || status, map[status] ?? '');
+}
+
 async function orderDetailView(root, id) {
   const order = await api.get(`/api/web-orders/${id}`);
   const address = [order.address_line, order.address_area, order.address_city]
     .filter(Boolean).join(' — ');
+  const online = order.payment_method === 'fawaterak';
 
   mount(root,
     h('div', { class: 'page-head' },
       h('div', {},
         h('h2', {}, `${t('orderNo')} ${order.order_no}`),
-        h('p', {}, statusTag(order.status), ' · ', dateTime(order.created_at),
+        h('p', {}, statusTag(order.status),
+          online ? [' · ', paymentBadge(order.payment_status)] : null,
+          ' · ', dateTime(order.created_at),
           order.confirmed_by_name ? ` · ${t('acceptedBy')}: ${order.confirmed_by_name}` : '')),
       h('span', { class: 'spacer' }),
       h('button', { class: 'btn', onclick: () => navigate('web-orders') }, '‹ ' + t('back')),

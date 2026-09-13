@@ -38,12 +38,27 @@
  *    tells a competitor exactly what the shop is holding; naming the item does
  *    the customer's job without it.
  *
- * Payment is cash on delivery. There is no gateway and nothing here touches a
- * payment credential. The delivery fee lives on the order, not on the invoice:
- * it is a service the shop charges for, not stock leaving the shelf.
+ * Payment is cash on delivery by default, and stays that way for every shop
+ * that never turns anything else on. A shop that switches on Fawaterak in
+ * Settings → الدفع الإلكتروني lets a customer choose to pay online instead:
+ * `place()` still reserves stock exactly the same way, but for an online
+ * order it also creates a hosted Fawaterak invoice (outside the DB
+ * transaction — an HTTP call has no business holding a lock) and hands the
+ * customer a payment URL instead of a plain confirmation. Money for THAT
+ * order changes hands before delivery, confirmed only by Fawaterak's own
+ * webhook (`confirmPayment()` / `failPayment()`, called from
+ * `api/routes/shopOrders.js` after its signature is verified) — never by
+ * anything the customer's own browser reports back. `deliver()` still raises
+ * the invoice at the same step either way; it just does not collect cash a
+ * second time for one that was already paid online. See FawaterakService for
+ * the gateway itself — this file never touches a payment credential, only a
+ * yes/no for whether one is configured.
+ *
+ * The delivery fee lives on the order, not on the invoice: it is a service
+ * the shop charges for, not stock leaving the shelf.
  */
 import repositories from '../infrastructure/repositories/index.js';
-import { getDb, transaction } from '../infrastructure/database/connection.js';
+import { getDb, transaction, currentTenantSlug } from '../infrastructure/database/connection.js';
 import {
   likeParam, lineExact, lineMatch, matchReasonColumns, normaliseTerm, rankExpression,
   worthLineSearch,
@@ -56,6 +71,7 @@ import inventoryService from './InventoryService.js';
 import salesService from './SalesService.js';
 import { customerService } from './masterDataServices.js';
 import auditService from './AuditService.js';
+import fawaterakService from './FawaterakService.js';
 
 /** Basket limits. A shop basket is small; anything past this is not shopping. */
 const MAX_LINES = 50;
@@ -139,6 +155,7 @@ export class WebOrderService {
     this.inventory = deps.inventory || inventoryService;
     this.sales = deps.sales || salesService;
     this.audit = deps.audit || auditService;
+    this.fawaterak = deps.fawaterak || fawaterakService;
   }
 
   get db() {
@@ -160,7 +177,25 @@ export class WebOrderService {
     const basket = this.#normaliseBasket(payload.lines);
     if (!basket.length) throw new ValidationError('Your basket is empty');
 
-    return transaction(async () => {
+    /*
+     * Decided once, before the transaction opens, and never trusted past this
+     * point: a shopper can ask for online payment, but a shop that never
+     * turned Fawaterak on (or has since turned it off) still gets cash on
+     * delivery — exactly as if the request had said so itself. `isAvailable()`
+     * only reads settings; there is no reason to hold a database transaction
+     * open for it.
+     */
+    const online = payload.payment_method === 'fawaterak' && (await this.fawaterak.isAvailable());
+    const paymentMethod = online ? 'fawaterak' : 'cash_on_delivery';
+    const paymentStatus = online ? 'pending' : 'not_required';
+
+    // Set inside the transaction below, read after it commits — an HTTP call
+    // to Fawaterak (for `online` orders) has no business holding the lock
+    // that reserved this order's stock.
+    let orderId;
+    let invoiceLines;
+
+    const placed = await transaction(async () => {
       const warehouseId = await this.inventory.locationId();
 
       // --- price every line from the database, then reserve it
@@ -232,20 +267,21 @@ export class WebOrderService {
         INSERT INTO web_orders
           (order_no, customer_id, customer_name, customer_phone, customer_email,
            address_line, address_area, address_city, address_notes,
-           status, payment_method, subtotal, tax_amount, delivery_fee, total_amount,
+           status, payment_method, payment_status, subtotal, tax_amount, delivery_fee, total_amount,
            language, customer_note, placed_ip)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 'cash_on_delivery', ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         orderNo, customer.id,
         trim(payload.customer.name, 120), trim(payload.customer.phone, 20),
         trim(payload.customer.email, 160),
         trim(payload.address.line, 300), trim(payload.address.area, 120),
         trim(payload.address.city, 120), trim(payload.address.notes, 300),
+        paymentMethod, paymentStatus,
         totals.subtotal, totals.taxAmount, totals.deliveryFee, totals.totalAmount,
         payload.language === 'ar' ? 'ar' : 'en',
         trim(payload.note, 500), request.ip || null,
       );
-      const orderId = Number(info.lastInsertRowid);
+      orderId = Number(info.lastInsertRowid);
 
       const insertLine = this.db.prepare(`
         INSERT INTO web_order_lines
@@ -258,6 +294,9 @@ export class WebOrderService {
           line.quantity, line.unit_price, line.tax_rate, line.tax_amount,
           line.line_total, line.reserved);
       }
+      invoiceLines = lines.map((line) => ({
+        description: line.description, unit_price: line.unit_price, quantity: line.quantity,
+      }));
 
       // Actor is null on purpose: nobody signed in placed this.
       await this.audit.record({
@@ -266,20 +305,137 @@ export class WebOrderService {
         after: {
           order_no: orderNo, items: lines.length, total: totals.totalAmount,
           customer: customer.id, phone: trim(payload.customer.phone, 20),
+          payment_method: paymentMethod,
         },
-        message: 'Web order placed — stock reserved, nothing sold',
+        message: online
+          ? 'Web order placed — stock reserved, awaiting online payment'
+          : 'Web order placed — stock reserved, nothing sold',
         request,
       });
 
       return {
         order_no: orderNo,
         status: 'pending',
+        payment_method: paymentMethod,
+        payment_status: paymentStatus,
         subtotal: totals.subtotal,
         tax_amount: totals.taxAmount,
         delivery_fee: totals.deliveryFee,
         total_amount: totals.totalAmount,
       };
     });
+
+    if (!online) return placed;
+
+    /*
+     * Outside the transaction, on purpose — see the comment above it. The
+     * shop's own address comes from THIS request (`platform/links.js`), never
+     * from configuration: it is the only thing that reliably knows whether it
+     * is being reached as `/shop` or `/t/<slug>/shop`.
+     */
+    const slug = currentTenantSlug();
+    const base = request.baseUrl || '';
+    const shopPath = slug ? `${base}/t/${slug}/shop` : `${base}/shop`;
+    const apiPath = slug ? `${base}/t/${slug}/api/shop` : `${base}/api/shop`;
+
+    try {
+      const invoice = await this.fawaterak.createInvoice({
+        order_no: placed.order_no,
+        customer_name: trim(payload.customer.name, 120),
+        customer_email: trim(payload.customer.email, 160),
+        customer_phone: trim(payload.customer.phone, 20),
+        lines: invoiceLines,
+        tax_amount: placed.tax_amount,
+        delivery_fee: placed.delivery_fee,
+        total_amount: placed.total_amount,
+        returnUrl: `${shopPath}/#/order/${encodeURIComponent(placed.order_no)}`,
+        webhookUrl: `${apiPath}/payments/fawaterak/webhook_json`,
+      });
+
+      await this.db.prepare(`
+        UPDATE web_orders SET payment_invoice_id = ?, payment_invoice_key = ?, updated_at = ?
+         WHERE id = ?
+      `).run(invoice.invoiceId, invoice.invoiceKey, new Date().toISOString(), orderId);
+
+      return { ...placed, payment_url: invoice.url };
+    } catch (error) {
+      /*
+       * The invoice was never made, so nothing was actually promised to the
+       * customer — undo the reservation exactly as a genuine cancellation
+       * would, rather than leave stock held against a payment that can now
+       * never arrive. Best-effort: the ORIGINAL failure is the one worth the
+       * customer seeing, so a problem undoing the reservation is swallowed
+       * rather than replacing it — the order is left `pending` for staff to
+       * notice and release by hand, which is no worse than today's cancel
+       * failing for any other reason.
+       */
+      await this.cancel(orderId, 'Online payment could not be set up', {}).catch(() => {});
+      throw error;
+    }
+  }
+
+  /**
+   * Fawaterak's webhook, telling us an invoice was actually paid.
+   *
+   * Called only from `api/routes/shopOrders.js`, and only after IT has
+   * verified the webhook's HMAC signature — this method trusts its caller
+   * completely, on purpose: by the time it runs, "this really came from
+   * Fawaterak" is already a settled question, and re-deciding it here would
+   * just be a second copy of that check to keep in step with the first.
+   *
+   * Idempotent. Fawaterak can and does retry a webhook delivery, and a second
+   * 'paid' notification for an order already marked paid changes nothing —
+   * the `WHERE payment_status = 'pending'` guard is what makes that true
+   * rather than merely intended.
+   */
+  async confirmPayment({ invoiceKey, invoiceId, referenceNumber } = {}) {
+    return transaction(async () => {
+      const order = await this.#findByInvoiceKey(invoiceKey);
+      if (!order) return null;
+
+      const now = new Date().toISOString();
+      const result = await this.db.prepare(`
+        UPDATE web_orders
+           SET payment_status = 'paid', payment_reference = ?, updated_at = ?
+         WHERE id = ? AND payment_status = 'pending'
+      `).run(referenceNumber || null, now, order.id);
+
+      if (Number(result.changes || 0) > 0) {
+        await this.#log('PAYMENT_CONFIRMED', order,
+          { payment_status: 'paid', invoice_id: invoiceId || null, reference: referenceNumber || null }, {});
+      }
+      return this.get(order.id);
+    });
+  }
+
+  /**
+   * Fawaterak's webhook, telling us an invoice failed, expired, or was
+   * cancelled before it was ever paid.
+   *
+   * Nothing was sold and the promise behind it is gone, so this releases the
+   * reservation exactly the way a customer-cancelled order does — by calling
+   * the very SAME `cancel()` staff use from the ERP, not a second copy of
+   * what "cancelled" means. An order that already moved on (staff accepted
+   * it on the strength of a phone call, say, before the webhook arrived) is
+   * left alone: there is nothing left here to undo, and this is not staff's
+   * cancel button.
+   */
+  async failPayment({ invoiceKey, reason } = {}) {
+    const order = await this.#findByInvoiceKey(invoiceKey);
+    if (!order) return null;
+    if (order.status !== 'pending') return this.get(order.id);
+
+    const cancelled = await this.cancel(order.id, reason || 'Online payment failed or expired', {});
+    await this.db.prepare(`
+      UPDATE web_orders SET payment_status = 'failed', updated_at = ? WHERE id = ?
+    `).run(new Date().toISOString(), order.id);
+    return cancelled;
+  }
+
+  /** The webhook's only way to find the order it is telling us about. */
+  async #findByInvoiceKey(invoiceKey) {
+    if (!invoiceKey) return null;
+    return this.db.prepare('SELECT * FROM web_orders WHERE payment_invoice_key = ?').get(String(invoiceKey));
   }
 
   /**
@@ -300,7 +456,7 @@ export class WebOrderService {
       SELECT id, order_no, status, customer_phone, customer_name,
              address_line, address_area, address_city,
              subtotal, tax_amount, delivery_fee, total_amount,
-             payment_method, language, customer_note, cancelled_reason,
+             payment_method, payment_status, language, customer_note, cancelled_reason,
              not_received_reason, confirmed_at, dispatched_at, delivered_at, created_at
       FROM web_orders WHERE UPPER(order_no) = ?
     `).get(number);
@@ -327,6 +483,7 @@ export class WebOrderService {
       cancelled_reason: order.cancelled_reason,
       not_received_reason: order.not_received_reason,
       payment_method: order.payment_method,
+      payment_status: order.payment_status,
       language: order.language,
       customer_name: order.customer_name,
       address: {
@@ -512,6 +669,19 @@ export class WebOrderService {
       const order = await this.get(id);
       this.#requireTransition(order, 'delivered');
       if (!order.lines.length) throw new BusinessRuleError('This order has no items');
+      // The one place online orders diverge from cash on delivery: a cash
+      // order settles ITSELF at this step (the courier collects it right
+      // here), so there is nothing to check. An online order was supposed to
+      // settle before the box ever left the shelf, through Fawaterak's
+      // webhook — if that never arrived, the goods are not paid for, and
+      // dispatching them anyway is the one mistake this check exists to stop.
+      if (order.payment_method === 'fawaterak' && order.payment_status !== 'paid') {
+        throw new BusinessRuleError(
+          'This order was to be paid online, and payment has not been confirmed yet. '
+          + 'Do not deliver it until the payment shows as received.',
+          { order_no: order.order_no, payment_status: order.payment_status },
+        );
+      }
 
       const warehouseId = await this.inventory.locationId();
 
@@ -542,10 +712,15 @@ export class WebOrderService {
         ? { id: order.sale_id, invoice_no: order.invoice_no }
         : await this.sales.checkout({
           customer_id: order.customer_id,
-          // Cash on delivery: the courier collected it, so the invoice is
-          // settled in cash here and now. `paid_amount` is left out on purpose
-          // — SalesService then pays the invoice in full, whatever it totals.
-          payment_method: 'cash',
+          // Cash on delivery: the courier collects it right here, so the
+          // invoice is settled in cash at this exact step. An online order's
+          // money already arrived through Fawaterak before this step was
+          // ever reachable (see the guard above) — its invoice is raised
+          // 'card' rather than 'cash' so the till's own payment-method report
+          // does not count it as cash that was never actually handled.
+          // `paid_amount` is left out on purpose either way — SalesService
+          // then pays the invoice in full, whatever it totals.
+          payment_method: order.payment_method === 'fawaterak' ? 'card' : 'cash',
           notes: `Web order ${order.order_no}`,
           lines: order.lines.map((line) => ({
             variant_id: line.variant_id,
@@ -566,7 +741,9 @@ export class WebOrderService {
 
       return {
         ...(await this.get(id)),
-        message: `Delivered. Invoice ${sale.invoice_no} created and paid in cash.`,
+        message: order.payment_method === 'fawaterak'
+          ? `Delivered. Invoice ${sale.invoice_no} created — already paid online.`
+          : `Delivered. Invoice ${sale.invoice_no} created and paid in cash.`,
       };
     });
   }

@@ -105,6 +105,9 @@ export const ICONS = {
   // Cash on delivery: a wallet with the clasp as a dot (a round-capped
   // zero-length stroke), not a card — this shop takes no cards.
   wallet: 'M4 8V6.6A1.6 1.6 0 0 1 5.6 5H16M3 8h15a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8Zm13.5 5.5h.01',
+  // Online payment: a plain card with its stripe — used only where a shop has
+  // actually turned Fawaterak on, alongside `wallet` above, never instead of it.
+  card: 'M3 6h18v12H3V6Zm0 4h18M7 14h4',
   gift: 'M3 11h18v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-9Zm-1-4h20v4H2V7Zm10 0v14M12 7S10.5 3 8.5 3a2 2 0 0 0 0 4H12Zm0 0s1.5-4 3.5-4a2 2 0 0 1 0 4H12Z',
   check: 'm5 13 4 4 10-10',
   chevron: 'm9 6 6 6-6 6',

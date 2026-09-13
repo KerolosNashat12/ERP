@@ -744,6 +744,11 @@ const dictionary = {
     freeDelivery: 'Free delivery',
     goodsTotal: 'Goods',
     reservedUnits: 'Held',
+    // --- payment status, shown only on an order placed with online payment —
+    // a cash order carries none of this (see migration 033's `not_required`).
+    paymentPaidOnline: 'Paid online',
+    paymentAwaiting: 'Awaiting online payment',
+    paymentFailedTag: 'Online payment failed',
     pending: 'New',
     accepted: 'Accepted',
     outForDelivery: 'Out for delivery',
@@ -896,6 +901,21 @@ const dictionary = {
     freeDeliveryOverHint: '0 = never free',
     shippingExamplePrefix: 'Order of',
     shippingExampleLabel: 'shipping',
+
+    // --- online payment (Fawaterak)
+    paymentsCard: 'Online payment',
+    paymentsHint: 'Off by default. Turn this on to let a customer pay online at checkout, '
+      + 'as an extra choice alongside cash on delivery — nothing changes for a shop that '
+      + 'leaves it off.',
+    fawaterakEnabled: 'Accept online payment through Fawaterak',
+    fawaterakMode: 'Environment',
+    fawaterakModeLive: 'Live — real payments',
+    fawaterakModeStaging: 'Staging — for testing only',
+    fawaterakApiKey: 'API key',
+    fawaterakVendorKey: 'Vendor key (hash key)',
+    fawaterakKeysHint: 'From your own Fawaterak account: Dashboard → Integration. '
+      + 'The API key authorises invoices; the vendor key is used only to verify that a '
+      + 'payment notification really came from Fawaterak — neither ever leaves this server.',
     // ---------------------------------------------------------- costs (التكاليف)
     // What the shop spends that is not stock. Every string on the costs and
     // payroll screens is here in both languages — there is no literal in either
@@ -1729,6 +1749,9 @@ const dictionary = {
     freeDelivery: 'التوصيل مجانًا',
     goodsTotal: 'قيمة البضاعة',
     reservedUnits: 'محجوز',
+    paymentPaidOnline: 'اتدفع أونلاين',
+    paymentAwaiting: 'مستنّي الدفع الأونلاين',
+    paymentFailedTag: 'الدفع الأونلاين فشل',
     pending: 'جديد',
     accepted: 'تم القبول',
     outForDelivery: 'قيد التوصيل',
@@ -1873,6 +1896,20 @@ const dictionary = {
     freeDeliveryOverHint: '0 = مفيش شحن مجاني',
     shippingExamplePrefix: 'أوردر بـ',
     shippingExampleLabel: 'شحن',
+
+    // --- الدفع الإلكتروني (Fawaterak)
+    paymentsCard: 'الدفع الإلكتروني',
+    paymentsHint: 'مقفول لحد ما تفعّله. لو شغّلته، العميل هيقدر يدفع أونلاين وهو بيكمل الأوردر، '
+      + 'كاختيار إضافي جنب الدفع عند الاستلام — ومفيش أي حاجة هتتغير لو سبته مقفول.',
+    fawaterakEnabled: 'فعّل الدفع الإلكتروني عن طريق Fawaterak',
+    fawaterakMode: 'البيئة',
+    fawaterakModeLive: 'حقيقية — دفع فعلي',
+    fawaterakModeStaging: 'تجريبية — للاختبار بس',
+    fawaterakApiKey: 'مفتاح الـ API',
+    fawaterakVendorKey: 'مفتاح البائع (Hash Key)',
+    fawaterakKeysHint: 'من حساب Fawaterak بتاعك: لوحة التحكم ← Integration. '
+      + 'مفتاح الـ API بيسمح بإنشاء الفواتير، ومفتاح البائع بيتأكد إن أي إشعار دفع '
+      + 'جاي فعلاً من Fawaterak — والاتنين مبيسيبوش السيرفر خالص.',
     // ---------------------------------------------------------- التكاليف
     months: 'شهور', cogs: 'تكلفة البضاعة', entries: 'عدد المصاريف', days: 'أيام',
     invoices: 'فواتير', discounts: 'خصومات', items: 'أصناف', units: 'قطع',
