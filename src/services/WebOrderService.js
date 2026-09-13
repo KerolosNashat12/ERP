@@ -40,19 +40,30 @@
  *
  * Payment is cash on delivery by default, and stays that way for every shop
  * that never turns anything else on. A shop that switches on Fawaterak in
- * Settings → الدفع الإلكتروني lets a customer choose to pay online instead:
- * `place()` still reserves stock exactly the same way, but for an online
- * order it also creates a hosted Fawaterak invoice (outside the DB
- * transaction — an HTTP call has no business holding a lock) and hands the
- * customer a payment URL instead of a plain confirmation. Money for THAT
- * order changes hands before delivery, confirmed only by Fawaterak's own
- * webhook (`confirmPayment()` / `failPayment()`, called from
- * `api/routes/shopOrders.js` after its signature is verified) — never by
- * anything the customer's own browser reports back. `deliver()` still raises
- * the invoice at the same step either way; it just does not collect cash a
- * second time for one that was already paid online. See FawaterakService for
- * the gateway itself — this file never touches a payment credential, only a
- * yes/no for whether one is configured.
+ * Settings → الدفع الإلكتروني lets a customer choose to pay online instead —
+ * and that is the one case where `place()` does NOT reserve stock. A cash
+ * order is a real commitment the moment it is placed, so it holds stock
+ * immediately; an online order is only a promise to pay, and until Fawaterak
+ * actually confirms that money moved, "no stock was ever held for it" is a
+ * stronger guarantee than "reserve now, remember to let go later" — a
+ * customer who closes the Fawaterak tab mid-checkout, or whose account is
+ * simply broken on Fawaterak's side, sends no signal at all, ever, so
+ * anything reserved at placement time can only be recovered by a cleanup job
+ * chasing after the fact. Reserving nothing at placement means there is
+ * nothing to chase.
+ *
+ * The trade for that: stock is only ever taken off the shelf for an online
+ * order inside `confirmPayment()`, the moment Fawaterak's webhook says the
+ * money actually arrived (`api/routes/shopOrders.js`, after its signature is
+ * verified — never anything the customer's own browser reports back). Between
+ * placement and that webhook, the item can in principle sell out to someone
+ * else; `confirmPayment()` reserves whatever is left and flags the order's
+ * `staff_note` if that came up short, rather than ever refusing a payment
+ * that has already been taken. `deliver()` still raises the invoice at the
+ * same step either way; it just does not collect cash a second time for one
+ * that was already paid online. See FawaterakService for the gateway itself —
+ * this file never touches a payment credential, only a yes/no for whether one
+ * is configured.
  *
  * The delivery fee lives on the order, not on the invoice: it is a service
  * the shop charges for, not stock leaving the shelf.
@@ -76,6 +87,19 @@ import fawaterakService from './FawaterakService.js';
 /** Basket limits. A shop basket is small; anything past this is not shopping. */
 const MAX_LINES = 50;
 const MAX_QTY_PER_LINE = 99;
+
+/*
+ * How long an unpaid online order is left sitting in `pending` before it is
+ * auto-cancelled. Since `place()` no longer reserves any stock for one of
+ * these (see the file header), this is pure housekeeping, not a stock-safety
+ * net: a customer who closes the Fawaterak tab mid-checkout never sends a
+ * "failed" webhook — nothing does, ever, for that order — so without this it
+ * would just sit in the `awaiting_payment` bucket forever, one more row
+ * staff have to look at and recognise as dead. Cash on delivery is exempt on
+ * purpose: placing one IS the commitment, and it is real work sitting in the
+ * queue for staff, not an abandoned checkout.
+ */
+const PAYMENT_HOLD_MINUTES = 30;
 
 const STATUSES = [
   'pending', 'accepted', 'out_for_delivery', 'delivered', 'not_received', 'cancelled',
@@ -174,6 +198,12 @@ export class WebOrderService {
       throw new BusinessRuleError('The online shop is closed at the moment. Please try again later.');
     }
 
+    // Before reserving anything for THIS shopper, let go of whatever an
+    // earlier shopper never paid for. Otherwise a product can read as out of
+    // stock to every real buyer indefinitely because of one abandoned
+    // checkout — see `#releaseStalePendingPayments`.
+    await this.#releaseStalePendingPayments();
+
     const basket = this.#normaliseBasket(payload.lines);
     if (!basket.length) throw new ValidationError('Your basket is empty');
 
@@ -242,8 +272,17 @@ export class WebOrderService {
               { variant_id: variant.variant_id },
             );
           }
-          await this.inventory.reserveLine(variant.variant_id, warehouseId, item.quantity);
-          reserved = item.quantity;
+          // Cash on delivery reserves right now — placing it IS the
+          // commitment. An online order does not: nothing is taken off the
+          // shelf for it until `confirmPayment()` hears from Fawaterak that
+          // the money actually moved (see the file header). Checking
+          // availability above still happens either way, so the customer
+          // gets an honest "not enough left" at checkout — this only skips
+          // actually holding it.
+          if (!online) {
+            await this.inventory.reserveLine(variant.variant_id, warehouseId, item.quantity);
+            reserved = item.quantity;
+          }
         }
 
         lines.push({
@@ -308,7 +347,7 @@ export class WebOrderService {
           payment_method: paymentMethod,
         },
         message: online
-          ? 'Web order placed — stock reserved, awaiting online payment'
+          ? 'Web order placed — no stock held yet, awaiting online payment'
           : 'Web order placed — stock reserved, nothing sold',
         request,
       });
@@ -383,10 +422,16 @@ export class WebOrderService {
    * Fawaterak" is already a settled question, and re-deciding it here would
    * just be a second copy of that check to keep in step with the first.
    *
+   * This is also the FIRST moment this order's stock is worth holding —
+   * `place()` deliberately reserved nothing for it (see the file header), so
+   * confirming payment is what actually takes the goods off the shelf, via
+   * `#reserveForConfirmedOrder`.
+   *
    * Idempotent. Fawaterak can and does retry a webhook delivery, and a second
    * 'paid' notification for an order already marked paid changes nothing —
    * the `WHERE payment_status = 'pending'` guard is what makes that true
-   * rather than merely intended.
+   * rather than merely intended, and is also what stops a replayed webhook
+   * from reserving the same order's stock twice.
    */
   async confirmPayment({ invoiceKey, invoiceId, referenceNumber } = {}) {
     return transaction(async () => {
@@ -401,11 +446,57 @@ export class WebOrderService {
       `).run(referenceNumber || null, now, order.id);
 
       if (Number(result.changes || 0) > 0) {
+        const reserveNote = await this.#reserveForConfirmedOrder(order);
         await this.#log('PAYMENT_CONFIRMED', order,
-          { payment_status: 'paid', invoice_id: invoiceId || null, reference: referenceNumber || null }, {});
+          {
+            payment_status: 'paid', invoice_id: invoiceId || null, reference: referenceNumber || null,
+            ...(reserveNote ? { stock_note: reserveNote } : {}),
+          }, {});
       }
       return this.get(order.id);
     });
+  }
+
+  /**
+   * Reserve stock for an order the instant its payment is confirmed.
+   *
+   * Nothing was held for this order before now (see the file header), so
+   * this is the moment the goods actually come off the shelf — the exact
+   * counterpart of the reservation `place()` makes immediately for cash on
+   * delivery. Per line, not all-or-nothing: the money has already been
+   * taken by the time this runs, and there is no "decline the payment" step
+   * left to fall back to, so a line that has sold out in the meantime (a
+   * counter sale, another paid order, between this order being placed and
+   * being paid) still gets whatever is left rather than blocking the rest of
+   * the order. `staff_note` is how a human finds out to look at it before
+   * this ships — returned here so the caller can fold it into the audit
+   * entry for the same event, rather than as a second, separate log line.
+   */
+  async #reserveForConfirmedOrder(order) {
+    const warehouseId = await this.inventory.locationId();
+    const lines = await this.db.prepare('SELECT * FROM web_order_lines WHERE order_id = ?').all(order.id);
+
+    let short = null;
+    for (const line of lines) {
+      if (!(await this.#tracksInventory(line.variant_id))) continue;
+      const free = await this.inventory.availableQuantity(line.variant_id, warehouseId);
+      const toReserve = Math.min(free, Number(line.quantity));
+      if (toReserve > 0) await this.inventory.reserveLine(line.variant_id, warehouseId, toReserve);
+      await this.db.prepare('UPDATE web_order_lines SET reserved = ? WHERE id = ?').run(toReserve, line.id);
+      if (toReserve < Number(line.quantity)) {
+        short = `${short ? `${short}; ` : ''}${line.sku}: ${toReserve}/${line.quantity} available`;
+      }
+    }
+
+    if (short) {
+      const note = `Paid online, but stock ran out before it could be reserved (${short}). `
+        + 'Check availability before dispatching.';
+      await this.db.prepare(`
+        UPDATE web_orders SET staff_note = TRIM(COALESCE(staff_note || ' ', '') || ?), updated_at = ?
+         WHERE id = ?
+      `).run(note, new Date().toISOString(), order.id);
+    }
+    return short;
   }
 
   /**
@@ -513,6 +604,11 @@ export class WebOrderService {
    * half answered.
    */
   async list({ search = '', status = '', page = 1, pageSize = 25 } = {}) {
+    // Opening this screen is also when it quietly cleans up after itself —
+    // see `#releaseStalePendingPayments`. Staff looking at this list is a
+    // good moment to have it be accurate, even between checkout attempts.
+    await this.#releaseStalePendingPayments();
+
     // An order placed for online payment is not a real commitment until
     // Fawaterak's webhook says the money actually moved — before that it is
     // just a held reservation the customer may never finish paying for, and
@@ -524,7 +620,21 @@ export class WebOrderService {
     // is 'paid'. `get(id)` below stays unfiltered — a direct link (from a
     // webhook, a support conversation) can still open one of these to see why
     // it is stuck — only the queue itself hides them.
-    const where = ['1 = 1', "(o.payment_method != 'fawaterak' OR o.payment_status = 'paid')"];
+    //
+    // The one deliberate crack in that: `status: 'awaiting_payment'` — not a
+    // real workflow status, never in STATUSES — is how staff reach exactly
+    // the orders this hides, on purpose, when they need to. An order that
+    // will never be paid (customer walked away, or the shop's own payment
+    // account is not accepting payments yet) still holds real stock, same as
+    // any other reservation, and nothing releases that automatically —
+    // somebody has to find it and cancel it. Without this there would be no
+    // way to do that once an order drops out of the default queue.
+    const where = ['1 = 1'];
+    if (status === 'awaiting_payment') {
+      where.push("o.payment_method = 'fawaterak'", "o.payment_status != 'paid'");
+    } else {
+      where.push("(o.payment_method != 'fawaterak' OR o.payment_status = 'paid')");
+    }
     const params = [];
     const term = normaliseTerm(search);
     const scope = { alias: 'o', table: 'web_order_lines', key: 'order_id' };
@@ -558,6 +668,7 @@ export class WebOrderService {
     const rows = await this.db.prepare(`
       SELECT o.id, o.order_no, o.status, o.customer_name, o.customer_phone,
              o.address_city, o.total_amount, o.delivery_fee, o.language,
+             o.payment_method, o.payment_status,
              o.sale_id, o.created_at, o.confirmed_at, o.dispatched_at, o.delivered_at,
              s.invoice_no AS invoice_no,
              u.full_name  AS confirmed_by_name,
@@ -610,7 +721,16 @@ export class WebOrderService {
       WHERE (payment_method != 'fawaterak' OR payment_status = 'paid')
       GROUP BY status
     `).all();
-    return Object.fromEntries(STATUSES.map((s) => [s, rows.find((r) => r.status === s)?.n || 0]));
+    const counts = Object.fromEntries(STATUSES.map((s) => [s, rows.find((r) => r.status === s)?.n || 0]));
+    // Not a workflow status, so not in STATUSES — a separate count so staff
+    // can see at a glance whether anything is stuck waiting on payment
+    // (`list({ status: 'awaiting_payment' })` is how they go look at them).
+    const awaiting = await this.db.prepare(`
+      SELECT COUNT(*) AS n FROM web_orders
+      WHERE payment_method = 'fawaterak' AND payment_status != 'paid'
+    `).get();
+    counts.awaiting_payment = awaiting ? awaiting.n : 0;
+    return counts;
   }
 
   /** The nav badge: how many orders are waiting for somebody to look at them. */
@@ -834,6 +954,38 @@ export class WebOrderService {
         : 'Order cancelled and the reserved stock released.';
       return { ...(await this.get(id)), message };
     });
+  }
+
+  /**
+   * Let go of stock nobody is going to pay for.
+   *
+   * Only `status = 'pending'` orders — the ones nobody has touched yet.
+   * Once staff accept one it stops being an automatic decision, the same
+   * boundary `deliver()`'s own payment check respects. Cancelling reuses the
+   * exact `cancel()` staff use by hand, so the release, the audit trail and
+   * the transition rules are all one copy, not a second one that could drift.
+   *
+   * Best-effort on purpose: this runs on the way into an ordinary request
+   * (`place()`, `list()`), and one row that fails to cancel — a race with
+   * staff acting on it at the same moment, say — must not turn into a 500
+   * for a shopper who has nothing to do with it. It will be picked up again
+   * next time this runs, moments later.
+   */
+  async #releaseStalePendingPayments() {
+    const cutoff = new Date(Date.now() - PAYMENT_HOLD_MINUTES * 60 * 1000).toISOString();
+    const stale = await this.db.prepare(`
+      SELECT id FROM web_orders
+      WHERE status = 'pending' AND payment_method = 'fawaterak'
+        AND payment_status = 'pending' AND created_at < ?
+    `).all(cutoff);
+    for (const row of stale) {
+      await this.cancel(
+        row.id,
+        `Online payment was not completed within ${PAYMENT_HOLD_MINUTES} minutes — `
+        + 'the reservation was released automatically.',
+        {},
+      ).catch(() => {});
+    }
   }
 
   // ----------------------------------------------------------------- helpers

@@ -6,10 +6,11 @@
  *    a refused or unreachable gateway, and the webhook HMAC check (including
  *    the case that must fail — a tampered signature).
  *  - The whole path through a real server and a real database: placing an
- *    online order gets a payment URL and reserves stock exactly like cash on
- *    delivery; the order cannot be delivered until a correctly-signed webhook
- *    confirms it paid; a webhook with a wrong signature changes nothing; and
- *    a shop that never turns any of this on sees no change at all.
+ *    online order gets a payment URL and holds NO stock — unlike cash on
+ *    delivery, which reserves immediately — until a correctly-signed webhook
+ *    confirms it paid, which is the moment stock is actually reserved; a
+ *    webhook with a wrong signature changes nothing; and a shop that never
+ *    turns any of this on sees no change at all.
  */
 import './single-shop.js'; // must be first — see that file
 import test, { before, after } from 'node:test';
@@ -334,7 +335,7 @@ test('turn Fawaterak on with a staging key and vendor key', async () => {
   assert.equal(JSON.stringify(config).includes('test-api-key'), false);
 });
 
-test('placing an online order reserves stock and returns a payment_url instead of a plain confirmation', async () => {
+test('placing an online order returns a payment_url instead of a plain confirmation', async () => {
   cookie = '';
   mockResponse = null; // default success mock from `before()`
   const placed = await api('/api/shop/orders', {
@@ -375,6 +376,93 @@ test('placing an online order reserves stock and returns a payment_url instead o
 
   state.onlineOrderNo = placed.order_no;
   state.onlinePhone = '+201002222222';
+});
+
+test('an online order holds no stock until payment is confirmed — confirming it is what finally reserves it', async () => {
+  // A trackable item with exactly one unit, so a reservation (or the
+  // absence of one) is impossible to miss. This is the exact production bug
+  // report: an item goes "out of stock" for a Fawaterak order nobody ever
+  // paid for, because the old code reserved it at PLACEMENT time and nothing
+  // ever released the hold for an abandoned checkout.
+  await api('/api/auth/login', { method: 'POST', body: { username: 'admin', password: 'admin123' } });
+  const product = await api('/api/products', {
+    method: 'POST',
+    body: {
+      sku_prefix: `HOLD-${Date.now().toString().slice(-6)}`,
+      name_en: 'Stock Hold Test Item',
+      name_ar: 'صنف اختبار الحجز',
+      tax_rate: 0,
+      base_cost: 50,
+      base_price: 200,
+      track_inventory: true,
+      is_active: true,
+      is_published: true,
+      variants: [{ cost_price: 50, selling_price: 200 }],
+    },
+  });
+  const variant = product.variants[0];
+  await api('/api/inventory/quick-adjust', {
+    method: 'POST',
+    body: { variantId: variant.id, newQuantity: 1, reason: 'correction', notes: 'test stock' },
+  });
+
+  const { getDb: dbFor } = await import('../src/infrastructure/database/connection.js');
+  const reservedFor = async () => (
+    await dbFor().prepare('SELECT reserved_quantity FROM stock_levels WHERE variant_id = ?').get(variant.id)
+  )?.reserved_quantity || 0;
+
+  // A dedicated invoiceId/invoiceKey — the shared default mock always
+  // returns 'MOCK-KEY', which the earlier test already used for a different
+  // order, so this order needs its own to be confirmable on its own later.
+  cookie = '';
+  mockResponse = async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({
+      status: 'success',
+      data: { url: 'https://staging.fawaterk.com/pay/hold', invoiceId: 777, invoiceKey: 'HOLD-KEY' },
+    }),
+  });
+  const placed = await api('/api/shop/orders', {
+    method: 'POST',
+    body: {
+      lines: [{ variant_id: variant.id, quantity: 1 }],
+      customer: { name: 'Stock Hold Tester', phone: '+201004444444' },
+      address: { line: 'Street 4', city: 'Cairo' },
+      language: 'en',
+      payment_method: 'fawaterak',
+    },
+  });
+  mockResponse = null;
+  assert.equal(placed.payment_method, 'fawaterak');
+
+  // The fix itself: nothing was reserved just by placing the order.
+  assert.equal(await reservedFor(), 0, 'placing an online order must not reserve stock — only a confirmed payment does');
+
+  await api('/api/auth/login', { method: 'POST', body: { username: 'admin', password: 'admin123' } });
+  const stock = await api(`/api/inventory/stock?search=${encodeURIComponent(product.sku_prefix)}`);
+  const row = stock.rows.find((r) => r.variant_id === variant.id);
+  assert.equal(
+    row?.available_quantity, 1,
+    'the unit must still read as available to other shoppers while this payment is unresolved',
+  );
+
+  // Now the webhook confirms payment — this is the moment stock is finally
+  // taken off the shelf for it.
+  const hashKey = crypto.createHmac('sha256', 'test-vendor-key')
+    .update('InvoiceId=777&InvoiceKey=HOLD-KEY&PaymentMethod=card')
+    .digest('hex');
+  cookie = '';
+  const res = await fetch(`${base}/api/shop/payments/fawaterak/webhook_json`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      invoice_status: 'paid', invoice_id: 777, invoice_key: 'HOLD-KEY', payment_method: 'card', hashKey,
+    }),
+  });
+  assert.equal(res.status, 200);
+
+  assert.equal(await reservedFor(), 1, 'a confirmed payment must reserve the stock it paid for');
 });
 
 test('an unpaid online order stays out of the staff queue, and cannot be delivered', async () => {
