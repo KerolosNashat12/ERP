@@ -109,6 +109,45 @@ test('FawaterakService#createInvoice — a refused invoice raises a BusinessRule
   );
 });
 
+test('FawaterakService#createInvoice — a Laravel-style validation object comes through readable, not "[object Object]"', async () => {
+  const svc = new FawaterakService({
+    settings: fakeSettings({ 'payments.fawaterak_enabled': true, 'payments.fawaterak_api_key': 'key-123' }),
+    fetch: async () => ({
+      ok: false,
+      status: 422,
+      json: async () => ({ status: 'error', message: { phone: ['The phone format is invalid.'] } }),
+    }),
+  });
+  await assert.rejects(
+    () => svc.createInvoice({ order_no: 'X', customer_name: 'A', lines: [], tax_amount: 0, delivery_fee: 0, total_amount: 0, returnUrl: 'https://x/', webhookUrl: 'https://x/w' }),
+    (e) => {
+      assert.ok(e instanceof BusinessRuleError);
+      assert.ok(e.message.includes('phone: The phone format is invalid.'), e.message);
+      assert.ok(!e.message.includes('[object Object]'), e.message);
+      return true;
+    },
+  );
+});
+
+test('FawaterakService#createInvoice — an Egyptian phone number keeps its leading zero', async () => {
+  let capturedBody = null;
+  const svc = new FawaterakService({
+    settings: fakeSettings({ 'payments.fawaterak_enabled': true, 'payments.fawaterak_api_key': 'key-123' }),
+    fetch: async (url, opts) => {
+      capturedBody = JSON.parse(opts.body);
+      return { ok: true, status: 200, json: async () => ({ status: 'success', data: { url: 'https://x/pay', invoiceId: 1, invoiceKey: 'K' } }) };
+    },
+  });
+  await svc.createInvoice({
+    order_no: 'X', customer_name: 'A', customer_phone: '01001234567', lines: [],
+    tax_amount: 0, delivery_fee: 0, total_amount: 0, returnUrl: 'https://x/', webhookUrl: 'https://x/w',
+  });
+  // A bare `Number('01001234567')` silently drops the leading zero (1001234567,
+  // ten digits) — this is what that regression looked like, and the whole
+  // reason `phone` must travel as a string.
+  assert.equal(capturedBody.customer.phone, '01001234567');
+});
+
 test('FawaterakService#createInvoice — a network failure raises ServiceUnavailableError, not a crash', async () => {
   const svc = new FawaterakService({
     settings: fakeSettings({ 'payments.fawaterak_enabled': true, 'payments.fawaterak_api_key': 'key-123' }),

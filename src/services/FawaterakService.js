@@ -62,6 +62,25 @@ function round2(n) {
   return Math.round(Number(n || 0) * 100) / 100;
 }
 
+/**
+ * Fawaterak's own error `message` is not always a string — a refused
+ * request often comes back as `{ field: ["reason", ...], ... }`, the
+ * shape a Laravel-style validator sends. Interpolating that straight into
+ * a template literal produces the customer- and log-facing "[object
+ * Object]" this function exists to prevent. Every other shape (a plain
+ * string, an array, something unrecognised) still comes out readable.
+ */
+function describeError(value) {
+  if (value === null || value === undefined) return null;
+  if (typeof value === 'string') return value;
+  if (Array.isArray(value)) return value.map(describeError).filter(Boolean).join('; ');
+  if (typeof value === 'object') {
+    const parts = Object.entries(value).map(([key, val]) => `${key}: ${describeError(val)}`);
+    return parts.length ? parts.join('; ') : JSON.stringify(value);
+  }
+  return String(value);
+}
+
 /** "Kerolos Nashat" -> { first_name: 'Kerolos', last_name: 'Nashat' } — Fawaterak wants both. */
 function splitName(fullName) {
   const parts = String(fullName || '').trim().split(/\s+/).filter(Boolean);
@@ -123,7 +142,12 @@ export class FawaterakService {
         last_name,
         customer_unique_id: `web-${order.order_no}`,
         email: order.customer_email || undefined,
-        phone: order.customer_phone ? Number(String(order.customer_phone).replace(/\D/g, '')) || undefined : undefined,
+        // A STRING, not a number: `customer_phone` is stored with its leading
+        // 0 (every Egyptian mobile number has one), and `Number('01001234567')`
+        // silently drops it — 1001234567 is ten digits and not the number the
+        // customer typed. This was sending Fawaterak a mangled phone number on
+        // every online order, however the request was later refused.
+        phone: order.customer_phone ? String(order.customer_phone).replace(/\D/g, '') || undefined : undefined,
       },
       cartItems: cartItemsFor(order.lines, Number(order.tax_amount || 0)),
       shipping: round2(order.delivery_fee),
@@ -161,7 +185,8 @@ export class FawaterakService {
     } catch { /* handled by the !response.ok / missing-data checks below */ }
 
     if (!response.ok || payload?.status !== 'success' || !payload?.data?.url) {
-      const reason = payload?.message || payload?.data?.message || `HTTP ${response.status}`;
+      const reason = describeError(payload?.message) || describeError(payload?.data?.message)
+        || `HTTP ${response.status}`;
       throw new BusinessRuleError(
         `The payment provider refused this order (${reason}). Please try again, or choose cash on delivery.`,
         { code: 'PAYMENT_GATEWAY_REFUSED' },
