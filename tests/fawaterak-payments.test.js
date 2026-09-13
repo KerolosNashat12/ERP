@@ -80,7 +80,12 @@ test('FawaterakService#createInvoice — builds the documented request and reads
   assert.equal(capturedUrl, 'https://staging.fawaterk.com/api/v2/createInvoiceLink');
   assert.equal(capturedBody.customer.first_name, 'Kerolos');
   assert.equal(capturedBody.customer.last_name, 'Nashat');
-  assert.equal(capturedBody.cartTotal, 248);
+  // The ITEMS total (200 goods + 28 tax = 228) — NOT the order grand total
+  // (248, which also folds in the 20 delivery fee). `shipping` carries the
+  // delivery fee separately; Fawaterak adds the two together on its own side,
+  // and sending 248 as cartTotal double-counted it, which is exactly what
+  // "cartTotal doesn't match the items total" meant in production.
+  assert.equal(capturedBody.cartTotal, 228);
   assert.equal(capturedBody.shipping, 20);
   // Two cart items: the line itself, plus tax folded in as its own row.
   assert.equal(capturedBody.cartItems.length, 2);
@@ -346,7 +351,27 @@ test('placing an online order reserves stock and returns a payment_url instead o
   assert.equal(placed.payment_status, 'pending');
   assert.equal(placed.payment_url, 'https://staging.fawaterk.com/pay/mock');
   assert.ok(lastInvoiceRequest.url.startsWith('https://staging.fawaterk.com/api/v2/createInvoiceLink'));
-  assert.equal(lastInvoiceRequest.body.cartTotal, placed.total_amount);
+
+  // `cartTotal` is the ITEMS total — goods plus tax — never the grand total:
+  // `shipping` is a separate field Fawaterak adds on top, and sending the
+  // grand total here is what "cartTotal doesn't match the items total" meant
+  // in production. delivery_fee must be the one thing NOT folded into it.
+  const expectedCartTotal = Math.round((placed.total_amount - placed.delivery_fee) * 100) / 100;
+  assert.equal(lastInvoiceRequest.body.cartTotal, expectedCartTotal);
+  assert.equal(lastInvoiceRequest.body.shipping, placed.delivery_fee);
+  assert.equal(
+    Math.round(lastInvoiceRequest.body.cartItems.reduce((s, i) => s + i.price * i.quantity, 0) * 100) / 100,
+    expectedCartTotal,
+    'cartTotal must equal the sum of the cartItems actually sent',
+  );
+
+  // The `returnUrl`/`webhookUrl` this test server built must be an absolute
+  // address — a relative `/shop/...` path is exactly what Fawaterak refused
+  // in production with "redirection urls... format is invalid" (see
+  // `attachRequestContext` in api/middleware/index.js).
+  assert.match(lastInvoiceRequest.body.redirectionUrls.successUrl, /^https?:\/\//);
+  assert.match(lastInvoiceRequest.body.redirectionUrls.webhookUrl, /^https?:\/\//);
+  assert.ok(lastInvoiceRequest.body.redirectionUrls.webhookUrl.endsWith('/api/shop/payments/fawaterak/webhook_json'));
 
   state.onlineOrderNo = placed.order_no;
   state.onlinePhone = '+201002222222';

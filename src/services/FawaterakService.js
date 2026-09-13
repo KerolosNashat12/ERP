@@ -136,6 +136,7 @@ export class FawaterakService {
     }
 
     const { first_name, last_name } = splitName(order.customer_name);
+    const cartItems = cartItemsFor(order.lines, Number(order.tax_amount || 0));
     const body = {
       customer: {
         first_name,
@@ -149,9 +150,17 @@ export class FawaterakService {
         // every online order, however the request was later refused.
         phone: order.customer_phone ? String(order.customer_phone).replace(/\D/g, '') || undefined : undefined,
       },
-      cartItems: cartItemsFor(order.lines, Number(order.tax_amount || 0)),
+      // `cartTotal` has to be the ITEMS total — goods plus the tax line
+      // `cartItemsFor` folds in — not the order grand total. `shipping`
+      // below is added by Fawaterak on top of it; sending `order.total_amount`
+      // here double-counted delivery and Fawaterak refused every invoice
+      // with "cartTotal doesn't match the items total". Summing the actual
+      // array being sent, rather than recomputing independently from the
+      // order's own fields, also means the two can never drift apart from a
+      // rounding difference.
+      cartItems,
       shipping: round2(order.delivery_fee),
-      cartTotal: round2(order.total_amount),
+      cartTotal: round2(cartItems.reduce((sum, item) => sum + item.price * item.quantity, 0)),
       currency: 'EGP',
       payLoad: { order_no: order.order_no },
       redirectionUrls: {

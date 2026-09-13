@@ -5,6 +5,7 @@ import authService from '../../services/AuthService.js';
 import repositories from '../../infrastructure/repositories/index.js';
 import { currentTenant, currentTenantSlug } from '../../infrastructure/database/connection.js';
 import { AppError, ForbiddenError, UnauthorizedError, ValidationError } from '../../shared/errors.js';
+import { publicBaseUrl } from '../../platform/links.js';
 
 /** Extracts the JWT from the httpOnly cookie or an Authorization header. */
 function readToken(req) {
@@ -20,6 +21,15 @@ export function attachRequestContext(req, _res, next) {
     request: {
       ip: req.ip || req.socket?.remoteAddress || null,
       userAgent: req.get('user-agent') || null,
+      // The one place this shop's own public address is knowable — a hosted
+      // process never sees more than its internal 0.0.0.0:port, only the
+      // proxy in front of it knows what a visitor actually typed (see
+      // `platform/links.js`). `WebOrderService#place` reads this to build an
+      // ABSOLUTE `returnUrl`/`webhookUrl` for Fawaterak: without a real
+      // scheme and host those came out as a bare `/shop/...` path, which is
+      // why Fawaterak refused every online order with "redirection urls...
+      // format is invalid" until this was added.
+      baseUrl: publicBaseUrl(req),
     },
   };
   next();
