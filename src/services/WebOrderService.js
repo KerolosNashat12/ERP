@@ -513,7 +513,18 @@ export class WebOrderService {
    * half answered.
    */
   async list({ search = '', status = '', page = 1, pageSize = 25 } = {}) {
-    const where = ['1 = 1'];
+    // An order placed for online payment is not a real commitment until
+    // Fawaterak's webhook says the money actually moved — before that it is
+    // just a held reservation the customer may never finish paying for, and
+    // showing it here next to real orders (cash on delivery, or online orders
+    // that DID get paid) is what confused staff into trying to act on one
+    // that was never going to become a sale. This list is the shop's queue of
+    // real work, so it only ever holds those two: cash on delivery orders
+    // (payment_method != 'fawaterak'), and online orders once payment_status
+    // is 'paid'. `get(id)` below stays unfiltered — a direct link (from a
+    // webhook, a support conversation) can still open one of these to see why
+    // it is stuck — only the queue itself hides them.
+    const where = ['1 = 1', "(o.payment_method != 'fawaterak' OR o.payment_status = 'paid')"];
     const params = [];
     const term = normaliseTerm(search);
     const scope = { alias: 'o', table: 'web_order_lines', key: 'order_id' };
@@ -589,16 +600,25 @@ export class WebOrderService {
     return order;
   }
 
+  // Same rule as `list()`'s WHERE — an unpaid online order is not real work
+  // yet, so it counts nowhere staff-facing: not in a status tab, not in the
+  // nav badge. Kept as one literal string rather than a shared constant only
+  // because these three queries are the entire footprint of the rule.
   async statusCounts() {
-    const rows = await this.db
-      .prepare('SELECT status, COUNT(*) AS n FROM web_orders GROUP BY status').all();
+    const rows = await this.db.prepare(`
+      SELECT status, COUNT(*) AS n FROM web_orders
+      WHERE (payment_method != 'fawaterak' OR payment_status = 'paid')
+      GROUP BY status
+    `).all();
     return Object.fromEntries(STATUSES.map((s) => [s, rows.find((r) => r.status === s)?.n || 0]));
   }
 
   /** The nav badge: how many orders are waiting for somebody to look at them. */
   async pendingCount() {
-    const row = await this.db
-      .prepare("SELECT COUNT(*) AS n FROM web_orders WHERE status = 'pending'").get();
+    const row = await this.db.prepare(`
+      SELECT COUNT(*) AS n FROM web_orders
+      WHERE status = 'pending' AND (payment_method != 'fawaterak' OR payment_status = 'paid')
+    `).get();
     return row ? row.n : 0;
   }
 

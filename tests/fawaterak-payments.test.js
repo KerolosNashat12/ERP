@@ -377,20 +377,35 @@ test('placing an online order reserves stock and returns a payment_url instead o
   state.onlinePhone = '+201002222222';
 });
 
-test('an unpaid online order cannot be delivered', async () => {
+test('an unpaid online order stays out of the staff queue, and cannot be delivered', async () => {
   await api('/api/auth/login', { method: 'POST', body: { username: 'admin', password: 'admin123' } });
-  const orders = await api('/api/web-orders?status=pending');
-  const order = orders.rows.find((o) => o.order_no === state.onlineOrderNo);
-  assert.ok(order, 'the online order must show up in the pending queue');
-  state.onlineOrderId = order.id;
 
-  const accepted = await api(`/api/web-orders/${order.id}/accept`, { method: 'POST' });
+  // The queue is the shop's real work list. An online order nobody has paid
+  // for yet is not real work — it might never be — so it must not appear
+  // here next to cash-on-delivery orders and online orders that DID get
+  // paid (see the WHERE clause `list()`/`statusCounts()`/`pendingCount()`
+  // all share in WebOrderService.js).
+  const orders = await api('/api/web-orders?status=pending');
+  assert.ok(
+    !orders.rows.some((o) => o.order_no === state.onlineOrderNo),
+    'an unpaid online order must not show up in the pending queue',
+  );
+
+  // The order still exists — it is hidden from the queue, not deleted — a
+  // direct DB lookup is how a webhook or a support conversation would find
+  // it, the same access `get(id)` still allows.
+  const { getDb } = await import('../src/infrastructure/database/connection.js');
+  const row = await getDb().prepare('SELECT id FROM web_orders WHERE order_no = ?').get(state.onlineOrderNo);
+  assert.ok(row, 'the order must still exist in the database');
+  state.onlineOrderId = row.id;
+
+  const accepted = await api(`/api/web-orders/${row.id}/accept`, { method: 'POST' });
   assert.equal(accepted.status, 'accepted');
-  const dispatched = await api(`/api/web-orders/${order.id}/dispatch`, { method: 'POST' });
+  const dispatched = await api(`/api/web-orders/${row.id}/dispatch`, { method: 'POST' });
   assert.equal(dispatched.status, 'out_for_delivery');
 
   await assert.rejects(
-    () => api(`/api/web-orders/${order.id}/deliver`, { method: 'POST' }),
+    () => api(`/api/web-orders/${row.id}/deliver`, { method: 'POST' }),
     (e) => e.status === 400 && /payment/i.test(e.payload?.error?.message || ''),
   );
 });
