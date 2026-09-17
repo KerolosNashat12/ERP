@@ -80,7 +80,12 @@ export class CostRepository extends BaseRepository {
       columns: [
         'category_id', 'warehouse_id', 'spent_on', 'amount', 'description', 'reference',
         'payment_method', 'source', 'recurring_id', 'period_key', 'employee_id',
-        'period_start', 'period_end', 'created_by',
+        'period_start', 'period_end',
+        // The attendance breakdown behind a salary payment's amount — see the
+        // column comments in shared/costs.js. NULL on every other cost.
+        'gross_amount', 'absence_days', 'absence_deduction',
+        'late_hours', 'late_deduction', 'overtime_hours', 'overtime_pay',
+        'created_by',
       ],
       searchable: ['description', 'reference'],
       defaultSort: 'spent_on DESC, id DESC',
@@ -228,6 +233,9 @@ export class EmployeeRepository extends BaseRepository {
       columns: [
         'code', 'name', 'job_title', 'phone', 'salary_amount', 'salary_period',
         'warehouse_id', 'hired_on', 'notes', 'is_active', 'created_by',
+        // The day-rate schedule and the lifecycle date — all optional, see the
+        // column comments in shared/costs.js.
+        'work_days', 'daily_hours', 'overtime_rate_type', 'overtime_rate_value', 'left_on',
       ],
       searchable: ['code', 'name', 'job_title', 'phone'],
       defaultSort: 'is_active DESC, name ASC',
@@ -268,6 +276,43 @@ export class EmployeeRepository extends BaseRepository {
   }
 }
 
+/** بطاقة، صورة، فيش جنائي، شهادة جامعية، استمارة طبية، وغيرها — one employee's paperwork. */
+export class EmployeeDocumentRepository extends BaseRepository {
+  constructor() {
+    super({
+      table: 'employee_documents',
+      columns: ['employee_id', 'doc_type', 'label', 'issued_on', 'expires_on', 'notes', 'created_by'],
+      searchable: ['label'],
+      defaultSort: 'id DESC',
+    });
+  }
+
+  /** One employee's documents, newest first. */
+  async forEmployee(employeeId) {
+    return this.db.prepare(
+      'SELECT * FROM employee_documents WHERE employee_id = ? ORDER BY id DESC',
+    ).all(Number(employeeId));
+  }
+
+  /**
+   * Every document with an expiry date on or before `withinDays` from today —
+   * the renewal reminder the criminal-record certificate (and anything else
+   * dated) asked for. Joined to the employee so a document belonging to
+   * somebody who has already left does not surface as something to chase.
+   */
+  async expiring(withinDays = 30) {
+    return this.db.prepare(`
+      SELECT d.*, e.name AS employee_name, e.is_active AS employee_is_active
+      FROM employee_documents d
+      JOIN employees e ON e.id = d.employee_id
+      WHERE d.expires_on IS NOT NULL
+        AND date(d.expires_on) <= date('now', '+' || ? || ' days')
+      ORDER BY d.expires_on ASC
+    `).all(Number(withinDays) || 30);
+  }
+}
+
 export default {
   CostRepository, CostCategoryRepository, RecurringCostRepository, EmployeeRepository,
+  EmployeeDocumentRepository,
 };

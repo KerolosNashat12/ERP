@@ -24,6 +24,7 @@ import costService from '../../services/CostService.js';
 import legacyInvoiceService from '../../services/LegacyInvoiceService.js';
 import costCategoryService from '../../services/CostCategoryService.js';
 import payrollService, { employeeService } from '../../services/PayrollService.js';
+import employeeDocumentService from '../../services/EmployeeDocumentService.js';
 import labelService from '../../services/LabelService.js';
 import auditService from '../../services/AuditService.js';
 import { userService, settingsService, backupService } from '../../services/AdminService.js';
@@ -1116,6 +1117,14 @@ router.delete('/costs/:id', requirePermission('costs.delete'), asyncHandler(asyn
  */
 router.get('/employees/payroll', requirePermission('employees.view'),
   asyncHandler(async (req, res) => res.json(await payrollService.roster(req.query))));
+// The renewal reminder — a criminal-record certificate or any other dated
+// document, already expired or due within `withinDays` (30 by default).
+// A fixed path ahead of `/employees/:id` in crudRouter, the same shape as
+// `/employees/payroll` above.
+router.get('/employees/documents/expiring', requirePermission('employees.view'),
+  asyncHandler(async (req, res) => res.json({
+    rows: await employeeDocumentService.expiring({ withinDays: req.query.withinDays }),
+  })));
 router.use('/employees', crudRouter({
   service: employeeService,
   module: 'employees',
@@ -1124,10 +1133,35 @@ router.use('/employees', crudRouter({
     r.get('/:id/payments', perm('view'), asyncHandler(async (req, res) => {
       res.json(await payrollService.payments(Number(req.params.id)));
     }));
+    // The live figure the "record a payment" screen shows as absence,
+    // lateness and overtime are typed in — the exact arithmetic `pay()`
+    // writes with, computed here without writing anything.
+    r.post('/:id/payments/preview', requirePermission('employees.pay'), validate(v.salaryPaymentPreviewSchema),
+      asyncHandler(async (req, res) => res.json(
+        await payrollService.preview(Number(req.params.id), req.body),
+      )));
     r.post('/:id/payments', requirePermission('employees.pay'), validate(v.salaryPaymentSchema),
       asyncHandler(async (req, res) => res.status(201).json(
         await payrollService.pay(Number(req.params.id), req.body, req.context),
       )));
+
+    // بطاقة، صورة، فيش جنائي، شهادة جامعية، استمارة طبية، وغيرها — see
+    // EmployeeDocumentService.js. Managing them is `employees.update`, the
+    // same right as editing the record they belong to.
+    r.get('/:id/documents', perm('view'), asyncHandler(async (req, res) => {
+      res.json({ rows: await employeeDocumentService.list(Number(req.params.id)) });
+    }));
+    r.post('/:id/documents', perm('update'), validate(v.employeeDocumentSchema),
+      asyncHandler(async (req, res) => res.status(201).json(
+        await employeeDocumentService.add(Number(req.params.id), req.body, req.context),
+      )));
+    r.put('/:id/documents/:docId', perm('update'), validate(v.employeeDocumentUpdateSchema),
+      asyncHandler(async (req, res) => res.json(
+        await employeeDocumentService.update(Number(req.params.docId), req.body, req.context),
+      )));
+    r.delete('/:id/documents/:docId', perm('update'), asyncHandler(async (req, res) => {
+      res.json(await employeeDocumentService.remove(Number(req.params.docId), req.context));
+    }));
   },
 }));
 

@@ -610,6 +610,17 @@ export const employeeSchema = z.object({
   hired_on: isoDay.optional().nullable(),
   notes: optionalString,
   is_active: z.coerce.boolean().default(true).transform((v) => (v ? 1 : 0)),
+  // The day-rate schedule — all optional; an employee with none of it set is
+  // paid exactly as before. `work_days` is a plain comma-separated string of
+  // weekday numbers ('0,1,2,3,4') — see shared/payroll.js#parseWorkDays,
+  // which is the actual gate; this only guards the shape.
+  work_days: optionalString,
+  daily_hours: z.coerce.number().min(0).max(24).optional().nullable(),
+  overtime_rate_type: z.enum(['fixed', 'multiplier']).optional().nullable(),
+  overtime_rate_value: z.coerce.number().min(0).optional().nullable(),
+  // Open and close: set the day this employee left, or clear it to bring them
+  // back. See EmployeeService#beforeSave for how this and `is_active` agree.
+  left_on: isoDay.optional().nullable(),
 });
 
 /**
@@ -641,7 +652,13 @@ export const legacyInvoiceSchema = z.object({
 /** A payment against one of those records. The receipt is optional — see the service. */
 export const legacyInvoicePaymentSchema = paymentSchema;
 
-/** What was actually handed over, when, for which period. */
+/**
+ * What was actually handed over, when, for which period — plus, when there is
+ * any, the attendance that adjusted it. `amount` is still the base figure for
+ * the period (what the screen offers by default, same as always); absence,
+ * lateness and overtime below adjust it, computed and validated server-side by
+ * `PayrollService#pay` — see that file for the formulas.
+ */
 export const salaryPaymentSchema = z.object({
   amount: z.coerce.number().positive('Amount must be greater than zero'),
   paid_on: isoDay.optional().nullable(),
@@ -651,7 +668,32 @@ export const salaryPaymentSchema = z.object({
   reference: optionalString,
   note: optionalString,
   photo: attachedPhotoSchema.optional().nullable(),
+  absence_days: z.coerce.number().min(0).optional().nullable(),
+  // A manual override for the whole absence deduction, in place of days ×
+  // day rate — "أو اديله أوبشن ادخل القيمه المراد خصمها لليوم".
+  absence_deduction_amount: z.coerce.number().min(0).optional().nullable(),
+  late_hours: z.coerce.number().min(0).optional().nullable(),
+  overtime_hours: z.coerce.number().min(0).optional().nullable(),
 });
+
+/** Preview: the same shape, minus the photograph — nothing here is ever stored. */
+export const salaryPaymentPreviewSchema = salaryPaymentSchema.omit({ photo: true }).partial({ amount: true });
+
+/**
+ * بطاقة، صورة، فيش جنائي، شهادة جامعية، استمارة طبية، وغيرها.
+ * `label` is required for 'other' by the service (it needs a name to mean
+ * anything in a list); the five fixed types already have one, the type itself.
+ */
+export const employeeDocumentSchema = z.object({
+  doc_type: z.enum(['id_card', 'photo', 'criminal_record', 'degree', 'medical_form', 'other']),
+  label: optionalString,
+  issued_on: isoDay.optional().nullable(),
+  expires_on: isoDay.optional().nullable(),
+  notes: optionalString,
+  photo: attachedPhotoSchema.optional().nullable(),
+});
+
+export const employeeDocumentUpdateSchema = employeeDocumentSchema.partial();
 
 export const labelBatchSchema = z.object({
   items: z.array(z.object({

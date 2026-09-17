@@ -53,6 +53,7 @@ import migration030 from './030-recurring-cost-frequency.js';
 import migration031 from './031-bundles-and-deals.js';
 import migration032 from './032-bundles-category-backfill.js';
 import migration033 from './033-fawaterak-payments.js';
+import migration034 from './034-employee-schedule-and-documents.js';
 
 /** Ordered. Append only. */
 const MIGRATIONS = [
@@ -89,6 +90,7 @@ const MIGRATIONS = [
   migration031,
   migration032,
   migration033,
+  migration034,
 ];
 
 async function ensureRegistry() {

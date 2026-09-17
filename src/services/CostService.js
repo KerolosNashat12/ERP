@@ -185,6 +185,17 @@ export class CostService {
       employee_id: employee ? employee.id : null,
       period_start: employee ? periodStart : null,
       period_end: employee ? periodEnd : null,
+      // The attendance arithmetic behind a salary payment, when there is any —
+      // see PayrollService#pay. Untouched (kept from `existing`) for a plain
+      // cost or a salary payment nobody entered absence/lateness/overtime for,
+      // which is every payment this system wrote before this round.
+      gross_amount: payload.gross_amount ?? existing?.gross_amount ?? null,
+      absence_days: payload.absence_days ?? existing?.absence_days ?? null,
+      absence_deduction: payload.absence_deduction ?? existing?.absence_deduction ?? null,
+      late_hours: payload.late_hours ?? existing?.late_hours ?? null,
+      late_deduction: payload.late_deduction ?? existing?.late_deduction ?? null,
+      overtime_hours: payload.overtime_hours ?? existing?.overtime_hours ?? null,
+      overtime_pay: payload.overtime_pay ?? existing?.overtime_pay ?? null,
     };
   }
 

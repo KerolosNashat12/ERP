@@ -13,11 +13,14 @@
  * how every other date in this system is stored. No `Date` arithmetic leaks out
  * of this file, so nothing above it can be caught by a timezone at midnight.
  *
- * Explicitly NOT here, because the owner ruled them out of this round:
- * attendance, overtime, absence, advances, deductions. What is here is the
- * smallest honest model of "he is paid X every Y" — and the door is left open:
- * a deduction, when it comes, is another row against the same period, not a
- * change to any of this.
+ * Attendance arrived in a later round — `parseWorkDays`, `workingDaysInMonth`
+ * and `dayRate` below — and it is still the smallest honest model of the new
+ * question, "what is one day of this salary worth": the monthly equivalent of
+ * whatever the employee is paid, divided by however many of THEIR configured
+ * work days fall in the calendar month a period starts in. An employee with
+ * no schedule configured has no day rate — `null`, not a guess — and
+ * `PayrollService.pay()` refuses to compute absence, lateness or overtime
+ * without one rather than inventing a number nobody configured.
  */
 
 export const SALARY_PERIODS = ['day', 'week', 'month'];
@@ -109,7 +112,73 @@ export function nextUnpaidPeriod({ period, lastPaidEnd = null, hiredOn = null, t
   return periodRange(start, period);
 }
 
+/**
+ * A day-rate and a month-rate compared honestly — the same arithmetic the
+ * wage-bill tile in `PayrollService#roster` uses, pulled out here so the
+ * day-rate computation below can share it instead of guessing its own.
+ */
+export function monthlyEquivalent(amount, period) {
+  const n = Number(amount) || 0;
+  if (period === 'day') return n * 30;
+  if (period === 'week') return (n * 52) / 12;
+  return n;
+}
+
+/**
+ * `'0,1,2,3,4'` -> `[0, 1, 2, 3, 4]`, or `null` for anything that is not a
+ * real set of weekdays — blank, garbage, or simply never configured. `null`
+ * here is what tells a caller "this employee has no schedule" rather than
+ * "this employee works zero days a week", which a bare `[]` would read as.
+ */
+export function parseWorkDays(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const days = [...new Set(
+    String(value).split(',')
+      .map((part) => Number(part.trim()))
+      .filter((n) => Number.isInteger(n) && n >= 0 && n <= 6),
+  )].sort((a, b) => a - b);
+  return days.length ? days : null;
+}
+
+/** The canonical stored form of a work-day set — sorted, deduplicated, comma-joined. */
+export const formatWorkDays = (days) => (
+  Array.isArray(days) && days.length ? [...new Set(days)].sort((a, b) => a - b).join(',') : null
+);
+
+/**
+ * How many of `workDays` fall inside the calendar month `isoDate` sits in.
+ * "من الاحد للخميس" for March 2026 is 22 — not a flat "5 × 4 weeks", because
+ * months are not four weeks long and a shop's day rate should not be a
+ * fraction out every month that has a fifth Sunday.
+ */
+export function workingDaysInMonth(workDays, isoDate) {
+  const [year, month] = String(isoDate).slice(0, 10).split('-').map(Number);
+  const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  let count = 0;
+  for (let day = 1; day <= daysInMonth; day += 1) {
+    const weekday = new Date(Date.UTC(year, month - 1, day)).getUTCDay();
+    if (workDays.includes(weekday)) count += 1;
+  }
+  return count;
+}
+
+/**
+ * One day of this employee's salary, in the calendar month `periodStart`
+ * falls in — or `null` when there is nothing to divide by: no work-day
+ * schedule configured, or (in principle, never in practice) a month with none
+ * of the configured days in it. `null` is the honest answer and the caller's
+ * job to refuse on, not a value to fall back from.
+ */
+export function dayRate(employee, periodStart) {
+  const workDays = parseWorkDays(employee?.work_days);
+  if (!workDays) return null;
+  const days = workingDaysInMonth(workDays, periodStart);
+  if (!days) return null;
+  return monthlyEquivalent(employee?.salary_amount, employee?.salary_period) / days;
+}
+
 export default {
   SALARY_PERIODS, isSalaryPeriod, addDays, addMonths, periodEnd, nextPeriodStart,
-  periodRange, completePeriods, nextUnpaidPeriod,
+  periodRange, completePeriods, nextUnpaidPeriod, monthlyEquivalent,
+  parseWorkDays, formatWorkDays, workingDaysInMonth, dayRate,
 };

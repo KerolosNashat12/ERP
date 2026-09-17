@@ -23,6 +23,23 @@
  *   · **A photograph of the bill** goes through the one attachment mechanism,
  *     and comes back as a preview in the list rather than the full picture.
  *
+ * A later round added attendance: a work-day schedule per employee, absence,
+ * lateness and overtime worked out from it at payment time, and the paperwork
+ * (بطاقة، فيش جنائي، شهادة جامعية…) each with its own photograph. Checked
+ * separately, further down:
+ *
+ *   · **The day rate is the actual calendar month's, not a flat "salary ÷ 30".**
+ *     Absence, lateness and overtime all derive from it, and the arithmetic is
+ *     the owner's own formulas, to the piastre.
+ *   · **No schedule, no adjustment.** An employee nobody configured a work-day
+ *     pattern for gets a clear refusal, never a guessed number.
+ *   · **Deductions cannot take a payment to zero or below** — `costs.amount`
+ *     cannot be zero, and the service refuses before the database would.
+ *   · **Closing an employee sets `is_active` too**, so every existing "active
+ *     employees only" query keeps meaning what it always meant.
+ *   · **A document's photograph** goes through the same one attachment
+ *     mechanism a cost's bill does, under its own owner type.
+ *
  * Everything that touches a database runs twice, once per driver: `node:sqlite`
  * is the shop counter, libSQL against a local file is the same client,
  * statement encoding and row decoding a hosted Turso deployment uses. The
@@ -640,6 +657,262 @@ test('costs come off profit, repeat without duplicating, and carry a photograph'
         for (const expected of [
           'CREATE:cost', 'UPDATE:cost', 'DELETE:cost',
           'CREATE:recurring_cost', 'STOP:recurring_cost', 'ATTACH:attachment',
+        ]) {
+          assert.ok(actions.has(expected), `${expected} is missing from the audit trail`);
+        }
+      });
+
+      // ---------------------------------------------------------- attendance
+
+      await dt.test('a scheduled employee gets a day rate, an hourly rate and an overtime rate', async () => {
+        const created = await call('/api/employees', {
+          method: 'POST',
+          body: {
+            name: 'Aya Youssef', job_title: 'Cashier', phone: '01000000002',
+            salary_amount: 6900, salary_period: 'month', hired_on: '2026-01-01', is_active: true,
+            work_days: '4,0,2,1,3', daily_hours: 8,
+            overtime_rate_type: 'multiplier', overtime_rate_value: 1.5,
+          },
+        });
+        assert.equal(created.status, 201, JSON.stringify(created.data));
+        // Stored canonically — sorted and deduplicated — however it was typed.
+        assert.equal(created.data.work_days, '0,1,2,3,4');
+        assert.equal(created.data.daily_hours, 8);
+        assert.equal(created.data.overtime_rate_type, 'multiplier');
+        assert.equal(created.data.overtime_rate_value, 1.5);
+
+        const refused = await call('/api/employees', {
+          method: 'POST',
+          body: { name: 'Bad Schedule', salary_amount: 1000, salary_period: 'month', work_days: '7,9' },
+        });
+        assert.equal(refused.status, 422, JSON.stringify(refused.data));
+      });
+
+      await dt.test('absence, lateness and overtime are worked out from the day rate, at payment time', async () => {
+        const employee = await query("SELECT id FROM employees WHERE name = 'Aya Youssef'");
+
+        // March 2026 has 23 Sunday-to-Thursday days: 6900 ÷ 23 = 300 exactly,
+        // and 300 ÷ 8 daily hours = 37.5 an hour — chosen so every figure below
+        // is exact, not a rounding coincidence.
+        const preview = await call(`/api/employees/${employee.id}/payments/preview`, {
+          method: 'POST',
+          body: {
+            amount: 6900, period_start: '2026-03-01', period_end: '2026-03-31',
+            absence_days: 2, late_hours: 4, overtime_hours: 3,
+          },
+        });
+        assert.equal(preview.status, 200, JSON.stringify(preview.data));
+        assert.equal(preview.data.day_rate, 300, '6900 ÷ 23 working days in March 2026');
+        assert.equal(preview.data.hourly_rate, 37.5);
+        assert.equal(preview.data.absence_deduction, 600, '2 days × the day rate');
+        assert.equal(preview.data.late_deduction, 150, '4 hours ÷ 8 × the day rate');
+        assert.equal(preview.data.overtime_pay, 168.75, '3 hours × (1.5 × the hourly rate)');
+        assert.equal(preview.data.amount, 6318.75, '6900 − 600 − 150 + 168.75');
+        assert.equal(preview.data.gross_amount, 6900);
+
+        // Nothing was written by the preview.
+        const before = await query(
+          "SELECT COUNT(*) AS n FROM costs WHERE employee_id = ? AND period_start = '2026-03-01'", employee.id,
+        );
+        assert.equal(before.n, 0);
+
+        const paid = await call(`/api/employees/${employee.id}/payments`, {
+          method: 'POST',
+          body: {
+            amount: 6900, paid_on: '2026-04-01', period_start: '2026-03-01', period_end: '2026-03-31',
+            absence_days: 2, late_hours: 4, overtime_hours: 3,
+          },
+        });
+        assert.equal(paid.status, 201, JSON.stringify(paid.data));
+        // The row itself carries the NET amount — every cost total in this
+        // system is SUM(costs.amount), and it must sum to what was actually
+        // handed over, not the figure before the deductions.
+        assert.equal(paid.data.amount, 6318.75);
+        assert.equal(paid.data.gross_amount, 6900);
+        assert.equal(paid.data.absence_days, 2);
+        assert.equal(paid.data.absence_deduction, 600);
+        assert.equal(paid.data.late_hours, 4);
+        assert.equal(paid.data.late_deduction, 150);
+        assert.equal(paid.data.overtime_hours, 3);
+        assert.equal(paid.data.overtime_pay, 168.75);
+
+        const stored = await query(
+          'SELECT amount, gross_amount, absence_deduction FROM costs WHERE id = ?', paid.data.id,
+        );
+        assert.equal(stored.amount, 6318.75);
+        assert.equal(stored.gross_amount, 6900);
+        assert.equal(stored.absence_deduction, 600);
+      });
+
+      await dt.test('the absence deduction can be entered by hand instead of computed', async () => {
+        const employee = await query("SELECT id FROM employees WHERE name = 'Aya Youssef'");
+        const paid = await call(`/api/employees/${employee.id}/payments`, {
+          method: 'POST',
+          body: {
+            amount: 6900, paid_on: '2026-05-01', period_start: '2026-04-01', period_end: '2026-04-30',
+            absence_deduction_amount: 500,
+          },
+        });
+        assert.equal(paid.status, 201, JSON.stringify(paid.data));
+        assert.equal(paid.data.amount, 6400, '6900 − 500, the amount typed in, not days × day rate');
+        assert.equal(paid.data.absence_deduction, 500);
+        assert.equal(paid.data.absence_days, null);
+      });
+
+      await dt.test('absence, lateness or overtime need a work schedule on the employee first', async () => {
+        const employee = await query("SELECT id FROM employees WHERE name = 'Mahmoud Sayed'");
+        const refused = await call(`/api/employees/${employee.id}/payments`, {
+          method: 'POST',
+          body: {
+            amount: 250, paid_on: '2026-05-05', period_start: '2026-05-05', period_end: '2026-05-11',
+            absence_days: 1,
+          },
+        });
+        assert.equal(refused.status, 422, JSON.stringify(refused.data));
+      });
+
+      await dt.test('deductions that would take a payment to zero or below are refused', async () => {
+        const employee = await query("SELECT id FROM employees WHERE name = 'Aya Youssef'");
+        const refused = await call(`/api/employees/${employee.id}/payments`, {
+          method: 'POST',
+          body: {
+            amount: 300, paid_on: '2026-06-01', period_start: '2026-05-01', period_end: '2026-05-31',
+            absence_days: 5,
+          },
+        });
+        assert.equal(refused.status, 422, JSON.stringify(refused.data));
+        // Nothing was written by the refused attempt.
+        const stored = await query(
+          "SELECT COUNT(*) AS n FROM costs WHERE employee_id = ? AND spent_on = '2026-06-01'", employee.id,
+        );
+        assert.equal(stored.n, 0);
+      });
+
+      // ------------------------------------------------------------ documents
+
+      await dt.test('employee documents carry their own photograph, through the one attachment mechanism', async () => {
+        const employee = await query("SELECT id FROM employees WHERE name = 'Aya Youssef'");
+
+        const idCard = await call(`/api/employees/${employee.id}/documents`, {
+          method: 'POST',
+          body: { doc_type: 'id_card', issued_on: '2020-01-01', photo: photo(50 * 1024) },
+        });
+        assert.equal(idCard.status, 201, JSON.stringify(idCard.data));
+
+        const owner = await query(
+          'SELECT owner_type FROM attachments WHERE owner_id = ? AND owner_type = ?',
+          idCard.data.id, 'employee_document',
+        );
+        assert.equal(owner.owner_type, 'employee_document', 'a document registers its own owner type, not a second table');
+
+        const refusedOther = await call(`/api/employees/${employee.id}/documents`, {
+          method: 'POST',
+          body: { doc_type: 'other' },
+        });
+        assert.equal(refusedOther.status, 422, 'a custom document needs a name to mean anything in a list');
+
+        const other = await call(`/api/employees/${employee.id}/documents`, {
+          method: 'POST',
+          body: { doc_type: 'other', label: 'Gym membership' },
+        });
+        assert.equal(other.status, 201, JSON.stringify(other.data));
+
+        const listed = await call(`/api/employees/${employee.id}/documents`);
+        assert.equal(listed.status, 200, JSON.stringify(listed.data));
+        const idCardRow = listed.data.rows.find((d) => d.id === idCard.data.id);
+        assert.equal(idCardRow.attachments.length, 1);
+        assert.equal(idCardRow.attachments[0].data, undefined, 'no bytes in a list, same rule as a cost');
+
+        const renamed = await call(`/api/employees/${employee.id}/documents/${other.data.id}`, {
+          method: 'PUT', body: { label: 'Gym membership (renewed)' },
+        });
+        assert.equal(renamed.status, 200, JSON.stringify(renamed.data));
+        assert.equal(renamed.data.label, 'Gym membership (renewed)');
+
+        const removed = await call(`/api/employees/${employee.id}/documents/${other.data.id}`, { method: 'DELETE' });
+        assert.equal(removed.status, 200, JSON.stringify(removed.data));
+        const afterDelete = await call(`/api/employees/${employee.id}/documents`);
+        assert.ok(!afterDelete.data.rows.some((d) => d.id === other.data.id));
+      });
+
+      await dt.test('a document past its expiry, or due soon, shows up in the renewal reminder', async () => {
+        const employee = await query("SELECT id FROM employees WHERE name = 'Aya Youssef'");
+        // Real wall-clock dates — the reminder reads date('now'), not any
+        // fictional date the rest of this fixture uses.
+        const soon = new Date(Date.now() + 10 * 86_400_000).toISOString().slice(0, 10);
+        const past = new Date(Date.now() - 5 * 86_400_000).toISOString().slice(0, 10);
+        const farAway = new Date(Date.now() + 400 * 86_400_000).toISOString().slice(0, 10);
+
+        const dueSoon = await call(`/api/employees/${employee.id}/documents`, {
+          method: 'POST', body: { doc_type: 'criminal_record', issued_on: '2026-01-01', expires_on: soon },
+        });
+        const overdue = await call(`/api/employees/${employee.id}/documents`, {
+          method: 'POST', body: { doc_type: 'medical_form', issued_on: '2025-01-01', expires_on: past },
+        });
+        const notYet = await call(`/api/employees/${employee.id}/documents`, {
+          method: 'POST', body: { doc_type: 'degree', issued_on: '2020-01-01', expires_on: farAway },
+        });
+        assert.equal(dueSoon.status, 201, JSON.stringify(dueSoon.data));
+        assert.equal(overdue.status, 201, JSON.stringify(overdue.data));
+        assert.equal(notYet.status, 201, JSON.stringify(notYet.data));
+
+        const reminder = await call('/api/employees/documents/expiring?withinDays=30');
+        assert.equal(reminder.status, 200, JSON.stringify(reminder.data));
+        const ids = reminder.data.rows.map((d) => d.id);
+        assert.ok(ids.includes(dueSoon.data.id), 'due within 30 days must be in the reminder');
+        assert.ok(ids.includes(overdue.data.id), 'already expired must be in the reminder too');
+        assert.ok(!ids.includes(notYet.data.id), 'due over a year from now must not be in it');
+      });
+
+      await dt.test('a document cannot expire before it was issued', async () => {
+        const employee = await query("SELECT id FROM employees WHERE name = 'Aya Youssef'");
+        const refused = await call(`/api/employees/${employee.id}/documents`, {
+          method: 'POST',
+          body: { doc_type: 'medical_form', issued_on: '2026-06-01', expires_on: '2026-01-01' },
+        });
+        assert.equal(refused.status, 422, JSON.stringify(refused.data));
+      });
+
+      // -------------------------------------------------- open and close a person
+
+      await dt.test('closing an employee sets is_active too, and reopening brings them back', async () => {
+        const employee = await query("SELECT id FROM employees WHERE name = 'Aya Youssef'");
+
+        const closed = await call(`/api/employees/${employee.id}`, {
+          method: 'PUT', body: { left_on: '2026-07-01' },
+        });
+        assert.equal(closed.status, 200, JSON.stringify(closed.data));
+        assert.equal(closed.data.left_on, '2026-07-01');
+        assert.equal(closed.data.is_active, 0, 'closing turns off is_active too, not just left_on');
+
+        const roster = await call('/api/employees/payroll?dateFrom=2026-07-01&dateTo=2026-07-31');
+        const her = roster.data.rows.find((row) => row.id === employee.id);
+        assert.equal(her.is_active, 0, 'every existing "active employees only" reading still works, unchanged');
+
+        const reopened = await call(`/api/employees/${employee.id}`, {
+          method: 'PUT', body: { left_on: null, is_active: true },
+        });
+        assert.equal(reopened.status, 200, JSON.stringify(reopened.data));
+        assert.equal(reopened.data.is_active, 1);
+        assert.equal(reopened.data.left_on, null);
+      });
+
+      await dt.test('an employee cannot have left before they were hired', async () => {
+        const employee = await query("SELECT id FROM employees WHERE name = 'Aya Youssef'");
+        const refused = await call(`/api/employees/${employee.id}`, {
+          method: 'PUT', body: { left_on: '2025-01-01' },
+        });
+        assert.equal(refused.status, 422, JSON.stringify(refused.data));
+      });
+
+      await dt.test('the schedule, the documents and the lifecycle are all in the audit trail', async () => {
+        const entries = await rows(
+          "SELECT action, entity_type FROM audit_logs WHERE module = 'employees' ORDER BY id",
+        );
+        const actions = new Set(entries.map((row) => `${row.action}:${row.entity_type}`));
+        for (const expected of [
+          'CREATE:employee', 'UPDATE:employee',
+          'CREATE:employee_document', 'UPDATE:employee_document', 'DELETE:employee_document',
         ]) {
           assert.ok(actions.has(expected), `${expected} is missing from the audit trail`);
         }

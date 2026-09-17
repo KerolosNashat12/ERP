@@ -82,11 +82,61 @@ CREATE TABLE IF NOT EXISTS employees (
   hired_on      TEXT,
   notes         TEXT,
   is_active     INTEGER NOT NULL DEFAULT 1,
+  -- The day-rate schedule, all optional: an employee with none of this set is
+  -- exactly what this table looked like before this round, and payroll works
+  -- for him exactly as it always did — a flat amount per period, nothing more.
+  -- 'work_days' is only meaningful once it is READ, so it is stored as the
+  -- plainest thing that survives a CSV export and a hand edit: a
+  -- comma-separated list of weekdays, 0 Sunday … 6 Saturday — 'الأحد للخميس'
+  -- is '0,1,2,3,4'. Parsed by shared/payroll.js, never trusted raw.
+  work_days           TEXT,
+  daily_hours         REAL,
+  -- Overtime is either a flat rate per hour ('fixed', overtime_rate_value in
+  -- EGP) or a multiple of the employee's own derived hourly rate
+  -- ('multiplier', e.g. 1.5) — the owner wanted both. Enforced in the service
+  -- layer, not a CHECK: see the note on CHECK and live tables in migration 022.
+  overtime_rate_type  TEXT,
+  overtime_rate_value REAL,
+  -- Set the day this employee left. NULL means still working here. Left
+  -- deliberately separate from 'is_active' rather than replacing it: closing
+  -- an employee sets both (is_active = 0 and left_on = that date) so every
+  -- existing "active employees only" query keeps meaning what it always meant,
+  -- while 'left_on' answers the one question 'is_active' cannot — since when.
+  left_on       TEXT,
   created_by    INTEGER REFERENCES users(id),
   created_at    TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   updated_at    TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
 CREATE INDEX IF NOT EXISTS idx_employees_active ON employees(is_active, name);
+
+-- بطاقة، صورة، فيش جنائي، شهادة جامعية، استمارة طبية، وغيرها — the paperwork a
+-- shop keeps on file for each person. A separate table rather than columns on
+-- 'employees', because there can be more than one of a kind (a renewed
+-- criminal-record certificate should not erase the old one's history) and
+-- because most employees will have none of this on day one. The photograph of
+-- each document is an attachment — see AttachmentService's 'employee_document'
+-- owner type — exactly the same mechanism a cost's bill photo uses.
+CREATE TABLE IF NOT EXISTS employee_documents (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  employee_id   INTEGER NOT NULL REFERENCES employees(id),
+  doc_type      TEXT    NOT NULL CHECK (doc_type IN
+                 ('id_card','photo','criminal_record','degree','medical_form','other')),
+  -- Required (and shown) mainly for 'other' — a custom document needs a name
+  -- to mean anything in a list, and the fixed types already have one: doc_type.
+  label         TEXT,
+  issued_on     TEXT,
+  expires_on    TEXT,
+  notes         TEXT,
+  created_by    INTEGER REFERENCES users(id),
+  created_at    TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_at    TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+CREATE INDEX IF NOT EXISTS idx_employee_documents_employee ON employee_documents(employee_id);
+-- The renewal reminder reads this: every document with an expiry date at all,
+-- ordered by how soon. Partial, because most documents (a photo, an ID scan)
+-- never expire and have no business in this index.
+CREATE INDEX IF NOT EXISTS idx_employee_documents_expiry
+  ON employee_documents(expires_on) WHERE expires_on IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS recurring_costs (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -147,6 +197,19 @@ CREATE TABLE IF NOT EXISTS costs (
   employee_id    INTEGER REFERENCES employees(id),
   period_start   TEXT,
   period_end     TEXT,
+  -- The attendance breakdown behind a salary payment's 'amount' — NULL on
+  -- every other cost, and NULL on a salary payment too when nobody entered
+  -- absence, lateness or overtime for it (the old, plain "he was handed X"
+  -- payment keeps working exactly as before). 'amount' stays the single
+  -- number every report sums — these six are only ever shown alongside it, on
+  -- the payment itself, as the arithmetic that produced it.
+  gross_amount      REAL,
+  absence_days      REAL,
+  absence_deduction REAL,
+  late_hours        REAL,
+  late_deduction    REAL,
+  overtime_hours    REAL,
+  overtime_pay      REAL,
   created_by     INTEGER REFERENCES users(id),
   created_at     TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   updated_at     TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
