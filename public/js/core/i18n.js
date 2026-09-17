@@ -311,6 +311,8 @@ const dictionary = {
     // narrow and count in parts; "1,000 products" is a clerk who thinks the
     // shop has 1,000 products.
     countSheetPartial: 'Showing {shown} of {total} lines. Narrow by warehouse, brand or category and count the shop in parts — this sheet is not all of it.',
+    downloadCountSheet: 'Download sheet to print',
+    countSheetDownloaded: 'Sheet downloaded — count on paper, then come back and enter the numbers here.',
     stockTake: 'Stock take', damage: 'Damaged', loss: 'Lost', theft: 'Theft',
     correction: 'Correction', expiry: 'Expired', other: 'Other',
     // The ledger's movement types, as stored in `stock_movements.movement_type`.
@@ -1082,6 +1084,7 @@ const dictionary = {
 
     // --- absence, lateness and overtime, at payment time
     absenceDays: 'Absence days',
+    absenceDatesNeedPeriod: 'Set the payment period above to pick the specific day(s) she was absent.',
     absenceDeductionAuto: 'At the day rate',
     absenceDeductionManual: 'Enter the amount to deduct',
     absenceDeductionAmount: 'Amount to deduct',
@@ -1414,6 +1417,8 @@ const dictionary = {
     countedQty: 'الكمية المجرودة', postCount: 'ترحيل الجرد',
     loadCountSheet: 'تحميل كشف الجرد', countPosted: 'تم ترحيل الجرد',
     countSheetPartial: 'الكشف يعرض {shown} سطر من {total}. صفِّ بالمخزن أو الماركة أو الفئة وجرد المحل على أجزاء — الكشف ده مش كل الأصناف.',
+    downloadCountSheet: 'تنزيل كشف للطباعة',
+    countSheetDownloaded: 'اتنزل الكشف — جرد بيه ورقي، وارجع دخّل الأرقام هنا.',
     stockTake: 'جرد', damage: 'تالف', loss: 'فاقد', theft: 'سرقة',
     correction: 'تصحيح', expiry: 'منتهي الصلاحية', other: 'أخرى',
     purchaseReceipt: 'استلام بضاعة', sale: 'بيع', saleReturn: 'مرتجع بيع',
@@ -2114,6 +2119,7 @@ const dictionary = {
 
     // --- الغياب والتأخير والساعات الإضافية، وقت القبض
     absenceDays: 'أيام الغياب',
+    absenceDatesNeedPeriod: 'حدد فترة الدفع فوق الأول عشان تقدر تختار أيام الغياب بالتاريخ.',
     absenceDeductionAuto: 'بسعر اليوم',
     absenceDeductionManual: 'إدخال قيمة الخصم',
     absenceDeductionAmount: 'قيمة الخصم',

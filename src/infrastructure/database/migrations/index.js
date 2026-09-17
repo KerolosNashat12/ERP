@@ -54,6 +54,7 @@ import migration031 from './031-bundles-and-deals.js';
 import migration032 from './032-bundles-category-backfill.js';
 import migration033 from './033-fawaterak-payments.js';
 import migration034 from './034-employee-schedule-and-documents.js';
+import migration035 from './035-absence-dates.js';
 
 /** Ordered. Append only. */
 const MIGRATIONS = [
@@ -91,6 +92,7 @@ const MIGRATIONS = [
   migration032,
   migration033,
   migration034,
+  migration035,
 ];
 
 async function ensureRegistry() {

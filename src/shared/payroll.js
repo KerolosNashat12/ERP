@@ -146,6 +146,35 @@ export const formatWorkDays = (days) => (
 );
 
 /**
+ * A set of absence dates given as an array or a comma-joined string, parsed
+ * into a canonical sorted, deduplicated array of `YYYY-MM-DD` strings — the
+ * same "canonical stored form" idea as `formatWorkDays`, so the same list
+ * typed in a different order or with a date repeated always lands the same
+ * way in the database. `null` for anything empty (nothing entered).
+ *
+ * Throws on anything that isn't a real calendar date (`2026-02-30`, a typo, a
+ * non-date string) rather than silently dropping it — a swallowed absence
+ * date is a paycheck that is quietly wrong.
+ */
+export function parseAbsenceDates(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const raw = Array.isArray(value) ? value : String(value).split(',');
+  const dates = raw.map((v) => String(v).trim()).filter(Boolean);
+  if (!dates.length) return null;
+  for (const d of dates) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || fromUtc(toUtc(d)) !== d) {
+      throw new Error(`"${d}" is not a valid date`);
+    }
+  }
+  return [...new Set(dates)].sort();
+}
+
+/** The canonical stored form of an absence-date set — sorted, deduplicated, comma-joined. */
+export const formatAbsenceDates = (dates) => (
+  Array.isArray(dates) && dates.length ? [...new Set(dates)].sort().join(',') : null
+);
+
+/**
  * How many of `workDays` fall inside the calendar month `isoDate` sits in.
  * "من الاحد للخميس" for March 2026 is 22 — not a flat "5 × 4 weeks", because
  * months are not four weeks long and a shop's day rate should not be a
@@ -181,4 +210,5 @@ export default {
   SALARY_PERIODS, isSalaryPeriod, addDays, addMonths, periodEnd, nextPeriodStart,
   periodRange, completePeriods, nextUnpaidPeriod, monthlyEquivalent,
   parseWorkDays, formatWorkDays, workingDaysInMonth, dayRate,
+  parseAbsenceDates, formatAbsenceDates,
 };

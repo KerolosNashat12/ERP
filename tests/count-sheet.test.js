@@ -186,4 +186,30 @@ test('the endpoint hands the browser the whole answer, not just the rows', async
   assert.equal(typeof body.truncated, 'boolean', 'the browser cannot tell a partial sheet from a whole one');
   assert.equal(body.truncated, false);
   assert.equal(body.rows.length, body.total, 'a seeded shop should fit on one sheet');
+
+  /*
+   * "?format=csv" is the same sheet, printable — a real file a clerk can
+   * count against on paper, so `counted_qty` must be BLANK in it (never
+   * pre-filled with the system's own number, which is what the live table
+   * does and would make a printed sheet lie about having been counted).
+   */
+  const csv = await fetch(`${base}/api/inventory/count-sheet?format=csv`, { headers: { cookie } });
+  assert.equal(csv.status, 200);
+  assert.match(csv.headers.get('content-type'), /text\/csv/);
+  assert.match(csv.headers.get('content-disposition'), /count-sheet\.csv/);
+  assert.equal(csv.headers.get('x-count-sheet-truncated'), 'false');
+  const text = await csv.text();
+  const lines = text.replace(/^﻿/, '').split('\n').filter(Boolean);
+  assert.match(lines[0], /SKU/);
+  assert.match(lines[0], /Counted qty/);
+  // One data line per row the JSON sheet reported, and none of them carry a
+  // number in the counted-qty column — it ends every line with a trailing
+  // comma (the last, empty field), not a repeated system quantity.
+  assert.equal(lines.length - 1, body.rows.length);
+  for (const line of lines.slice(1)) assert.match(line, /,$/, 'counted qty must be left blank to write in by hand');
+
+  const csvAr = await fetch(`${base}/api/inventory/count-sheet?format=csv&lang=ar`, { headers: { cookie } });
+  const headerAr = (await csvAr.text()).replace(/^﻿/, '').split('\n')[0];
+  assert.match(headerAr, /الكود/);
+  assert.match(headerAr, /الكمية المجرودة/);
 });

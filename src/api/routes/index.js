@@ -711,11 +711,49 @@ router.post('/inventory/quick-adjust', requirePermission('inventory.adjust'),
     res.json(await inventoryService.quickAdjust(req.body, req.context));
   }));
 
+/**
+ * `?format=csv` is the same sheet as a file instead of a live table — for a
+ * clerk who wants to print it, walk the shop with it on paper, and type the
+ * counted numbers back in afterwards ("أظبط الموضوع ورقي وارجع أظبطه على
+ * السيستم"). Same filters, same permission, same `buildCountSheet()` and its
+ * cap — a printed sheet is no more scrollable than the on-screen one, so a
+ * shop past COUNT_SHEET_MAX still needs counting in parts by warehouse,
+ * brand or category, and `X-Count-Sheet-Truncated` says so to the browser
+ * the way the JSON response's `truncated` already does for the live table.
+ * `counted_qty` is left BLANK in the file, not pre-filled with the system
+ * count — the whole point is a column for a human to write the real number
+ * in, not a sheet that already claims to agree with itself.
+ */
 router.get('/inventory/count-sheet', requirePermission('inventory.count'), asyncHandler(async (req, res) => {
-  // `{ rows, total, truncated }` — the last two are not decoration. A sheet
-  // capped below what the shop holds has to say so, or the clerk counts part
-  // of the shop believing they counted all of it. See buildCountSheet().
-  res.json(await inventoryService.buildCountSheet(req.query));
+  if (req.query.format !== 'csv') {
+    // `{ rows, total, truncated }` — the last two are not decoration. A sheet
+    // capped below what the shop holds has to say so, or the clerk counts
+    // part of the shop believing they counted all of it. See buildCountSheet().
+    res.json(await inventoryService.buildCountSheet(req.query));
+    return;
+  }
+  const lang = req.query.lang === 'ar' ? 'ar' : 'en';
+  const { rows, total, truncated } = await inventoryService.buildCountSheet(req.query);
+  const report = {
+    columns: [
+      { key: 'sku', labelEn: 'SKU', labelAr: 'الكود' },
+      { key: 'product_name_en', labelEn: 'Product', labelAr: 'المنتج' },
+      { key: 'variant_label', labelEn: 'Variant', labelAr: 'المتغير' },
+      { key: 'system_qty', labelEn: 'System qty', labelAr: 'رصيد النظام' },
+      { key: 'counted_qty', labelEn: 'Counted qty', labelAr: 'الكمية المجرودة' },
+    ],
+    rows: rows.map((row) => ({ ...row, counted_qty: '' })),
+  };
+  await auditService.record({
+    action: 'EXPORT', module: 'inventory', entityType: 'count_sheet', entityId: null,
+    entityLabel: 'Count sheet CSV export', after: { rows: rows.length, total, filters: req.query },
+    actor: req.context.actor, request: req.context.request,
+  });
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', 'attachment; filename="count-sheet.csv"');
+  res.setHeader('X-Count-Sheet-Truncated', truncated ? 'true' : 'false');
+  res.setHeader('X-Count-Sheet-Total', String(total));
+  res.send(reportService.toCsv(report, lang));
 }));
 
 router.get('/inventory/adjustments', requirePermission('inventory.view'), asyncHandler(async (req, res) => {

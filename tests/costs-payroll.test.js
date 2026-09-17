@@ -759,6 +759,82 @@ test('costs come off profit, repeat without duplicating, and carry a photograph'
         assert.equal(paid.data.absence_days, null);
       });
 
+      await dt.test('absence can be picked by the specific date, not just a count', async () => {
+        const employee = await query("SELECT id FROM employees WHERE name = 'Aya Youssef'");
+
+        // 2026-03-01 and 2026-03-08 are both Sundays — one of Aya's work days
+        // (0,1,2,3,4) — so this is the same 2-day, 600 EGP deduction as the
+        // count-only test above, just named by date instead of by number.
+        const preview = await call(`/api/employees/${employee.id}/payments/preview`, {
+          method: 'POST',
+          body: {
+            amount: 6900, period_start: '2026-03-01', period_end: '2026-03-31',
+            absence_dates: ['2026-03-08', '2026-03-01', '2026-03-01'], // unsorted, with a repeat
+          },
+        });
+        assert.equal(preview.status, 200, JSON.stringify(preview.data));
+        assert.equal(preview.data.absence_days, 2, 'the count comes from the dates, deduplicated');
+        assert.equal(preview.data.absence_deduction, 600);
+        assert.equal(preview.data.amount, 6300);
+
+        const paid = await call(`/api/employees/${employee.id}/payments`, {
+          method: 'POST',
+          body: {
+            amount: 6900, paid_on: '2026-04-01', period_start: '2026-03-01', period_end: '2026-03-31',
+            absence_dates: ['2026-03-08', '2026-03-01'],
+          },
+        });
+        assert.equal(paid.status, 201, JSON.stringify(paid.data));
+        assert.equal(paid.data.absence_days, 2);
+        // Stored canonically — sorted, comma-joined — same idea as work_days.
+        assert.equal(paid.data.absence_dates, '2026-03-01,2026-03-08');
+
+        const stored = await query('SELECT absence_dates FROM costs WHERE id = ?', paid.data.id);
+        assert.equal(stored.absence_dates, '2026-03-01,2026-03-08');
+      });
+
+      await dt.test('an absence date outside the period being paid is refused', async () => {
+        const employee = await query("SELECT id FROM employees WHERE name = 'Aya Youssef'");
+        // 2026-04-01 is a Wednesday (one of Aya's work days) but it falls
+        // outside the March period below — the date, not the weekday, is wrong.
+        const refused = await call(`/api/employees/${employee.id}/payments/preview`, {
+          method: 'POST',
+          body: {
+            amount: 6900, period_start: '2026-03-01', period_end: '2026-03-31',
+            absence_dates: ['2026-04-01'],
+          },
+        });
+        assert.equal(refused.status, 422, JSON.stringify(refused.data));
+      });
+
+      await dt.test('an absence date that was never one of the employee’s work days is refused', async () => {
+        const employee = await query("SELECT id FROM employees WHERE name = 'Aya Youssef'");
+        // 2026-03-06 is a Friday — Aya works Sunday-Thursday (0,1,2,3,4), so
+        // she was never scheduled to be there that day; nothing to deduct.
+        const refused = await call(`/api/employees/${employee.id}/payments/preview`, {
+          method: 'POST',
+          body: {
+            amount: 6900, period_start: '2026-03-01', period_end: '2026-03-31',
+            absence_dates: ['2026-03-06'],
+          },
+        });
+        assert.equal(refused.status, 422, JSON.stringify(refused.data));
+      });
+
+      await dt.test('absence dates take priority over a separately-sent day count', async () => {
+        const employee = await query("SELECT id FROM employees WHERE name = 'Aya Youssef'");
+        const preview = await call(`/api/employees/${employee.id}/payments/preview`, {
+          method: 'POST',
+          body: {
+            amount: 6900, period_start: '2026-03-01', period_end: '2026-03-31',
+            absence_days: 5, absence_dates: ['2026-03-01'],
+          },
+        });
+        assert.equal(preview.status, 200, JSON.stringify(preview.data));
+        assert.equal(preview.data.absence_days, 1, 'one date was sent, so the count is 1 — the stray absence_days: 5 is ignored');
+        assert.equal(preview.data.absence_deduction, 300);
+      });
+
       await dt.test('absence, lateness or overtime need a work schedule on the employee first', async () => {
         const employee = await query("SELECT id FROM employees WHERE name = 'Mahmoud Sayed'");
         const refused = await call(`/api/employees/${employee.id}/payments`, {

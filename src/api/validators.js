@@ -669,6 +669,10 @@ export const salaryPaymentSchema = z.object({
   note: optionalString,
   photo: attachedPhotoSchema.optional().nullable(),
   absence_days: z.coerce.number().min(0).optional().nullable(),
+  // Which day, not just how many — "لو عاوز اقول هي غابت انهي يوم بالظبط".
+  // Takes priority over absence_days above when both are sent; PayrollService
+  // checks each date against the period and the employee's work days.
+  absence_dates: z.array(isoDay).max(31).optional().nullable(),
   // A manual override for the whole absence deduction, in place of days ×
   // day rate — "أو اديله أوبشن ادخل القيمه المراد خصمها لليوم".
   absence_deduction_amount: z.coerce.number().min(0).optional().nullable(),

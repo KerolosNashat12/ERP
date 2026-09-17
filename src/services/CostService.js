@@ -191,6 +191,7 @@ export class CostService {
       // which is every payment this system wrote before this round.
       gross_amount: payload.gross_amount ?? existing?.gross_amount ?? null,
       absence_days: payload.absence_days ?? existing?.absence_days ?? null,
+      absence_dates: payload.absence_dates ?? existing?.absence_dates ?? null,
       absence_deduction: payload.absence_deduction ?? existing?.absence_deduction ?? null,
       late_hours: payload.late_hours ?? existing?.late_hours ?? null,
       late_deduction: payload.late_deduction ?? existing?.late_deduction ?? null,

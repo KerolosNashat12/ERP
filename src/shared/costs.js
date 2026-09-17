@@ -201,10 +201,16 @@ CREATE TABLE IF NOT EXISTS costs (
   -- every other cost, and NULL on a salary payment too when nobody entered
   -- absence, lateness or overtime for it (the old, plain "he was handed X"
   -- payment keeps working exactly as before). 'amount' stays the single
-  -- number every report sums — these six are only ever shown alongside it, on
+  -- number every report sums — these are only ever shown alongside it, on
   -- the payment itself, as the arithmetic that produced it.
   gross_amount      REAL,
   absence_days      REAL,
+  -- Which day, not just how many — a canonical sorted comma list of the
+  -- specific dates picked on the payment screen, e.g. '2026-03-08,2026-03-10'.
+  -- NULL when absence was entered as a plain count instead (an older caller,
+  -- or a manual deduction amount with no dates behind it) — absence_days
+  -- above still carries the count either way.
+  absence_dates     TEXT,
   absence_deduction REAL,
   late_hours        REAL,
   late_deduction    REAL,

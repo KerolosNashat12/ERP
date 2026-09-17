@@ -43,7 +43,7 @@ import { NotFoundError, ValidationError } from '../shared/errors.js';
 import { round2 } from '../shared/money.js';
 import {
   SALARY_PERIODS, isSalaryPeriod, completePeriods, nextUnpaidPeriod, periodEnd, addDays,
-  monthlyEquivalent, parseWorkDays, formatWorkDays, dayRate,
+  monthlyEquivalent, parseWorkDays, formatWorkDays, dayRate, parseAbsenceDates, formatAbsenceDates,
 } from '../shared/payroll.js';
 import costService from './CostService.js';
 import attachmentService from './AttachmentService.js';
@@ -276,24 +276,38 @@ export class PayrollService {
    *
    *   day rate      = monthly-equivalent salary ÷ working days in the period's
    *                    calendar month (shared/payroll.js#dayRate)
-   *   absence       = days × day rate, unless a manual amount was given instead
+   *   absence       = specific dates picked on the payment screen (each one
+   *                    priced at the day rate), or a plain day count for an
+   *                    older caller that never sent dates — either way, unless
+   *                    a manual amount was given instead
    *   lateness      = late hours ÷ daily hours × day rate — a proportion of the
    *                    day, exactly as asked ("نسبة من سعر اليوم")
    *   overtime      = hours × (a flat EGP/hour, or a multiple of the derived
    *                    hourly rate) — both were wanted, per employee
+   *
+   * `absence_dates`, when sent, is the source of truth: "غابت انهي يوم بالظبط"
+   * — which day, not just how many — so each date is checked against the
+   * period it is being paid for and against the employee's own configured
+   * work days (a date that was never a work day for them is refused by name,
+   * not silently counted), and the day COUNT used for the deduction is simply
+   * how many dates survive that check, `absence_days` (a bare number, no
+   * dates) is kept working for anything still calling the older shape.
    *
    * Refuses rather than guesses when the arithmetic has nothing to work from:
    * no schedule configured at all, or daily hours missing when lateness or
    * overtime were asked for, or deductions that would take the payment to
    * zero or below (a `costs.amount` cannot be zero — see shared/costs.js).
    */
-  #breakdown(employee, periodStart, payload) {
+  #breakdown(employee, period, payload) {
     const baseAmount = round2(Number(payload.amount ?? employee.salary_amount));
-    const asked = ['absence_days', 'absence_deduction_amount', 'late_hours', 'overtime_hours']
-      .some((key) => payload[key] !== undefined && payload[key] !== null && payload[key] !== '');
+    const asked = ['absence_days', 'absence_dates', 'absence_deduction_amount', 'late_hours', 'overtime_hours']
+      .some((key) => {
+        const v = payload[key];
+        return v !== undefined && v !== null && v !== '' && !(Array.isArray(v) && v.length === 0);
+      });
     if (!asked) return { amount: baseAmount, breakdown: null };
 
-    const rate = dayRate(employee, periodStart);
+    const rate = dayRate(employee, period.start);
     if (rate === null) {
       throw new ValidationError(
         'Set this employee’s work days (and, for lateness or overtime, their daily hours) before entering absence, lateness or overtime for a payment',
@@ -306,7 +320,28 @@ export class PayrollService {
     }
     const hourlyRate = dailyHours > 0 ? rate / dailyHours : 0;
 
-    const absenceDays = Math.max(0, Number(payload.absence_days) || 0);
+    let absenceDates = null;
+    if (payload.absence_dates !== undefined && payload.absence_dates !== null && payload.absence_dates !== '') {
+      let parsed;
+      try {
+        parsed = parseAbsenceDates(payload.absence_dates);
+      } catch {
+        throw new ValidationError('One of the absence dates entered is not a real date');
+      }
+      const workDays = parseWorkDays(employee.work_days) || [];
+      for (const d of parsed || []) {
+        if (d < period.start || d > period.end) {
+          throw new ValidationError(`${d} is outside the period being paid`);
+        }
+        const weekday = new Date(`${d}T00:00:00Z`).getUTCDay();
+        if (!workDays.includes(weekday)) {
+          throw new ValidationError(`${d} is not one of this employee’s work days`);
+        }
+      }
+      absenceDates = parsed;
+    }
+
+    const absenceDays = absenceDates ? absenceDates.length : Math.max(0, Number(payload.absence_days) || 0);
     const manualAbsence = payload.absence_deduction_amount !== undefined
       && payload.absence_deduction_amount !== null && payload.absence_deduction_amount !== '';
     const absenceDeduction = manualAbsence
@@ -334,6 +369,7 @@ export class PayrollService {
         hourly_rate: round2(hourlyRate),
         gross_amount: baseAmount,
         absence_days: absenceDays || null,
+        absence_dates: formatAbsenceDates(absenceDates),
         absence_deduction: absenceDeduction || null,
         late_hours: lateHours || null,
         late_deduction: lateDeduction || null,
@@ -354,7 +390,7 @@ export class PayrollService {
     const employee = await this.employees.findById(Number(employeeId));
     if (!employee) throw new NotFoundError('Employee', employeeId);
     const period = await this.#resolvePeriod(employee, payload);
-    const { amount, breakdown } = this.#breakdown(employee, period.start, payload);
+    const { amount, breakdown } = this.#breakdown(employee, period, payload);
     return { amount, period, ...(breakdown || {}) };
   }
 
@@ -373,7 +409,7 @@ export class PayrollService {
     if (!employee) throw new NotFoundError('Employee', employeeId);
 
     const period = await this.#resolvePeriod(employee, payload);
-    const { amount, breakdown } = this.#breakdown(employee, period.start, payload);
+    const { amount, breakdown } = this.#breakdown(employee, period, payload);
 
     return this.costs.create({
       employee_id: employee.id,
@@ -390,6 +426,7 @@ export class PayrollService {
         ? {
           gross_amount: breakdown.gross_amount,
           absence_days: breakdown.absence_days,
+          absence_dates: breakdown.absence_dates,
           absence_deduction: breakdown.absence_deduction,
           late_hours: breakdown.late_hours,
           late_deduction: breakdown.late_deduction,

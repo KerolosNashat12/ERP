@@ -48,7 +48,9 @@ const DOC_TYPES = [
   { value: 'other', label: () => t('docTypeOther') },
 ];
 const WEEKDAYS = [0, 1, 2, 3, 4, 5, 6];
-const ADJUSTMENT_FIELDS = ['absence_days', 'absence_deduction_amount', 'late_hours', 'overtime_hours'];
+// Form-backed adjustment inputs — absence itself is picked by date (see
+// absenceDatePicker above), not typed as a plain number.
+const ADJUSTMENT_FIELDS = ['absence_deduction_amount', 'late_hours', 'overtime_hours'];
 
 const periodLabel = (period) => (
   PERIODS.find((p) => p.value === period)?.label() || period
@@ -75,6 +77,67 @@ function weekdayPicker(initial = []) {
   }
   render();
   return { node, value: () => [...chosen].sort((a, b) => a - b) };
+}
+
+/**
+ * Which specific days, within a payment's period, this employee was absent —
+ * "لو عاوز اقول هي غابت انهي يوم بالظبط". Only dates that (a) fall inside
+ * `start`..`end` and (b) land on one of `workDays` are offered as buttons —
+ * a day she was never scheduled to work isn't a valid absence to begin with,
+ * so there is nothing to pick there. Re-rendered whenever the period fields
+ * change (`setRange`), keeping any still-valid picks.
+ */
+function absenceDatePicker(workDays, initial = []) {
+  const chosen = new Set(initial);
+  const node = h('div', { class: 'row-actions', style: { flexWrap: 'wrap' } });
+  let range = { start: null, end: null };
+
+  function datesInRange() {
+    const dates = [];
+    if (!range.start || !range.end || range.start > range.end) return dates;
+    const days = new Set(workDays);
+    let cursor = range.start;
+    let guard = 0;
+    while (cursor <= range.end && guard < 366) {
+      guard += 1;
+      const weekday = new Date(`${cursor}T00:00:00Z`).getUTCDay();
+      if (days.has(weekday)) {
+        dates.push({ iso: cursor, weekday });
+      }
+      cursor = new Date(new Date(`${cursor}T00:00:00Z`).getTime() + 86_400_000).toISOString().slice(0, 10);
+    }
+    return dates;
+  }
+
+  function render() {
+    const dates = datesInRange();
+    // Drop picks that fell outside the range after it changed.
+    for (const iso of [...chosen]) {
+      if (!dates.some((d) => d.iso === iso)) chosen.delete(iso);
+    }
+    if (!dates.length) {
+      mount(node, h('span', { class: 'muted small' }, t('absenceDatesNeedPeriod')));
+      return;
+    }
+    mount(node, dates.map(({ iso, weekday }) => h('button', {
+      type: 'button',
+      class: `btn sm ${chosen.has(iso) ? 'primary' : 'ghost'}`,
+      title: iso,
+      onclick: () => {
+        if (chosen.has(iso)) chosen.delete(iso); else chosen.add(iso);
+        render();
+        node.dispatchEvent(new Event('change', { bubbles: true }));
+      },
+    }, `${t(`wd${weekday}`)} ${Number(iso.slice(8, 10))}`)));
+  }
+
+  function setRange(start, end) {
+    range = { start: start || null, end: end || null };
+    render();
+  }
+
+  render();
+  return { node, setRange, value: () => [...chosen].sort() };
 }
 
 /** Expiry date, tagged when it has already passed or is coming up within a month. */
@@ -339,6 +402,9 @@ export async function employeesView(root, route) {
       ? { start: employee.owed_from, end: employee.owed_to }
       : null;
     const hasSchedule = Boolean(employee.work_days);
+    const workDays = employee.work_days
+      ? employee.work_days.split(',').map(Number).filter(Number.isInteger)
+      : [];
 
     const form = buildForm([
       { name: 'amount', label: t('costAmount'), type: 'number', required: true, value: employee.salary_amount },
@@ -352,9 +418,6 @@ export async function employeesView(root, route) {
         options: METHODS.map((m) => ({ value: m, label: t(m) })),
       },
       { name: 'reference', label: t('costReference') },
-      // Absence, lateness and overtime — all optional, and all needing a work
-      // schedule on the employee's own record before they mean anything.
-      { name: 'absence_days', label: t('absenceDays'), type: 'number', disabled: !hasSchedule },
       {
         name: 'absence_deduction_amount',
         label: t('absenceDeductionAmount'),
@@ -372,20 +435,27 @@ export async function employeesView(root, route) {
       period_end: suggested?.end || '',
     }, { columns: 2 });
 
+    // Which specific days she was absent — "غابت انهي يوم بالظبط" — offered
+    // only for dates inside the period above and on one of her work days.
+    const absenceDates = absenceDatePicker(workDays);
+    absenceDates.setRange(form.values().period_start, form.values().period_end);
+
     const proof = proofPicker({ hint: t('billPhotoHint'), alt: t('salaryPaymentPhoto') });
     const previewHost = h('div', { class: 'stack' });
 
     /** The live net figure, computed by the same rule `pay()` writes with. */
     const updatePreview = debounce(async () => {
       const values = form.values();
-      const asked = ADJUSTMENT_FIELDS.some((name) => values[name] !== null && Number(values[name]) !== 0);
+      const dates = absenceDates.value();
+      const asked = dates.length
+        || ADJUSTMENT_FIELDS.some((name) => values[name] !== null && Number(values[name]) !== 0);
       if (!asked) { mount(previewHost, null); return; }
       try {
         const preview = await api.post(`/api/employees/${employee.id}/payments/preview`, {
           amount: values.amount === null ? undefined : Number(values.amount),
           period_start: values.period_start || null,
           period_end: values.period_end || null,
-          absence_days: values.absence_days === null ? null : Number(values.absence_days),
+          absence_dates: dates.length ? dates : null,
           absence_deduction_amount: values.absence_deduction_amount === null
             ? null : Number(values.absence_deduction_amount),
           late_hours: values.late_hours === null ? null : Number(values.late_hours),
@@ -410,6 +480,14 @@ export async function employeesView(root, route) {
     for (const name of [...ADJUSTMENT_FIELDS, 'amount']) {
       form.inputs.get(name)?.input.addEventListener('input', updatePreview);
     }
+    for (const name of ['period_start', 'period_end']) {
+      form.inputs.get(name)?.input.addEventListener('input', () => {
+        const values = form.values();
+        absenceDates.setRange(values.period_start, values.period_end);
+        updatePreview();
+      });
+    }
+    absenceDates.node.addEventListener('change', updatePreview);
 
     const dialog = modal({
       title: `${t('paySalary')} — ${employee.name}`,
@@ -422,6 +500,7 @@ export async function employeesView(root, route) {
           : null,
         hasSchedule ? null : h('div', { class: 'muted small' }, t('noScheduleForAdjustments')),
         form.node,
+        hasSchedule ? field({ label: t('absenceDays'), input: absenceDates.node }) : null,
         previewHost,
         field({ label: t('salaryPaymentPhoto'), input: proof.node })),
       footer: [
@@ -432,6 +511,7 @@ export async function employeesView(root, route) {
             if (!form.validate()) return;
             if (proof.isBusy()) { toast(t('preparingPhoto'), 'warn'); return; }
             const values = form.values();
+            const dates = absenceDates.value();
             try {
               await api.post(`/api/employees/${employee.id}/payments`, {
                 // Typed and sent; rounded and netted by the server.
@@ -443,7 +523,7 @@ export async function employeesView(root, route) {
                 reference: values.reference || null,
                 note: values.note || null,
                 photo: proof.value(),
-                absence_days: values.absence_days === null ? null : Number(values.absence_days),
+                absence_dates: dates.length ? dates : null,
                 absence_deduction_amount: values.absence_deduction_amount === null
                   ? null : Number(values.absence_deduction_amount),
                 late_hours: values.late_hours === null ? null : Number(values.late_hours),

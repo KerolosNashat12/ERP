@@ -83,7 +83,7 @@ export class CostRepository extends BaseRepository {
         'period_start', 'period_end',
         // The attendance breakdown behind a salary payment's amount — see the
         // column comments in shared/costs.js. NULL on every other cost.
-        'gross_amount', 'absence_days', 'absence_deduction',
+        'gross_amount', 'absence_days', 'absence_dates', 'absence_deduction',
         'late_hours', 'late_deduction', 'overtime_hours', 'overtime_pay',
         'created_by',
       ],

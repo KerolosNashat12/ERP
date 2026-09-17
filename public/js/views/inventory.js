@@ -4,7 +4,7 @@ import {
   h, mount, dataTable, pager, spinner, toast, toastError, textInput, selectInput,
   checkboxInput, field, modal, debounce, tag, statusTag, buildForm, matchNote, summaryCards,
 } from '../core/ui.js';
-import { t, pick } from '../core/i18n.js';
+import { t, pick, getLanguage } from '../core/i18n.js';
 import { money, number, dateTime } from '../core/format.js';
 import { can, lookup } from '../core/store.js';
 import { navigate } from '../core/router.js';
@@ -670,6 +670,18 @@ async function adjustmentFormView(root, route) {
     } catch (error) { toastError(error); }
   }
 
+  /*
+   * "أظبط الموضوع ورقي وارجع أظبطه على السيستم" — a real file, not the live
+   * table: every product (up to the same cap `loadCountSheet` respects),
+   * with counted qty left BLANK to write in by hand while walking the shop.
+   * Comes back into the system the same way it always has — load the sheet
+   * on screen and type in the numbers the paper now has.
+   */
+  function downloadCountSheet() {
+    api.download('/api/inventory/count-sheet', { format: 'csv', lang: getLanguage() }, 'count-sheet.csv');
+    toast(t('countSheetDownloaded'), 'ok', 6000);
+  }
+
   mount(root,
     h('div', { class: 'page-head' },
       h('div', {},
@@ -677,6 +689,7 @@ async function adjustmentFormView(root, route) {
         existing ? h('p', {}, statusTag(existing.status)) : null),
       h('span', { class: 'spacer' }),
       h('button', { class: 'btn', onclick: () => navigate('adjustments') }, '‹ ' + t('back')),
+      !readOnly ? h('button', { class: 'btn', onclick: downloadCountSheet }, '⭳ ' + t('downloadCountSheet')) : null,
       !readOnly ? h('button', { class: 'btn', onclick: loadCountSheet }, t('loadCountSheet')) : null,
       !readOnly ? h('button', { class: 'btn', onclick: () => save(false) }, t('save')) : null,
       !readOnly ? h('button', { class: 'btn primary', onclick: () => save(true) }, t('postCount')) : null),
